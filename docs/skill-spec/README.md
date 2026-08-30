@@ -83,7 +83,7 @@ skills.csv（实现参数：程序直接消费的唯一数值源）   ← 本目
 | hits | int | 判定段数（含普攻段=1） |
 | hitstun_f | int | 命中硬直帧 |
 | knockback_m | float | 击退距离 |
-| launch_v | float | 浮空初速 m/s（6.5–8.5 区间，天击 7.5 为标准） |
+| launch_v | float | 浮空初速 m/s（6.5–9.0 区间，天击 9.0 为标准——白盒 F1 裁定） |
 | status | string | 附加异常，紧凑记法：`burn:60:4s` `bleed:60:4s` `freeze:1.0s` `slow:30%:3s` `stun:1.2s` `root:1.8s` `blind:2.5s` `sleep:2.5s` `confuse:3s` `taunt:3s` `silence:2s` `seal:3s` `curse` `weight:x2` `none` |
 | armor | enum | none / SA:<帧区间>（霸体）/ SSA（超级霸体）/ superSA:buff（状态型） |
 | invincible_f | string | 无敌帧区间如 `4-14f`；无留空 |

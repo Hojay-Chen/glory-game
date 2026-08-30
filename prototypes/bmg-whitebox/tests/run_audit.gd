@@ -198,15 +198,23 @@ func audit_templates() -> Dictionary:
 	var r1 = summarize(s1)
 	out["templates"].append({"name": "T1 浮空四连刺(原著): 天击>直刺×2>龙牙>连突", "sim": s1, "r": r1,
 		"lines": fmt_events(s1)})
-	# T2 标准起手（木桩贴墙）
-	var s2 = run_seq([{"type": "skill", "id": "BMG_T1_004"}, {"type": "skill", "id": "BMG_T1_001"},
-		{"type": "basic"}, {"type": "basic"}, {"type": "skill", "id": "BMG_T1_002"},
-		{"type": "skill", "id": "BMG_T1_003"}, {"type": "skill", "id": "BMG_T2_001"},
-		{"type": "skill", "id": "BMG_T3_001"}, {"type": "fc"},
-		{"type": "skill", "id": "BMG_T4_001"}], 10.2, "f20")
+	# T2 标准起手（白盒修正版，F2/F3 裁定）：天击>落花掌(吹飞贴墙)>圆舞棍(扫地)>强龙压(扫地)，收尾不接豪龙破军
+	var s2 = run_seq([{"type": "skill", "id": "BMG_T1_001"}, {"type": "skill", "id": "BMG_T1_004"},
+		{"type": "skill", "id": "BMG_T2_001"}, {"type": "skill", "id": "BMG_T3_001"}], 9.0, "f20")
 	var r2 = summarize(s2)
-	out["templates"].append({"name": "T2 标准起手: 落花掌>天击>四连刺>圆舞棍>强龙压~FC>豪龙破军（木桩贴墙）", "sim": s2, "r": r2,
+	out["templates"].append({"name": "T2 标准起手(白盒修正版): 天击(浮空)>落花掌(吹飞贴墙)>圆舞棍(扫地强倒)>强龙压(扫地再倒)", "sim": s2, "r": r2,
 		"lines": fmt_events(s2)})
+	# T2b 同链 vs 无受身木桩（受身博弈的攻方面）
+	var s2b = run_seq([{"type": "skill", "id": "BMG_T1_001"}, {"type": "skill", "id": "BMG_T1_004"},
+		{"type": "skill", "id": "BMG_T2_001"}, {"type": "skill", "id": "BMG_T3_001"}], 9.0, "none")
+	var r2b = summarize(s2b)
+	out["templates"].append({"name": "T2b 标准起手 vs 无受身（收尾链完整口径）", "sim": s2b, "r": r2b,
+		"lines": fmt_events(s2b)})
+	# T5 浮空吹飞（F3 裁定：原著可验证连招）
+	var s5 = run_seq([{"type": "skill", "id": "BMG_T1_001"}, {"type": "skill", "id": "BMG_T1_004"}], 9.0, "f20")
+	var r5 = summarize(s5)
+	out["templates"].append({"name": "T5 浮空吹飞(F3 原著可验证): 天击(浮空)>走位>落花掌(空中强吹飞,撞墙)", "sim": s5, "r": r5,
+		"lines": fmt_events(s5)})
 	# T3 炫纹循环
 	var s3 = run_seq([{"type": "skill", "id": "BMG_T1_002"}, {"type": "skill", "id": "BMG_T1_003"},
 		{"type": "skill", "id": "BMG_T1_004"}, {"type": "skill", "id": "BMG_T1_001"},
@@ -391,15 +399,15 @@ func write_report(a_frames: Dictionary, a_tpl: Dictionary, a_dfs: Dictionary) ->
 	L.append("")
 	L.append("## 5. 白盒发现清单（按优先级）")
 	L.append("")
-	L.append("| # | 级别 | 发现 | 建议方向 |")
+	L.append("| # | 级别 | 发现 | 状态 |")
 	L.append("|---|---|---|---|")
-	L.append("| F1 | 设计 | **「浮空四连刺」不可复现**：天击浮空空气窗 0.67s（41f），攻击者取消后仅能补 1 刺（第 2 刺后目标已落地），模板要求 4 刺。T1/T2 模板时间轴均断在此处 | 需设计裁定：空中普攻更快的专用形态 / 延长浮空滞空（降重力或升 launch_v）/ 攻速对空中段收益 |")
-	L.append("| F2 | 设计 | **「标准起手」末端断链**：强龙压强制倒地后，豪龙破军无【扫地】标签 → 对倒地目标 WHIFF，模板最后一环非法 | 豪龙破军加扫地 / 模板收尾改圆舞棍系 / 模板重写 |")
-	L.append("| F3 | 数据 | **落花掌>天击硬链接不成立**：吹飞硬直 12f（+撞墙 10f）< 落花掌后摇 16f+走位耗时，目标先恢复行动（T2 时间轴 f76→f123 断链） | 吹飞类硬直基准提高（§5.1 击退 12–25f 取上限）或落花掌后摇缩短 ±2f |")
-	L.append("| F4 | 数据 | **幻影龙牙 CSV 自相矛盾**：active_f=12f 装不下 5 段×3f 间隔（需 ≥15f），违反 §4.1 多段间隔 ≥3f | skills.csv 修正 active 12→15（+3f 超 ±2f 规则，走平衡补丁流程）或段数降为 4 |")
-	L.append("| F5 | 实现 | 炫纹发射曾双结算（近战窗+弹道）、斗破山河延迟爆发曾随动作结束丢失——白盒首跑即暴露，已修复（pending_hits 机制） | 已修，回归测试=本审计 |")
+	L.append("| F1 | 设计 | 浮空空气窗不足以支撑四连刺。**已裁定 launch_v 7.5→9.0**（v0.3.7）：空气窗 0.68→0.82s，**三刺（天击>直刺×2）可复现**（T1 时间轴），取消龙牙差 1 帧落地。完整四刺需窗口 ~61f（launch_v≈11.2，超出可接受带）或空中快刺专用形态 | 部分解决——三刺达成；四刺方案待二轮裁定（空中快刺形态 / 接受三刺改模板） |")
+	L.append("| F2 | 设计 | 原标准起手豪龙破军收尾对倒地目标 WHIFF（无扫地）。**已裁定改模板**（v0.3.7）：收尾改 圆舞棍(扫地,受身无效)>强龙压(扫地,受身无效)。实测 T2b：无受身时收尾链 4 击全中、双强制倒地 ✓；vs f20 最优受身时圆舞棍被受身抢先（差 ~13f 走位）——**受身博弈按设计意图生效**（扫地连 vs 最优受身 = 防守方赢，原著「受身是练出来的」） | 已解决 |")
+	L.append("| F3 | 设计 | 原「落花掌>天击」硬链接不成立。**已裁定反转定义**（v0.3.7）：**浮空吹飞 = 天击(浮空)>走位>落花掌(空中强吹飞)** 为原著可验证连招。实测 T5：浮空命中 ✓ 吹飞 3m ✓（贴墙场景需木桩初始距离 >9m，边界 case 记录） | 已解决 |")
+	L.append("| F4 | 数据 | 幻影龙牙 active_f=12f 装不下 5 段×3f 间隔。**已修正 12→15**（v0.3.7，skills.csv + GDD §14.1.5 同步） | 已解决 |")
+	L.append("| F5 | 实现 | 炫纹发射曾双结算、斗破山河延迟爆发曾随动作结束丢失、普攻取消→技能缺失——白盒首跑暴露，已修复 | 已解决（回归=本审计） |")
 	L.append("")
-	L.append("**闸门结论（BMG 单职业穷举，6000 节点）**：五道闸门 0 违规；单连段峰值伤害 27.9% HP（≤45%）；最长连段 1.6s（设计带 4–6s 下限之下，连段深度偏保守）。")
+	L.append("**闸门结论（BMG 单职业穷举，6000 节点）**：五道闸门 0 违规；单连段峰值伤害 %.1f%% HP（≤45%%）；最长连段 %.1fs（设计带 4–6s，当前偏保守——BMG 无二段浮空源，闸门①⑤未受压力，Alpha 期补压测）。" % [a_dfs["max_dmg_pct"], a_dfs["max_frames"] / 60.0])
 	L.append("")
 	L.append("**闸门覆盖盲区**：BMG 无二段浮空刷新源（天击 CD 6s），闸门①浮空衰减 ×0.8ⁿ 与⑤3.0s 落地保护在本职业内**未受压力**——需 Alpha 期引入多浮空源职业（柔道家等）压测。")
 	L.append("")

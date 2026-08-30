@@ -4,7 +4,7 @@ BMG_BAS_002,矛击二段,BMG,BAS,basic,0,0,0,9,3,12,-,fan:r2.6:a90,2.8,90,0.32,p
 BMG_BAS_003,矛击三段,BMG,BAS,basic,0,0,0,10,3,13,-,fan:r2.6:a90,2.8,90,0.36,phys,1,14,0,-,none,none,-,0,0,0,any,0,-,-,1,normal,AM_BMG_BAS_003,VX_BMG_BAS_003_HIT,SD_BMG_BAS_003_HIT
 BMG_BAS_004,矛击四段,BMG,BAS,basic,0,0,0,11,3,14,-,fan:r2.6:a90,2.8,90,0.42,phys,1,14,0,-,none,none,-,0,0,0,any,0,-,-,1,normal,AM_BMG_BAS_004,VX_BMG_BAS_004_HIT,SD_BMG_BAS_004_HIT
 BMG_BAS_005,矛击五段,BMG,BAS,basic,0,0,0,14,4,18,-,fan:r2.6:a100,2.8,100,0.55,phys,1,20,2.0,-,none,none,-,0,0,0,any,0,-,收尾段,1,normal,AM_BMG_BAS_005,VX_BMG_BAS_005_HIT,SD_BMG_BAS_005_HIT
-BMG_T1_001,天击,BMG,T1,active,35,0,6,12,4,16,-,fan:r2.6:a100,2.6,100,0.82,magic,1,0,0,7.5,none,none,-,0,0,0,T1+,0,炫纹:光;起浮标准参照技,对空判定优,1,normal,AM_BMG_T1_001,VX_BMG_T1_001_HIT,SD_BMG_T1_001_HIT
+BMG_T1_001,天击,BMG,T1,active,35,0,6,12,4,16,-,fan:r2.6:a100,2.6,100,0.82,magic,1,0,0,9.0,none,none,-,0,0,0,T1+,0,炫纹:光;起浮标准参照技,对空判定优；白盒F1裁定：浮空初速7.5→9.0（空气窗0.68s→0.82s）,1,normal,AM_BMG_T1_001,VX_BMG_T1_001_HIT,SD_BMG_T1_001_HIT
 BMG_T1_002,龙牙,BMG,T1,active,30,0,5,10,3,14,-,box:0.8x0.8x2.4,2.4,-,0.80,phys,1,16,0,-,none,none,-,0,0,0,T1+,0,突进:1.5m;炫纹:无属性,直刺,5,normal,AM_BMG_T1_002,VX_BMG_T1_002_HIT,SD_BMG_T1_002_HIT
 BMG_T1_003,连突,BMG,T1,active,40,0,6,10,6,16,3,box:0.8x0.8x2.6,2.6,-,0.42,phys,2,14,0,-,bleed:60:4s@50%,none,none,0,0,0,T1+,0,炫纹:冰;同部位命中50%出血,两连刺,10,normal,AM_BMG_T1_003,VX_BMG_T1_003_HIT,SD_BMG_T1_003_HIT
 BMG_T1_004,落花掌,BMG,T1,active,40,0,4,14,4,16,-,box:1.2x1.2x5,4.5,-,0.84,phys,1,0,3.0,-,none,none,-,0,0,0,none,0,吹飞;炫纹:火,直线正面;全职业最短CD档,15,normal,AM_BMG_T1_004,VX_BMG_T1_004_HIT,SD_BMG_T1_004_HIT
@@ -12,7 +12,7 @@ BMG_T1_005,法力护盾,BMG,T1,buff,40,0,15,8,6s,10,-,none,-,-,0,none,-,0,0,-,no
 BMG_T1_006,炫纹发射,BMG,T1,active,0,0,3,4,-,6,-,proj:20m/s:追踪,20,-,0.70,magic,-,0,0,-,none,none,-,0,0,0,any,0,追踪:90°/s:无法躲闪;炫纹增益20s,每枚炫纹一发0.20倍率弹；增益按枚数（GDD14.1.3）,20,job_change,AM_BMG_T1_006,VX_BMG_T1_006_HIT,SD_BMG_T1_006_HIT
 BMG_T2_001,圆舞棍,BMG,T2,active,70,0,11,12,-,18,-,circle:r3.0,3.0,-,1.15,phys,1,0,2.0,-,none,none,-,1,0,0,T2+,1,强制倒地;受身无效;炫纹:暗,全向；弧度>180°伤害+10%,20,job_change,AM_BMG_T2_001,VX_BMG_T2_001_HIT,SD_BMG_T2_001_HIT
 BMG_T2_002,蛟龙出海,BMG,T2,active,65,0,12,14,-,16,-,fan:r4:a120,4.0,120,1.13,magic,1,14,0,-,slow:30%:3s,none,none,0,0,0,T2+,0,水花魔法斗气,配合风卷流云出云雾,25,job_change,AM_BMG_T2_002,VX_BMG_T2_002_HIT,SD_BMG_T2_002_HIT
-BMG_T2_003,幻影龙牙,BMG,T2,active,75,0,13,12,12,16,3,box:0.8x0.8x2.4,2.4,-,0.28,phys,5,14,0,-,none,none,-,0,0,0,T2+,0,幻影:2-5段:手速判定,段数由输入精度决定；失误幻影消散,30,job_change,AM_BMG_T2_003,VX_BMG_T2_003_HIT,SD_BMG_T2_003_HIT
+BMG_T2_003,幻影龙牙,BMG,T2,active,75,0,13,12,15,16,3,box:0.8x0.8x2.4,2.4,-,0.28,phys,5,14,0,-,none,none,-,0,0,0,T2+,0,幻影:2-5段:手速判定,段数由输入精度决定；失误幻影消散；白盒F4修正：active 12→15（5段×3f间隔需≥15f，§4.1）,30,job_change,AM_BMG_T2_003,VX_BMG_T2_003_HIT,SD_BMG_T2_003_HIT
 BMG_T3_001,强龙压,BMG,T3,active,100,0,25,18,5,22,-,box:1.2x1.0x3.0,3.0,-,1.98,phys,1,0,0,-,none,none,-,1,0,0,T3+,0,强制倒地;受身无效,判定极强（原著50级）,50,job_change,AM_BMG_T3_001,VX_BMG_T3_001_HIT,SD_BMG_T3_001_HIT
 BMG_T3_002,百龙流星打,BMG,T3,active,110,0,26,14,24,22,3,fan:r2.8:a110,2.8,110,0.28,phys,8,10,0,-,none,none,-,0,0,0,T3+,0,系统辅助:攻速+30%:持续,末段击退2m,45,job_change,AM_BMG_T3_002,VX_BMG_T3_002_HIT,SD_BMG_T3_002_HIT
 BMG_T3_003,怒龙穿心,BMG,T3,active,105,0,25,14,3,20,-,box:0.8x0.8x3.0,3.0,-,2.03,phys,1,30,0,-,none,none,-,0,0,0,T3+,0,对空:×1.15,形似直刺剜心口,55,job_change,AM_BMG_T3_003,VX_BMG_T3_003_HIT,SD_BMG_T3_003_HIT

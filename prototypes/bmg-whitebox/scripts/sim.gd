@@ -187,6 +187,14 @@ func try_act(f: Fighter, cmd: Dictionary) -> bool:
 			start_skill(f, def)
 			log_ev("CANCEL", {"from": from_id, "to": def["skill_id"]})
 			return true
+		if f.state == "ACT" and f.act["def"].get("type", "") == "basic" and f.act["phase"] != "startup":
+			# §4.2/§8.2 普攻取消→技能：每段生效帧后 4f 起，可取消为任意就绪技能（无需命中确认）
+			if f.act["t"] >= f.act["su"] + 1 + BASIC_CANCEL_LAG and can_cast(f, def):
+				var bdef: Dictionary = f.act["def"]
+				start_skill(f, def)
+				log_ev("CANCEL", {"from": bdef["skill_id"], "to": def["skill_id"]})
+				return true
+			return false
 		return false
 	if ty == "basic":
 		if f.state == "NORMAL":
