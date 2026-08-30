@@ -10,5 +10,6 @@
 - **当前阶段**: Phase 6/7 — 无头审计完成，待实机手感层
 - **无头审计结论（2026-08-31）**: 帧一致性 20/20；闸门 0 违规（BMG 穷举 6000 节点，峰值 27.9% HP，最长 1.6s）；假设1 部分成立（模板 2/4 断链：F1 浮空四连刺空气窗不足、F2 标准起手末端扫地缺失）；数据发现 F3（吹飞硬直<后摇）/F4（幻影龙牙 active 12f<15f）；实现修复 F5。报告：prototypes/bmg-whitebox/AUDIT-REPORT.md
 - **v0.3.7 裁定已落地（2026-08-31）**: F1 launch_v 7.5→9.0（三刺可复现，四刺差 9f 待二轮裁定：空中快刺形态/接受三刺）；F2 改模板（圆舞棍>强龙压 双扫地收尾，T2b 验证 ✓）；F3 反转定义（浮空吹飞=天击>落花掌，T5 验证 ✓）；F4 幻影龙牙 active 12→15（CSV+GDD 同步）；Sim 补 §4.2 普攻取消→技能
-- **下一步**: ①F1 二轮裁定（四刺是否改空中快刺形态）②实机手感层：Windows 侧 Godot 4.3 打开 prototypes/bmg-whitebox（main 场景待建）③或推进 Tech-Architecture
+- **Tech-Architecture v1.0 已完成（2026-08-31，commit c9af006）**: docs/architecture/architecture.md——TR 基线 45 条/五层架构（Core 纯 C# 引擎无关+Headless 纯 .NET 服务器）/模块所有权/五数据流（用户三修正：Hitstop 仅表现层、网络补偿与 Hitstop 无关、Rollback 幂等契约）/10 条必建 ADR。TD 自审 APPROVED WITH CONDITIONS（ADR-0001 定点化须先行）。引擎四件套落地：CLAUDE.md(项目级, Godot 4.3+C#+GdUnit4Net)+technical-preferences+engine-reference+review-mode lean
+- **下一步**: ①ADR-0001 确定性仿真核心（定点化策略，编码前必须）→ 0002 数据管线 → 0003 事件协议 → 0009 Tick 循环 ②F1 二轮裁定（四刺空中快刺形态）仍挂起 ③实机手感层待 Windows 侧
 - **裁定记录**: 用户 2026-08-31 选定 Engine/Godot 4 + 暂不实机先无头验证
