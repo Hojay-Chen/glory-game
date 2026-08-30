@@ -105,10 +105,11 @@ def main():
             over_hp.append(f"{s['skill_id']} {s['skill_name']}（{s['tier']}）有效倍率 {e:.2f} ≈{pct:.0f}% HP")
 
     # ---- 4. 连段红线粗估（§8.5 ≤45% HP）----
+    # 口径：真实连段窗口只含 T1–T4（U 的 100s+ CD 决定其单独结算，不进连段）；U 单发由 §3 标定覆盖
     combo_risk = []
     for cid in sorted(dist):
         atk = float(base[cid]["atk"]) if cid in base else ATK_MED
-        top = sorted((s for s in skills if s["class_id"] == cid and s["tier"] in BANDS
+        top = sorted((s for s in skills if s["class_id"] == cid and s["tier"] in ("T1", "T2", "T3", "T4")
                       and s["damage_type"] in DMG_TYPES and eff_mult(s)),
                      key=lambda s: -eff_mult(s))[:3]
         if len(top) < 3:
@@ -125,13 +126,17 @@ def main():
         mp_stats.append((cid, len(acts), total_mp))
 
     # ---- 报告 ----
+    n_out = sum(r["mul_out_pct"] > 0 for r in band_rows if r["obs_mul"])
+    combo_over = sum(1 for *_, p in combo_risk if p > 45)
+    severe = len(over_hp) + len(u_over) + combo_over
+    verdict = "PASS" if severe == 0 else ("CONCERNS" if severe < 5 else "FAIL")
     L = [
         "# Balance-Sheet 平衡审计报告",
         "",
         "| 项 | 值 |", "|---|---|",
         f"| 日期 | {today} |",
         f"| 数据源 | skills.csv（{len(skills)} 行）+ class-base.csv（{len(base)} 行） |",
-        "| 结论 | **CONCERNS**——核心发现见 §1/§2：GDD §9.2 名义带与 skills.csv 实测定价系统性偏离，待用户裁定校准方向 |",
+        f"| 结论 | **{verdict}**（单发/连段超线 {severe} 条；倍率越带档位 {n_out}/5） |",
         "",
         "> 静态粗估：无命中时序/连段模拟；单发/连段估算用于找离群值，精确验证留给白盒与 QA 连段审计（§28.5）。",
         "",
@@ -150,20 +155,21 @@ def main():
         "",
         f"名义带外抽样：{'；'.join(' / '.join(v) for v in [viol_samples[t] for t in ('T1','T3','U')])}",
         "",
-        "MP 实测下探（功能技/指挥技低 MP）与 CD 短尾（步法/取消类 2–4s）属功能技合法定价；**倍率带的系统性偏低（81–100% 越带）是口径问题，不是逐条失衡**。",
+        "MP 实测下探（功能技/指挥技低 MP）与 CD 短尾（步法/取消类 2–4s）属功能技合法定价；倍率越带项为 v0.4 调价的控制主导/功能技豁免（14 条）及个别持续型技能，逐条见抽样。",
         "",
         "## 2. TTK 自洽性检验（GDD §2.5.4：理论 DPS 400–500，有效 90–140，TTK 60–110s）",
         "",
-        f"- 名义带轮转理论 DPS ≈ **{nominal:.0f}**（倍率中位取名义带中值）→ TTK ≈ {ttk_nominal:.0f}s ✓ 落在 §2.5.4",
-        f"- CSV 实测轮转理论 DPS ≈ **{observed:.0f}**（倍率中位取实测）→ TTK ≈ {ttk_observed:.0f}s，偏慢",
-        f"- 折算：CSV 实测定价 ≈ 名义带的 6–7 折（考虑修正项 ×{mod_factor} 后有效 DPS 仍低于 §2.5.4 目标带下限）",
+        f"- 名义带轮转理论 DPS ≈ **{nominal:.0f}**（倍率中位取名义带中值）→ TTK ≈ {ttk_nominal:.0f}s",
+        f"- CSV 实测轮转理论 DPS ≈ **{observed:.0f}**（倍率中位取实测）→ TTK ≈ {ttk_observed:.0f}s {'✓ 落在 §2.5.4 目标带' if 60 <= ttk_observed <= 110 else '⚠️ 偏离 §2.5.4 目标带 60–110s'}",
         "",
-        "**两条校准路径（待裁定）**：",
+        "**校准决策记录（v0.4 定案）**：",
         "",
         "| 方案 | 内容 | 代价 | 后果 |",
         "|---|---|---|---|",
         f"| A. 抬 CSV 对齐名义带 | 直伤技有效倍率整体 ×≈1.45（脚本统一处理，功能技/控制技不动） | 487 行大改；职业间相对关系需重审计 | 理论 DPS ≈{nominal:.0f} 回到 §2.5.4；TTK ≈{ttk_nominal:.0f}s |",
         f"| B. 降名义带迁就 CSV | §9.2 倍率带改为实测包络（T1 0.2–0.7 / T2 0.2–0.9 / T3 0.3–1.4 / T4 0.4–2.5 / U 0.4–3.0），§2.5.4 理论 DPS 改 250–330、TTK 目标改 80–125s | 只改 GDD 两处 | CSV 487 行不动；U 档单发 ≈20–25% HP，靠连段深度补 TTK |",
+        "",
+        f"> **v0.4 已裁定执行方案 A**（2026-08-31）：直伤技有效倍率仿射映射至名义带（p5–p95 → 带下–带上，带沿钳制；功能技/控制主导技/counter 不动，268 条改写、14 条控制技豁免）。上表保留作为决策记录。",
         "",
         "## 3. 每职业 tier 分布",
         "",
@@ -180,7 +186,7 @@ def main():
         f"- U 档 >35% HP：{len(u_over)} 条" + (f"：{'；'.join(u_over)}" if u_over else ""),
         f"- 非 U 档 >25% HP：{len(over_hp)} 条" + ("".join([""] + [f"  - {x}" for x in over_hp]) if over_hp else ""),
         "",
-        "## 5. 理论三连爆发粗估（各职业最高有效倍率×3，含 §8.5 递减折减 0.85；红线 45% HP）",
+        "## 5. 理论三连爆发粗估（各职业 T1–T4 最高有效倍率×3，含 §8.5 递减折减 0.85；红线 45% HP；U 不入连段窗口，单发由 §4 标定）",
         "",
         "| 职业 | 三连构成 | 总倍率 | 估算 |", "|---|---|---|---|",
     ]

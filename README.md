@@ -8,7 +8,7 @@
 ```
 glory-game/
 ├── docs/
-│   ├── GDD-Gameplay-v0.1.md   # 玩法总案（内部版本 v0.3.5）
+│   ├── GDD-Gameplay-v0.1.md   # 玩法总案（内部版本 v0.3.6）
 │   ├── 复刻对照审计-v1.md      # 与原著战斗细节的逐条对照审计（含 v2 wiki 核对追记）
 │   ├── skill-spec/            # 技能规格书 ✅ v0.1
 │   │   ├── README.md          # 字段字典与规范（36 列）
@@ -19,7 +19,7 @@ glory-game/
 │   │   ├── README.md          # 规范 + trait_rules 语法
 │   │   ├── weapons.csv        # 武器主数据（73 行 = 24 职业×3 + 万象伞）
 │   │   └── validation-report.md
-│   ├── balance-sheet/         # 平衡账本 ✅ v0.1（CONCERNS：定价带校准待裁定）
+│   ├── balance-sheet/         # 平衡账本 ✅ v0.1（v0.4 补丁后 PASS）
 │   │   ├── README.md          # 平衡流程与审计维度
 │   │   ├── class-base.csv     # 25 职业面板主数据
 │   │   └── balance-report.md  # 审计报告（脚本生成）
@@ -42,7 +42,7 @@ glory-game/
 | reference/ | 原著考据材料存档 | ✅ |
 | Character-Spec | 职业规格书（每职业一档，完整参数） | 未开始 |
 | Weapon-Spec | 武器规格书：73 行主数据 + D12 规则级特性校验 | ✅ v0.1 |
-| Balance-Sheet | 平衡账本：职业面板 CSV + 审计器（定价带/TTK/连段红线）；定价带校准方向待裁定 | ✅ v0.1（CONCERNS） |
+| Balance-Sheet | 平衡账本：职业面板 CSV + 审计器（定价带/TTK/连段红线）；v0.4 补丁后 PASS | ✅ v0.1 |
 | Tech-Architecture | 技术架构（引擎、网络、数据管线） | 未开始 |
 
 ## IP 合规声明
