@@ -8,17 +8,28 @@
 ```
 glory-game/
 ├── docs/
-│   ├── GDD-Gameplay-v0.1.md   # 玩法总案（内部版本 v0.3）
+│   ├── GDD-Gameplay-v0.1.md   # 玩法总案（内部版本 v0.3.5）
 │   ├── 复刻对照审计-v1.md      # 与原著战斗细节的逐条对照审计（含 v2 wiki 核对追记）
 │   ├── skill-spec/            # 技能规格书 ✅ v0.1
-│   │   ├── README.md          # 字段字典与规范（38 列）
-│   │   ├── skills.csv         # 全技能主数据（532 行，唯一事实源）
+│   │   ├── README.md          # 字段字典与规范（36 列）
+│   │   ├── skills.csv         # 全技能主数据（487 行，唯一事实源）
 │   │   ├── 实现注记.md         # 特殊规则实现语义
 │   │   └── validation-report.md
+│   ├── weapon-spec/           # 武器规格书 ✅ v0.1
+│   │   ├── README.md          # 规范 + trait_rules 语法
+│   │   ├── weapons.csv        # 武器主数据（73 行 = 24 职业×3 + 万象伞）
+│   │   └── validation-report.md
+│   ├── balance-sheet/         # 平衡账本 ✅ v0.1（CONCERNS：定价带校准待裁定）
+│   │   ├── README.md          # 平衡流程与审计维度
+│   │   ├── class-base.csv     # 25 职业面板主数据
+│   │   └── balance-report.md  # 审计报告（脚本生成）
 │   ├── reference/
 │   │   └── 荣耀职业介绍-ycyoc-wiki.md   # 原著考据基准（用户提供的 wiki 抓取存档）
 └── tools/
-    └── validate_skills.py     # 技能数据结构校验脚本
+    ├── validate_skills.py     # 技能数据构建+校验
+    ├── validate_weapons.py    # 武器数据校验（含 D12 红线）
+    ├── balance_audit.py       # 平衡审计（定价带/TTK/连段红线）
+    └── learn_levels.py        # 原著习得等级数据
 ```
 
 ## 文档体系规划（后续拆分）
@@ -27,12 +38,11 @@ glory-game/
 |------|------|------|
 | GDD-Gameplay | 玩法总案：系统规则 + 24 职业详设（考据版）+ 武器 + 模式框架 | ✅ v0.3 |
 | 复刻对照审计 | 与原著战斗细节逐条对照；v2 追记完成 wiki 全量核对 | ✅ v1+v2 |
-| Skill-Spec | 技能规格书：532 技能条目全参数 CSV + 字段字典 + 实现注记 + 校验 | ✅ v0.1 |
+| Skill-Spec | 技能规格书：487 技能条目全参数 CSV（含习得等级）+ 字段字典 + 实现注记 + 校验 | ✅ v0.1 |
 | reference/ | 原著考据材料存档 | ✅ |
 | Character-Spec | 职业规格书（每职业一档，完整参数） | 未开始 |
-| Skill-Spec | 技能规格书（每技能 30+ 字段全参数） | 未开始 |
-| Weapon-Spec | 武器规格书 | 未开始 |
-| Balance-Sheet | 平衡数值表（可调数值集中管理） | 未开始 |
+| Weapon-Spec | 武器规格书：73 行主数据 + D12 规则级特性校验 | ✅ v0.1 |
+| Balance-Sheet | 平衡账本：职业面板 CSV + 审计器（定价带/TTK/连段红线）；定价带校准方向待裁定 | ✅ v0.1（CONCERNS） |
 | Tech-Architecture | 技术架构（引擎、网络、数据管线） | 未开始 |
 
 ## IP 合规声明

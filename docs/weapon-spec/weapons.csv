@@ -1,0 +1,74 @@
+weapon_id,weapon_name,class_id,type,grade,atk_mod,atk_spd,range_m,weight,basic_attack,trait,trait_rules,notes
+W_BMG_001,银月枪,BMG,spear,standard,0,1.00,3.2,medium,5段矛术（fan:r2.6:a90；BMG_BAS_001–005）,-,-,GDD §16.1
+W_BMG_002,疾风战枪,BMG,spear,special,0,1.10,3.2,medium,5段矛术（fan:r2.6:a90；BMG_BAS_001–005）,龙牙突进距离 1.5m → 2m,龙牙(BMG_T1_002):突进 1.5m→2.0m,GDD §16.1
+W_BMG_003,破魔重枪,BMG,spear,masterwork,0.03,0.90,3.2,medium,5段矛术（fan:r2.6:a90；BMG_BAS_001–005）,浮空类技能浮空初速 +0.5（上限 9.5）,浮空类技能:launch_v +0.5(上限9.5),GDD §16.1
+W_ELE_001,榆木法杖,ELE,staff,standard,0,0.95,25.0,light,单段法术弹（ELE_BAS_001）,-,-,GDD §16.2
+W_ELE_002,晶簇法杖,ELE,staff,special,0,0.90,25.0,light,单段法术弹（ELE_BAS_001）,光电环前摇 −2f（落雷 TODO）,光电环(ELE_T1_002):startup 6f→4f;落雷(TODO:技能未收录):startup −2f,GDD §16.2；「落雷」在 skills.csv 无对应技能 → validation-report GDD-GAP
+W_ELE_003,洪流,ELE,staff,masterwork,0,0.92,25.0,light,单段法术弹（ELE_BAS_001）,全神贯注 CD 45s → 38s,全神贯注(ELE_T4_003):cd 45→38,GDD §16.2
+W_SUM_001,藤蔓杖,SUM,wand,standard,0,0.95,15.0,light,单段魔杖弹（SUM_BAS_001）,-,-,GDD §16.3
+W_SUM_002,灵纹杖,SUM,wand,special,0,0.90,15.0,light,单段魔杖弹（SUM_BAS_001）,召唤施法 12f → 8f,召唤类技能:startup 12f→8f（死亡骑士/魔界之花 16f→12f）,GDD §16.3
+W_SUM_003,群灵之契,SUM,wand,masterwork,0,0.92,15.0,light,单段魔杖弹（SUM_BAS_001）,召唤兽继承面板 30% → 33%,召唤兽:继承面板 30%→33%,GDD §16.3；基础值 30% 见 GDD §14.3.3
+W_WIT_001,星帚,WIT,broom,standard,0,1.00,2.5,light,3段扫把横扫（fan:r2.5:a180；WIT_BAS_001–003）,-,-,GDD §16.4
+W_WIT_002,疾风帚,WIT,broom,special,0,1.08,2.5,light,3段扫把横扫（fan:r2.5:a180；WIT_BAS_001–003）,飞行时长 4s(+1) → 4.5s(+1),扫把掌握:飞行时长 4s→4.5s,GDD §16.4
+W_WIT_003,老朋友,WIT,broom,masterwork,0,1.00,2.5,light,3段扫把横扫（fan:r2.5:a180；WIT_BAS_001–003）,被击坠时所受伤害封顶 1200 → 800,击坠:所受伤害封顶 1200→800,GDD §16.4；基础封顶 1200 已补录 GDD §14.4.3（防御向规则级）
+W_BLA_001,青锋·短剑,BLA,sword,standard,0,1.10,2.2,medium,5段剑击（BLA_BAS_001–005）,-,-,GDD §16.5；短剑：攻速基准最高
+W_BLA_002,重剑·镇岳,BLA,heavy_sword,special,0.04,0.85,3.0,heavy,5段剑击·重剑模组（同链慢速大判定）,重击类命中硬直 +2f、击退 +0.3m；格挡盾值 1500 → 1800,重击类技能:hitstun+2f:knockback+0.3m;格挡(BLA_T1_002):盾值 1500→1800,GDD §16.5；原「重击类伤害+10%」违反 D12 已规则化改写（validation-report 变更记录 #1）
+W_BLA_003,太刀·疾风,BLA,katana,masterwork,0,1.05,2.6,medium,5段剑击·太刀模组（同链快速）,三段斩位移 +1m,三段斩(BLA_T2_001):位移 +1m,GDD §16.5；剑五类之 大剑/光剑 版随 v0.2 Weapon-Spec 扩展
+W_BER_001,镇岳,BER,heavy_sword,standard,0,0.90,2.8,heavy,4段巨剑（BER_BAS_001–004）,-,-,GDD §16.6；与 BLA 特化「重剑·镇岳」重名 → validation-report 建议改名
+W_BER_002,裂地重刃,BER,heavy_sword,special,0.05,0.82,2.8,heavy,4段巨剑（BER_BAS_001–004）,重击命中硬直 +2f、击退 +0.5m,重击(BER_T1_002):hitstun+2f:knockback+0.5m,GDD §16.6；原「重量系数×1.15」违反 D12 已规则化改写（变更记录 #2）
+W_BER_003,饮血,BER,heavy_sword,masterwork,0.02,0.88,2.8,heavy,4段巨剑（BER_BAS_001–004）,嗜血奋战期间普攻链延长一段（4段→5段）,嗜血奋战(BER_U_001)期间:普攻链 +1段（4段→5段）,GDD §16.6；原「5%吸血」违反 D12 已规则化改写（变更记录 #3）
+W_SBL_001,湛卢,SBL,magic_sword,standard,0,1.00,2.4,medium,4段魔剑（SBL_BAS_001–004）,-,-,GDD §16.7
+W_SBL_002,三色刃,SBL,magic_sword,special,0,0.95,2.4,medium,4段魔剑（SBL_BAS_001–004）,波动共鸣叠层所需波动剑种类 −1,杀意波动:波动共鸣叠层所需种类 3→2,GDD §16.7
+W_SBL_003,咏叹,SBL,magic_sword,masterwork,0,0.98,2.4,medium,4段魔剑（SBL_BAS_001–004）,电光波动阵半径 6m → 6.5m,电光波动阵(SBL_T4_001):半径 6.0→6.5,GDD §16.7
+W_GBL_001,鬼哭,GBL,sword,standard,0,1.05,2.5,medium,5段鬼刀（GBL_BAS_001–005）,-,-,GDD §16.8；鬼剑士谱系 短剑/太刀
+W_GBL_002,迅影太刀,GBL,katana,special,0,1.12,2.5,medium,5段鬼刀·太刀模组,鬼步 CD −1s,鬼步(GBL_T1_004):cd 8→7,GDD §16.8
+W_GBL_003,双魂,GBL,sword,masterwork,0,1.02,2.5,medium,5段鬼刀（GBL_BAS_001–005）,鬼阵存在时间 12s → 15s,鬼阵类部署技:存在时间 12s→15s（寂静之阵 10s→13s）,GDD §16.8
+W_SRP_001,标准左轮,SRP,pistol,standard,0,1.00,25.0,light,单段左轮射击（SRP_BAS_001；弹匣15发/换弹1.2s）,-,-,GDD §16.9
+W_SRP_002,速射左轮,SRP,pistol,special,-0.02,1.10,25.0,light,单段左轮射击（SRP_BAS_001）,换弹 1.2s → 1.0s,换弹:1.2s→1.0s,GDD §16.9
+W_SRP_003,鹰眼,SRP,pistol,masterwork,0,1.00,25.0,light,单段左轮射击（SRP_BAS_001）,巴雷特狙击蓄力 1.2s → 1.0s,巴雷特狙击(SRP_T4_001):蓄力 1.2s→1.0s,GDD §16.9
+W_SPF_001,军规弩,SPF,crossbow,standard,0,1.00,22.0,medium,单段弩射击（SPF_BAS_001）,-,-,GDD §16.10；步枪谱系 v0.2 扩展（原著 手弩/步枪）
+W_SPF_002,连弩,SPF,crossbow,special,0,1.12,22.0,medium,单段弩射击（SPF_BAS_001）,手雷库存 3种×5 → 3种×6,手雷库存:3种×5→3种×6,GDD §16.10
+W_SPF_003,万象弹匣,SPF,crossbow,masterwork,0,1.00,22.0,medium,单段弩射击（SPF_BAS_001）,属性弹装填公共 CD 1.5s → 1.0s,属性弹装填:公共CD 1.5s→1.0s,GDD §16.10；「万象」前缀与万象伞无关（IP 合规自创名）
+W_LAU_001,镇场手炮,LAU,cannon,standard,0,0.85,35.0,heavy,单段重炮弹（LAU_BAS_001）,-,-,GDD §16.11；重火力控制需手炮（原著）
+W_LAU_002,速热炮管,LAU,cannon,special,0.02,0.90,35.0,heavy,单段重炮弹（LAU_BAS_001）,格林机枪段数 15 → 18,格林机枪(LAU_T2_001):hits 15→18,GDD §16.11
+W_LAU_003,堡垒,LAU,cannon,masterwork,0.04,0.82,35.0,heavy,单段重炮弹（LAU_BAS_001）,稳定炮架持续 8s → 10s,稳定炮架(LAU_T4_001):持续 8s→10s,GDD §16.11
+W_MEH_001,制式配枪,MEH,mech_pistol,standard,0,1.05,18.0,light,单段机械手枪射击（MEH_BAS_001）,-,-,GDD §16.12
+W_MEH_002,高频电枪,MEH,mech_pistol,special,0,1.12,18.0,light,单段机械手枪射击（MEH_BAS_001）,自走火炮射击间隔 2s → 1.6s,自走火炮(MEH_T3_002):射击间隔 2s→1.6s,GDD §16.12
+W_MEH_003,指挥核心,MEH,mech_pistol,masterwork,0,1.00,18.0,light,单段机械手枪射击（MEH_BAS_001）,部署位 3 → 4（单位继承面板降至 20%）,部署位:3→4;单位继承面板 25%→20%,GDD §16.12
+W_STR_001,铁拳,STR,glove,standard,0,1.10,1.4,medium,6段拳击（STR_BAS_001–006）,-,-,GDD §16.13
+W_STR_002,疾风拳刺,STR,glove,special,0,1.18,1.4,medium,6段拳击（STR_BAS_001–006）,鹰踏满阶五脚 → 六脚,鹰踏(STR_T2_004):满阶 5脚→6脚,GDD §16.13
+W_STR_003,崩玉,STR,glove,masterwork,0,1.05,1.4,medium,6段拳击（STR_BAS_001–006）,寸劲近距离阈值 1m → 1.3m,寸劲(STR_T3_004):近距离阈值 1m→1.3m,GDD §16.13；原「1m内加伤+15%→+20%」违反 D12 已规则化改写（变更记录 #4）
+W_QIM_001,清风,QIM,gauntlet,standard,0,1.05,2.0,medium,4段念气拳（QIM_BAS_001–004）,-,-,GDD §16.14
+W_QIM_002,龙纹手环,QIM,gauntlet,special,0,1.00,2.0,medium,4段念气拳（QIM_BAS_001–004）,念气罩耐久 2000 → 2400,念气罩(QIM_T2_002):耐久 2000→2400,GDD §16.14
+W_QIM_003,天罡,QIM,gauntlet,masterwork,0,1.02,2.0,medium,4段念气拳（QIM_BAS_001–004）,螺旋念气杀逆时针吸附 3m → 4m,螺旋念气杀(QIM_T4_002):吸附 3m→4m,GDD §16.14
+W_GRP_001,岩腕,GRP,gauntlet,standard,0,1.05,1.3,medium,4段摔技（GRP_BAS_001–004）,-,-,GDD §16.15
+W_GRP_002,猛禽护手,GRP,gauntlet,special,0,1.10,1.3,medium,4段摔技（GRP_BAS_001–004）,头上拂对空判定半径 +0.3m,头上拂(GRP_T2_004):半径 1.5→1.8,GDD §16.15
+W_GRP_003,千钧,GRP,gauntlet,masterwork,0,1.00,1.3,medium,4段摔技（GRP_BAS_001–004）,抛投方向可控 8向 → 16向,抛投(GRP_T1_002):方向 8→16,GDD §16.15
+W_ROG_001,蝎尾,ROG,claw,standard,0,1.08,1.8,medium,4段爪击（ROG_BAS_001–004）,-,-,GDD §16.16；爪+暗器（暗器为技能层 §14.16）
+W_ROG_002,淬毒爪,ROG,claw,special,0,1.02,1.8,medium,4段爪击（ROG_BAS_001–004）,涂毒附加减速 20%/2s,涂毒(ROG_T2_004):附加 slow:20%:2s,GDD §16.16；原「涂毒一次伤害+15%」违反 D12 已规则化改写（变更记录 #5）
+W_ROG_003,阴手,ROG,claw,masterwork,0,1.05,1.8,medium,4段爪击（ROG_BAS_001–004）,以牙还牙记录上限 3 → 4,以牙还牙(ROG_T4_001):记录上限 3→4,GDD §16.16
+W_ASN_001,银牙·匕首,ASN,dagger,standard,0,1.15,1.5,light,5段匕击（ASN_BAS_001–005）,-,-,GDD §16.17；匕首：全武器攻速基准最高（原著错手刺/双刀二段流谱系）
+W_ASN_002,影牙·双剑,ASN,twin_sword,special,-0.02,1.08,1.5,medium,5段匕击·双剑模组,解锁【双刀二段流】：招架系技能对本体无效化,解锁:双刀二段流;招架系技能对本体无效;错手刺(ASN_T2_001):双剑效果,GDD §16.17
+W_ASN_003,无声,ASN,dagger,masterwork,0,1.12,1.5,light,5段匕击（ASN_BAS_001–005）,步法四技 CD 3s → 2.4s,步法四技(ASN_T2_006/007/008/009):cd 3→2.4,GDD §16.17
+W_THF_001,夜刃,THF,sword,standard,0,1.10,1.6,medium,3段短剑（THF_BAS_001–003）,-,-,GDD §16.18
+W_THF_002,无踪,THF,dagger,special,0,1.05,1.6,light,3段短剑·匕首模组,潜行移速 60% → 70%,潜行(THF_T1_001):移速 60%→70%,GDD §16.18
+W_THF_003,暗手,THF,dagger,masterwork,0,1.05,1.6,light,3段短剑·匕首模组,暗影陷阱瞬移后 0.5s 内攻击附带【破霸体】,暗影陷阱(THF_T3_002):瞬移后0.5s内攻击附带破霸体,GDD §16.18；原「瞬移后0.5s内伤害+15%」违反 D12 已规则化改写（变更记录 #6）
+W_NJA_001,影切·忍刀,NJA,katana,standard,0,1.05,1.8,medium,4段忍刀（NJA_BAS_001–004）,-,-,GDD §16.19；原名「影 cutting·忍刀」为抓取噪声已正名为「影切·忍刀」（validation-report 变更记录 #7）；忍刀=刀+鞘（原著）
+W_NJA_002,双鞘忍刀,NJA,katana,special,0,1.02,1.8,medium,4段忍刀（NJA_BAS_001–004）,空蝉双杀刀鞘分袭判定 +30°,忍法·空蝉双杀(NJA_T2_004):角度 160°→190°,GDD §16.19
+W_NJA_003,樱吹雪,NJA,katana,masterwork,0,1.00,1.8,medium,4段忍刀（NJA_BAS_001–004）,结印速度 +20%（结印时间 −20%）,结印:时间 ×0.8,GDD §16.19；时间参数规则级
+W_WRK_001,禁书典杖,WRK,staff,standard,0,0.92,20.0,light,单段暗影弹（WRK_BAS_001）,-,-,GDD §16.20
+W_WRK_002,咒典,WRK,staff,special,0,0.90,20.0,light,单段暗影弹（WRK_BAS_001）,诅咒之箭蓄力箭数上限 26 → 30,诅咒之箭(WRK_T1_001):满蓄箭数 26→30,GDD §16.20
+W_WRK_003,长夜,WRK,staff,masterwork,0,0.90,20.0,light,单段暗影弹（WRK_BAS_001）,六星光牢 3.5s → 4.0s,六星光牢(WRK_U_001):持续 3.5s→4.0s,GDD §16.20
+W_PRI_001,白蜡杖,PRI,scepter,standard,0,0.95,16.0,light,单段圣光弹（PRI_BAS_001）,-,-,GDD §16.21
+W_PRI_002,圣愈之杖,PRI,scepter,special,0,0.92,16.0,light,单段圣光弹（PRI_BAS_001）,治疗术（无CD版）吟唱 24f → 20f,治疗术(PRI_T1_002):startup 24f→20f,GDD §16.21；GDD 原文 0.8s→0.7s 与 skills.csv 24f 不一致 → 已按 CSV 口径改写（GDD-GAP 同步）
+W_PRI_003,晨祷,PRI,scepter,masterwork,0,0.95,16.0,light,单段圣光弹（PRI_BAS_001）,净化 CD 12s → 10s,净化(PRI_T2_005):cd 12→10,GDD §16.21
+W_GAN_001,白羽杖,GAN,scepter,standard,0,0.95,2.2,light,2段权杖击（GAN_BAS_001–002）,-,-,GDD §16.22；权杖+圣盾（圣盾为技能层 §14.22）
+W_GAN_002,坚盾套装,GAN,shield_sword,special,0,0.88,2.2,heavy,2段权杖击·持盾模组（格挡姿态）,圣盾术持续 4s → 4.5s,圣盾术(GAN_T2_001):持续 4s→4.5s,GDD §16.22
+W_GAN_003,圣佑,GAN,scepter,masterwork,0,0.92,2.2,light,2段权杖击（GAN_BAS_001–002）,恢复术回复间隔 3s → 2.5s,恢复术(GAN_T1_002):回复间隔 3s→2.5s,GDD §16.22；原「每跳200→250」违反 D12 已规则化改写（变更记录 #8）
+W_KNI_001,鸢盾剑,KNI,shield_sword,standard,0,0.90,2.0,heavy,3段剑盾（KNI_BAS_001–003）,-,-,GDD §16.23
+W_KNI_002,重盾套装,KNI,shield_sword,special,0,0.85,2.0,heavy,3段剑盾·重盾模组,盾墙持续 6s → 7s,盾墙(KNI_T2_005):持续 6s→7s,GDD §16.23；原「盾墙减伤85%→88%」违反 D12 已规则化改写（变更记录 #9）
+W_KNI_003,誓约,KNI,shield_sword,masterwork,0,0.88,2.0,heavy,3段剑盾（KNI_BAS_001–003）,风暴反击持续 10s → 12s,风暴反击(KNI_T3_005):持续 10s→12s,GDD §16.23；原「反弹比例+10%」违反 D12 已规则化改写（变更记录 #10）
+W_EXO_001,幽镰,EXO,scythe,standard,0,0.95,2.8,medium,4段战镰（EXO_BAS_001–004）,-,-,GDD §16.24；战镰（原著明示）
+W_EXO_002,回旋镰,EXO,scythe,special,0,1.00,2.8,medium,4段战镰（EXO_BAS_001–004）,魂御投掷弹速 +20%,魂御(EXO_T2_007):弹速 25m/s→30m/s,GDD §16.24
+W_EXO_003,镇魂,EXO,scythe,masterwork,0,0.92,2.8,medium,4段战镰（EXO_BAS_001–004）,魂御抓回抓取判定半径 +0.3m,魂御(EXO_T2_007):抓回抓取半径 +0.3m,GDD §16.24
+W_UNS_001,万象伞,UNS,umbrella,masterwork,-,0.95, -,medium,六形态独立普攻模组（UNS_BAS_001–006）,形态切换即其特性（无精工词条）,形态切换:六形态独立普攻模组(UNS_BAS_001~006):随形态攻速 0.95–1.10,GDD §16.25；散人唯一武器不可更换（D13/D14）；range_m 随形态 1.8–25m 波动故留空
