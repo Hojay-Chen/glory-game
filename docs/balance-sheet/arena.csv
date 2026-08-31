@@ -1,0 +1,27 @@
+arena_id,object_id,kind,shape,x_m,z_m,r_m,half_w_m,half_d_m,height_m,hp,interaction,notes
+ARENA001,A_boundary,boundary,rect,0,0,,30,42,0,0,bounce,GDD §19.2 外场 60×84m 结界墙
+ARENA001,A_platform_center,platform,circle,0,0,8,,,1.2,0,fall_edge,GDD §19.3 中央擂台 r8m 高1.2m
+ARENA001,A_platform_north,platform,rect,0,28,,6,4,3,0,fall_edge,GDD §19.3 北高台 12×8m 高3m
+ARENA001,A_platform_south,platform,rect,0,-28,,6,4,3,0,fall_edge,GDD §19.3 南高台
+ARENA001,A_ramp_north,ramp,rect,0,14.5,,2,4,1.5,0,none,GDD §19.3 坡道 宽4m 30°（连通北高台）
+ARENA001,A_ramp_south,ramp,rect,0,-14.5,,2,4,1.5,0,none,GDD §19.3 坡道（连通南高台）
+ARENA001,A_cover_wall_e,cover_wall,rect,22,0,,1.2,4,2.4,800,block_los_proj,GDD §19.4 可破坏
+ARENA001,A_cover_wall_w,cover_wall,rect,-22,0,,1.2,4,2.4,800,block_los_proj,GDD §19.4 可破坏
+ARENA001,A_pillar_ne,pillar,circle,18,18,0.8,,,4,0,block_los_proj,GDD §19.5 特殊技能可碎(每局一次)
+ARENA001,A_pillar_nw,pillar,circle,-18,18,0.8,,,4,0,block_los_proj,同上
+ARENA001,A_pillar_se,pillar,circle,18,-18,0.8,,,4,0,block_los_proj,同上
+ARENA001,A_pillar_sw,pillar,circle,-18,-18,0.8,,,4,0,block_los_proj,同上
+ARENA001,A_wood_ne,prop_wood,rect,26,34,,0.5,0.5,1.5,200,block_los_proj,GDD §19.4 木箱 碎后挡视线4s
+ARENA001,A_wood_nw,prop_wood,rect,-26,34,,0.5,0.5,1.5,200,block_los_proj,同上
+ARENA001,A_wood_se,prop_wood,rect,26,-34,,0.5,0.5,1.5,200,block_los_proj,同上
+ARENA001,A_wood_sw,prop_wood,rect,-26,-34,,0.5,0.5,1.5,200,block_los_proj,同上
+ARENA001,A_pot_ne,prop_pot,point,27,36,,0,0,0,1,restore_mp,GDD §19.4 陶罐 5%MP r2m 拾取
+ARENA001,A_pot_nw,prop_pot,point,-27,36,,0,0,0,1,restore_mp,同上
+ARENA001,A_pot_se,prop_pot,point,27,-36,,0,0,0,1,restore_mp,同上
+ARENA001,A_pot_sw,prop_pot,point,-27,-36,,0,0,0,1,restore_mp,同上
+ARENA001,A_rock_e,prop_rock,rect,26,22,,0.8,0.8,1.2,0,block_los_proj,GDD §19.3 边界乱石区 石块
+ARENA001,A_rock_w,prop_rock,rect,-26,-22,,0.8,0.8,1.2,0,block_los_proj,同上
+ARENA001,A_spawn_1v1_n,spawn,point,0,4,,0,0,1.2,0,none,1v1 对角对称（中央擂台上）
+ARENA001,A_spawn_1v1_s,spawn,point,0,-4,,0,0,1.2,0,none,与 north 取反对称
+ARENA001,A_spawn_team_n,spawn,point,0,38,,0,0,0,0,none,5v5 布局 TODO-GAP（§20.4 细化）
+ARENA001,A_spawn_team_s,spawn,point,0,-38,,0,0,0,0,none,TODO-GAP

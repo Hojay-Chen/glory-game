@@ -91,7 +91,7 @@ BLA_BAS_003,剑击三段,BLA,BAS,basic,0,0,0,10,3,14,-,fan:r2.2:a90,2.2,90,0.38,
 BLA_BAS_004,剑击四段,BLA,BAS,basic,0,0,0,12,4,16,-,fan:r2.2:a100,2.2,100,0.42,phys,1,14,0,-,none,none,-,0,0,0,any,0,-,-,1,normal,AM_BLA_BAS_004,VX_BLA_BAS_004_HIT,SD_BLA_BAS_004_HIT
 BLA_BAS_005,剑击五段,BLA,BAS,basic,0,0,0,16,4,22,-,fan:r2.4:a110,2.4,110,0.55,phys,1,25,2.0,-,none,none,-,0,0,0,any,0,-,强硬直收尾,1,normal,AM_BLA_BAS_005,VX_BLA_BAS_005_HIT,SD_BLA_BAS_005_HIT
 BLA_T1_001,上挑,BLA,T1,active,30,0,5,12,4,16,-,fan:r2.2:a90,2.2,90,0.84,phys,1,0,0,7.5,none,none,-,0,0,0,T1+,0,-,标准起浮,1,normal,AM_BLA_T1_001,VX_BLA_T1_001_HIT,SD_BLA_T1_001_HIT
-BLA_T1_002,格挡,BLA,T1,buff,20,0,8,4,维持,-,-,cone:r2.2:a120,2.2,120,0,none,-,0,0,-,none,none,-,0,0,0,any,0,化解物理70%;盾值1500,不化解法术（原著）,5,normal,AM_BLA_T1_002,VX_BLA_T1_002,SD_BLA_T1_002
+BLA_T1_002,格挡,BLA,T1,buff,20,0,8,4,hold,-,-,cone:r2.2:a120,2.2,120,0,none,-,0,0,-,none,none,-,0,0,0,any,0,化解物理70%;盾值1500,不化解法术（原著）,5,normal,AM_BLA_T1_002,VX_BLA_T1_002,SD_BLA_T1_002
 BLA_T1_003,连突刺,BLA,T1,active,40,0,6,10,6,16,3,box:0.7x0.7x2.4,2.4,-,0.41,phys,2,12,0,-,none,none,-,0,0,0,T1+,0,连击段数2-4随加点,1阶二连10阶四连（原著）,5,normal,AM_BLA_T1_003,VX_BLA_T1_003_HIT,SD_BLA_T1_003_HIT
 BLA_T2_001,三段斩,BLA,T2,active,55,0,9,10,9,16,3,fan:r2.2:a100,2.2,100,0.41,phys,3,12,0,-,none,none,-,0,0,0,T2+,0,横斩+下劈+上挑,常用于快速走位（原著）,25,job_change,AM_BLA_T2_001,VX_BLA_T2_001_HIT,SD_BLA_T2_001_HIT
 BLA_T2_002,银光落刃,BLA,T2,active,70,0,12,12,-,18,-,circle:r3.0:跳跃加成,3.0,-,1.18,phys,1,0,1.0,-,none,none,-,1,0,0,-,0,跳跃高度∝威力与范围,空中技,10,normal,AM_BLA_T2_002,VX_BLA_T2_002_HIT,SD_BLA_T2_002_HIT
@@ -100,7 +100,7 @@ BLA_T2_004,升龙斩,BLA,T2,active,60,0,10,12,4,16,-,fan:r2.2:a80,2.2,80,1.15,ph
 BLA_T2_005,落凤斩,BLA,T2,active,60,0,10,14,4,16,-,cone:r2.4:a120,2.4,120,1.18,phys,1,0,1.0,-,none,none,-,1,0,0,T2+,0,向下位移;强击倒判定,侧半身回旋（原著）,25,job_change,AM_BLA_T2_005,VX_BLA_T2_005_HIT,SD_BLA_T2_005_HIT
 BLA_T2_006,仙人指路,BLA,T2,active,55,0,9,12,3,14,-,box:0.8x0.8x3.2,3.2,-,1.16,phys,1,16,3.0,-,none,none,-,0,0,0,T2+,0,强力吹飞3m,刺杀技,15,normal,AM_BLA_T2_006,VX_BLA_T2_006_HIT,SD_BLA_T2_006_HIT
 BLA_T3_001,风残草尽,BLA,T3,active,85,0,22,14,-,16,-,circle:r3.0,3.0,-,1.67,phys,1,14,2.5,-,none,none,-,0,0,0,T3+,0,剑圈逼退,反围剿技,30,job_change,AM_BLA_T3_001,VX_BLA_T3_001_HIT,SD_BLA_T3_001_HIT
-BLA_T3_002,逆风刺,BLA,T3,active,90,0,24,16,可控,18,-,box:1.0x1.0x2.0-3.6,3.6,-,1.84,phys,1,20,0,-,none,none,-,0,0,0,T3+,0,剑圈范围由操作控制,留一手心理战（原著）,45,job_change,AM_BLA_T3_002,VX_BLA_T3_002_HIT,SD_BLA_T3_002_HIT
+BLA_T3_002,逆风刺,BLA,T3,active,90,0,24,16,controlled,18,-,box:1.0x1.0x2.0-3.6,3.6,-,1.84,phys,1,20,0,-,none,none,-,0,0,0,T3+,0,剑圈范围由操作控制,留一手心理战（原著）,45,job_change,AM_BLA_T3_002,VX_BLA_T3_002_HIT,SD_BLA_T3_002_HIT
 BLA_T3_003,剑影步,BLA,T3,active,60,0,18,8,2s,10,-,self,4.0,-,0,none,-,0,0,-,none,none,-,0,0,0,any,0,无伤害虚体残影,迷惑用；不可伤人不可被伤（原著）,35,job_change,AM_BLA_T3_003,VX_BLA_T3_003,SD_BLA_T3_003
 BLA_T4_001,剑刃风暴,BLA,T4,active,150,0,55,14,2s,18,10,circle:r2.8,2.8,-,0.20,phys,12,10,0,-,none,none,-,0,0,0,T4+,1,末段击退2m,期间移速-50%；v0.4压线：0.22→0.20（BLA T4三连理论粗估46%超线45%，12段总倍率2.64→2.40）,65,job_change,AM_BLA_T4_001,VX_BLA_T4_001_HIT,SD_BLA_T4_001_HIT
 BLA_T4_002,幻影无形剑,BLA,T4,active,165,0,55,16,15,24,6,fan:r2.4:a100,2.4,100,0.61,phys,4,16,0,-,none,none,-,0,0,0,T4+,0,连击段数4-8全靠操作;收招强吹飞;收招僵直1s,输入窗口6f,70,job_change,AM_BLA_T4_002,VX_BLA_T4_002_HIT,SD_BLA_T4_002_HIT
@@ -146,7 +146,7 @@ SBL_T3_001,裂波斩,SBL,T3,active,105,0,25,16,4,20,-,box:1.0x1.0x3.0:裂波r2.5
 SBL_T3_002,冰创波动阵,SBL,T3,active,100,0,24,18,-,18,-,circle:r3.5,3.5,-,1.00,ice,1,20,0,-,slow:30%:3s;冻结@40%,none,none,0,0,0,T3+,0,-,范围阵,35,job_change,AM_SBL_T3_002,VX_SBL_T3_002_HIT,SD_SBL_T3_002_HIT
 SBL_T3_003,烈焰波动阵,SBL,T3,active,100,0,24,18,-,18,-,circle:r3.5,3.5,-,1.88,fire,1,20,2.0,-,burn:60:4s,none,none,0,0,0,T3+,0,-,范围阵,35,job_change,AM_SBL_T3_003,VX_SBL_T3_003_HIT,SD_SBL_T3_003_HIT
 SBL_T4_001,电光波动阵,SBL,T4,active,160,0,55,22,-,22,-,circle:r6.0,6.0,-,2.51,light,1,25,0,-,paralysis:1.0s@100%,none,none,0,0,0,T4+,0,电球内100%命中（原著）,无法走位躲开,60,job_change,AM_SBL_T4_001,VX_SBL_T4_001_HIT,SD_SBL_T4_001_HIT
-SBL_U_001,星云波动剑,SBL,U,active,280,0,120,28,可控,26,-,形态三选:扩散/贯穿/追踪,10.0,-,4.12,magic,1,30,0,-,none,SA:0-28f,-,0,0,0,none,0,形态由操作决定,360°扩散/直线贯穿/缓慢追踪（原著75级）,75,job_change,AM_SBL_U_001,VX_SBL_U_001_HIT,SD_SBL_U_001_HIT
+SBL_U_001,星云波动剑,SBL,U,active,280,0,120,28,controlled,26,-,形态三选:扩散/贯穿/追踪,10.0,-,4.12,magic,1,30,0,-,none,SA:0-28f,-,0,0,0,none,0,形态由操作决定,360°扩散/直线贯穿/缓慢追踪（原著75级）,75,job_change,AM_SBL_U_001,VX_SBL_U_001_HIT,SD_SBL_U_001_HIT
 SBL_PAS_001,杀意波动,SBL,PAS,passive,0,0,0,-,-,-,-,none,-,-,0,none,-,0,0,-,none,none,-,0,0,0,-,0,波动系伤害+4%/档;不同波动剑连放叠共鸣(前摇-1f:最多3层),转职被动,20,job_change,AM_SBL_PAS_001,VX_SBL_PAS_001,SD_SBL_PAS_001
 GBL_BAS_001,鬼刀一段,GBL,BAS,basic,0,0,0,7,3,11,-,fan:r2.5:a100,2.5,100,0.30,dark,1,12,0,-,none,none,-,0,0,0,any,0,-,GDD14.8.4,1,normal,AM_GBL_BAS_001,VX_GBL_BAS_001_HIT,SD_GBL_BAS_001_HIT
 GBL_BAS_002,鬼刀二段,GBL,BAS,basic,0,0,0,8,3,11,-,fan:r2.5:a100,2.5,100,0.32,dark,1,12,0,-,none,none,-,0,0,0,any,0,-,-,1,normal,AM_GBL_BAS_002,VX_GBL_BAS_002_HIT,SD_GBL_BAS_002_HIT
@@ -252,7 +252,7 @@ STR_T2_004,鹰踏,STR,T2,active,60,0,12,8,9,14,3,box:1.0x1.0x2.0,2.0,-,0.41,phys
 STR_T2_005,崩拳,STR,T2,active,55,0,9,10,3,12,-,box:0.8x0.8x1.8,1.8,-,1.13,phys,1,25,0,-,none,none,-,0,0,0,T2+,0,强硬直25f,直拳崩打,25,job_change,AM_STR_T2_005,VX_STR_T2_005_HIT,SD_STR_T2_005_HIT
 STR_T2_006,高踢,STR,T2,active,55,0,9,12,4,14,-,fan:r1.8:a100,1.8,100,1.13,phys,1,0,0,7.0,none,none,-,0,0,0,T2+,0,击飞7.0,-,25,job_change,AM_STR_T2_006,VX_STR_T2_006_HIT,SD_STR_T2_006_HIT
 STR_T1_005,云身,STR,T1,active,40,0,10,6,-,10,-,self,4.0,-,0,none,-,0,0,-,none,none,-,0,0,0,any,0,闪身位移4m,-,25,job_change,AM_STR_T1_005,VX_STR_T1_005,SD_STR_T1_005
-STR_T3_001,空手入白刃,STR,T3,counter,95,0,25,8,-,18,-,cone:r2.0:a90,2.0,90,1.30,phys,1,25,1.0,-,none,none,invincible:8-16f,0,0,0,counter,0,拆挡:招架成功后下一击100%命中,反击成功给免费取消窗（原著30级）,30,job_change,AM_STR_T3_001,VX_STR_T3_001_HIT,SD_STR_T3_001_HIT
+STR_T3_001,空手入白刃,STR,T3,counter,95,0,25,8,-,18,-,cone:r2.0:a90,2.0,90,1.30,phys,1,25,1.0,-,none,none,8-16f,0,0,0,counter,0,拆挡:招架成功后下一击100%命中,反击成功给免费取消窗（原著30级）,30,job_change,AM_STR_T3_001,VX_STR_T3_001_HIT,SD_STR_T3_001_HIT
 STR_T3_002,千斤坠,STR,T3,active,100,0,28,14,4,18,-,box:1.0x1.0x2.0,2.0,-,1.88,phys,1,25,0,-,none,SA:14-18f,-,0,0,0,T3+,0,霸体不可撞开(互伤判定);抓取无效;仅破霸体技可破,（原著50级前）,45,job_change,AM_STR_T3_002,VX_STR_T3_002_HIT,SD_STR_T3_002_HIT
 STR_T3_003,伏虎腾翔,STR,T3,active,100,0,26,14,-,18,-,box:1.2x1.2x6.0,6.0,-,1.81,phys,1,0,1.0,-,none,none,-,1,0,0,T3+,0,爆发位移6m+踩翻,倒地,60,job_change,AM_STR_T3_003,VX_STR_T3_003_HIT,SD_STR_T3_003_HIT
 STR_T3_004,寸劲,STR,T3,buff,80,0,30,8,10s,10,-,none,-,-,0,none,-,0,0,-,none,none,-,0,0,0,any,0,状态:缩短发劲距离+拳速:攻速+20%:1m内+15%,75级状态技（非爆发）,75,job_change,AM_STR_T3_004,VX_STR_T3_004,SD_STR_T3_004
@@ -275,7 +275,7 @@ QIM_T2_004,捉云手,QIM,T2,grab,55,0,14,12,-,12,-,box:1.0x1.0x2.0,2.0,-,0,none,
 QIM_T2_005,气定神闲,QIM,T2,buff,60,0,25,10,8s,10,-,aura:r5.0,5.0,-,0,none,-,0,0,-,none,none,-,0,0,0,any,0,解除免疫恐惧/嘲讽,解控技,30,job_change,AM_QIM_T2_005,VX_QIM_T2_005,SD_QIM_T2_005
 QIM_T2_006,轰天炮,QIM,T2,active,70,0,14,14,-,14,-,circle:r3.5,3.5,-,1.22,magic,1,20,1.0,-,none,none,-,0,0,0,T2+,0,全角度:不强求对空,-,30,job_change,AM_QIM_T2_006,VX_QIM_T2_006_HIT,SD_QIM_T2_006_HIT
 QIM_T3_001,地雷震,QIM,T3,active,95,0,24,16,-,16,-,circle:r4.0,4.0,-,1.84,phys,1,0,0,-,none,none,-,1,0,0,T3+,0,念气地下游走:往翻里掀,倒地,40,job_change,AM_QIM_T3_001,VX_QIM_T3_001_HIT,SD_QIM_T3_001_HIT
-QIM_T3_002,念龙波,QIM,T3,active,90,0,22,14,可控,16,-,proj:26m/s:14m:可转向,14.0,-,1.79,magic,1,20,0,-,对敌:削攻削速,none,none,0,0,0,T3+,0,自由转向;打自己/队友=增益,（原著70级前）,60,job_change,AM_QIM_T3_002,VX_QIM_T3_002_HIT,SD_QIM_T3_002_HIT
+QIM_T3_002,念龙波,QIM,T3,active,90,0,22,14,controlled,16,-,proj:26m/s:14m:可转向,14.0,-,1.79,magic,1,20,0,-,对敌:削攻削速,none,none,0,0,0,T3+,0,自由转向;打自己/队友=增益,（原著70级前）,60,job_change,AM_QIM_T3_002,VX_QIM_T3_002_HIT,SD_QIM_T3_002_HIT
 QIM_T3_003,闪光百裂,QIM,T3,active,95,0,24,12,15,16,3,fan:r2.2:a100,2.2,100,0.39,phys,5,10,0,-,none,none,-,0,0,0,T3+,0,命中后可续注入气息(追按续段最多+5段),操作续段,40,job_change,AM_QIM_T3_003,VX_QIM_T3_003_HIT,SD_QIM_T3_003_HIT
 QIM_T3_004,截脉,QIM,T4,active,130,0,50,16,-,16,-,box:1.0x1.0x2.5,2.5,-,2.30,magic,1,20,0,-,截脉:ATK/攻速/移速/防御剥夺:8s,none,none,0,0,0,T4+,0,伤四围不伤生命,75级,75,job_change,AM_QIM_T3_004,VX_QIM_T3_004_HIT,SD_QIM_T3_004_HIT
 QIM_T4_002,螺旋念气杀,QIM,T4,active,160,0,55,16,-,20,-,cone:r5:a60,5.0,60,2.47,magic,1,0,0,8.0,none,none,-,0,0,0,T4+,0,顺时针=击飞8.0/逆时针=吸附3m,双向一技（原著）,55,job_change,AM_QIM_T4_002,VX_QIM_T4_002_HIT,SD_QIM_T4_002_HIT
@@ -290,7 +290,7 @@ GRP_T1_001,背摔,GRP,T1,grab,35,0,8,12,-,16,-,box:1.0x1.0x1.5,1.5,-,1.00,phys,1
 GRP_T1_002,抛投,GRP,T1,grab,35,0,8,12,-,16,-,box:1.0x1.0x1.5,1.5,-,0.96,phys,1,0,0,-,none,none,-,0,0,0,T1+,0,投掷方向8向可控,位置控制权,15,normal,AM_GRP_T1_002,VX_GRP_T1_002_HIT,SD_GRP_T1_002_HIT
 GRP_T1_003,单手擒,GRP,T1,grab,30,0,6,10,-,12,-,box:0.8x0.8x1.5,1.5,-,0.84,phys,1,25,0,-,none,none,-,0,0,0,T1+,0,单手抓取,-,1,normal,AM_GRP_T1_003,VX_GRP_T1_003_HIT,SD_GRP_T1_003_HIT
 GRP_T1_004,肘落,GRP,T1,active,35,0,7,10,4,12,-,box:1.0x0.8x1.5,1.5,-,0.82,phys,1,20,0,-,none,none,-,1,0,0,T1+,0,扫地,少数扫地技,10,normal,AM_GRP_T1_004,VX_GRP_T1_004_HIT,SD_GRP_T1_004_HIT
-GRP_T2_001,接投,GRP,T2,grab,60,0,14,10,-,16,-,box:1.0x1.0x1.5,1.5,-,1.29,phys,1,0,0,-,none,none,invincible:10-20f,0,0,0,counter,0,拆挡技:无视霸体,托肘过肩摔（原著20级）,20,job_change,AM_GRP_T2_001,VX_GRP_T2_001_HIT,SD_GRP_T2_001_HIT
+GRP_T2_001,接投,GRP,T2,grab,60,0,14,10,-,16,-,box:1.0x1.0x1.5,1.5,-,1.29,phys,1,0,0,-,none,none,10-20f,0,0,0,counter,0,拆挡技:无视霸体,托肘过肩摔（原著20级）,20,job_change,AM_GRP_T2_001,VX_GRP_T2_001_HIT,SD_GRP_T2_001_HIT
 GRP_T2_002,旋投,GRP,T2,grab,65,0,14,14,-,18,-,box:1.0x1.0x1.5,1.5,-,1.33,phys,1,0,0,7.0,none,none,-,0,0,0,T2+,0,旋转方向可控,拿双腿甩一圈,25,job_change,AM_GRP_T2_002,VX_GRP_T2_002_HIT,SD_GRP_T2_002_HIT
 GRP_T2_003,抱身投,GRP,T2,grab,60,0,13,12,-,16,-,box:1.0x1.0x1.5,1.5,-,1.27,phys,1,30,0,-,none,none,-,0,0,0,T2+,0,-,-,25,job_change,AM_GRP_T2_003,VX_GRP_T2_003_HIT,SD_GRP_T2_003_HIT
 GRP_T2_004,头上拂,GRP,T2,grab,60,0,13,12,-,14,-,cyl:r1.5:h3.5,1.5,-,1.22,phys,1,0,0,-,none,none,-,0,0,0,T2+,0,对空抓取判定极强,把浮空目标拽下来摔,30,job_change,AM_GRP_T2_004,VX_GRP_T2_004_HIT,SD_GRP_T2_004_HIT
@@ -324,7 +324,7 @@ ROG_T3_001,毒针,ROG,T3,active,70,0,22,12,-,12,-,proj:35m/s:10m,10.0,-,1.57,phy
 ROG_T3_002,伤疤之痛,ROG,T3,active,65,0,20,12,-,12,-,box:0.9x0.9x2.0,2.0,-,1.62,phys,1,16,0,-,bleed:60:5s,none,none,0,0,0,T3+,0,挂伤疤出血,-,35,job_change,AM_ROG_T3_002,VX_ROG_T3_002_HIT,SD_ROG_T3_002_HIT
 ROG_T3_003,恐吓,ROG,T3,active,70,0,25,12,-,12,-,cone:r6:a60,6.0,60,0,dark,-,0,0,-,虚弱:ATK-20%:8s,none,none,0,0,0,T3+,0,精神系无法闪避,无直接伤害,35,job_change,AM_ROG_T3_003,VX_ROG_T3_003,SD_ROG_T3_003
 ROG_T3_004,霸王连拳,ROG,T3,active,90,0,24,14,18,16,3,box:1.0x1.0x1.5,1.5,-,0.37,phys,6,0,0,-,压制:目标倒地期间持续,none,none,0,0,0,T3+,0,把人按翻在地乱打,控制技,40,job_change,AM_ROG_T3_004,VX_ROG_T3_004_HIT,SD_ROG_T3_004_HIT
-ROG_T4_001,以牙还牙,ROG,T4,counter,0,0,30,8,-,8,-,none,-,-,0,none,-,0,0,-,none,none,invincible:0f,0,0,0,any,0,复制最近命中自己的技能:MP×2:每局记3个,75级；不可复制U档,75,job_change,AM_ROG_T4_001,VX_ROG_T4_001,SD_ROG_T4_001
+ROG_T4_001,以牙还牙,ROG,T4,counter,0,0,30,8,-,8,-,none,-,-,0,none,-,0,0,-,none,none,0f,0,0,0,any,0,复制最近命中自己的技能:MP×2:每局记3个,75级；不可复制U档,75,job_change,AM_ROG_T4_001,VX_ROG_T4_001,SD_ROG_T4_001
 ROG_U_001,街头风暴,ROG,U,buff,280,0,120,20,8s,22,-,none,-,-,0,none,-,0,0,-,none,none,-,0,0,0,none,0,中低阶技能强化且不计CD,8秒无限阴招（原著75级）,75,job_change,AM_ROG_U_001,VX_ROG_U_001,SD_ROG_U_001
 ASN_BAS_001,匕击一段,ASN,BAS,basic,0,0,0,6,2,9,-,box:0.7x0.7x1.5,1.5,-,0.26,phys,1,10,0,-,none,none,-,0,0,0,any,0,-,GDD14.17.4,1,normal,AM_ASN_BAS_001,VX_ASN_BAS_001_HIT,SD_ASN_BAS_001_HIT
 ASN_BAS_002,匕击二段,ASN,BAS,basic,0,0,0,6,2,9,-,box:0.7x0.7x1.5,1.5,-,0.28,phys,1,10,0,-,none,none,-,0,0,0,any,0,-,-,1,normal,AM_ASN_BAS_002,VX_ASN_BAS_002_HIT,SD_ASN_BAS_002_HIT
@@ -340,8 +340,8 @@ ASN_T2_002,疾空踏,ASN,T2,active,55,0,12,8,9,12,3,box:1.0x1.0x2.0,2.0,-,0.40,p
 ASN_T2_003,子母刺,ASN,T2,active,55,0,12,12,-,12,-,proj:30m/s:10m,10.0,-,1.09,phys,1,10,0,-,none,none,-,0,1,0,T2+,0,匕首脱层飞出,匕首仍在手,25,job_change,AM_ASN_T2_003,VX_ASN_T2_003_HIT,SD_ASN_T2_003_HIT
 ASN_T2_004,穿心刺,ASN,T2,active,55,0,10,12,3,12,-,box:0.7x0.7x2.0,2.0,-,1.11,phys,1,20,0,-,none,none,-,0,0,0,T2+,0,-,-,25,job_change,AM_ASN_T2_004,VX_ASN_T2_004_HIT,SD_ASN_T2_004_HIT
 ASN_T2_005,分水刺,ASN,T2,active,55,0,10,12,3,12,-,fan:r1.8:a120,1.8,120,1.09,phys,1,16,0,-,none,none,-,0,0,0,T2+,0,-,-,25,job_change,AM_ASN_T2_005,VX_ASN_T2_005_HIT,SD_ASN_T2_005_HIT
-ASN_T3_001,瞬身刺,ASN,T3,active,80,0,22,8,-,10,-,box:0.8x0.8x6.0,6.0,-,1.67,phys,1,16,0,-,none,none,invincible:8-14f,0,0,0,T3+,0,三身位瞬移,速度远超弧光闪,30,job_change,AM_ASN_T3_001,VX_ASN_T3_001_HIT,SD_ASN_T3_001_HIT
-ASN_T3_002,闪烁突刺,ASN,T3,active,80,0,25,6,-,10,-,box:0.8x0.8x3.0,3.0,-,1.69,phys,1,16,0,-,none,none,invincible:6-12f,0,0,0,T3+,0,瞬间移动一个身位格,65级,65,job_change,AM_ASN_T3_002,VX_ASN_T3_002_HIT,SD_ASN_T3_002_HIT
+ASN_T3_001,瞬身刺,ASN,T3,active,80,0,22,8,-,10,-,box:0.8x0.8x6.0,6.0,-,1.67,phys,1,16,0,-,none,none,8-14f,0,0,0,T3+,0,三身位瞬移,速度远超弧光闪,30,job_change,AM_ASN_T3_001,VX_ASN_T3_001_HIT,SD_ASN_T3_001_HIT
+ASN_T3_002,闪烁突刺,ASN,T3,active,80,0,25,6,-,10,-,box:0.8x0.8x3.0,3.0,-,1.69,phys,1,16,0,-,none,none,6-12f,0,0,0,T3+,0,瞬间移动一个身位格,65级,65,job_change,AM_ASN_T3_002,VX_ASN_T3_002_HIT,SD_ASN_T3_002_HIT
 ASN_T3_003,如影随形,ASN,T3,active,85,0,25,10,-,10,-,self,8.0,-,0,none,-,0,0,-,none,none,-,0,0,0,any,0,选定目标高速冲至其身位,高级移动技,40,job_change,AM_ASN_T3_003,VX_ASN_T3_003,SD_ASN_T3_003
 ASN_T3_004,刺刃风暴,ASN,T3,active,100,0,26,12,15,18,3,fan:r2.0:a110,2.0,110,0.42,phys,5,10,0,-,none,none,-,0,0,0,T3+,0,收招直刺带击退+僵直,连续刺杀,40,job_change,AM_ASN_T3_004,VX_ASN_T3_004_HIT,SD_ASN_T3_004_HIT
 ASN_T4_001,要害攻击,ASN,T4,buff,120,0,45,10,10s,12,-,none,-,-,0,none,-,0,0,-,none,none,-,0,0,0,any,0,目标出现要害位:击中200%,觉醒状态；要害位双方可见,50,awakening,AM_ASN_T4_001,VX_ASN_T4_001,SD_ASN_T4_001
@@ -356,14 +356,14 @@ ASN_PAS_002,空跃,ASN,PAS,passive,0,0,0,-,-,-,-,none,-,-,0,none,-,0,0,-,none,no
 THF_BAS_001,短剑一段,THF,BAS,basic,0,0,0,7,2,10,-,box:0.7x0.7x1.6,1.6,-,0.28,phys,1,10,0,-,none,none,-,0,0,0,any,0,-,Skill-Spec补全:GDD缺普攻链,1,normal,AM_THF_BAS_001,VX_THF_BAS_001_HIT,SD_THF_BAS_001_HIT
 THF_BAS_002,短剑二段,THF,BAS,basic,0,0,0,7,2,10,-,box:0.7x0.7x1.6,1.6,-,0.30,phys,1,10,0,-,none,none,-,0,0,0,any,0,-,GDD-GAP,1,normal,AM_THF_BAS_002,VX_THF_BAS_002_HIT,SD_THF_BAS_002_HIT
 THF_BAS_003,短剑三段,THF,BAS,basic,0,0,0,9,3,12,-,box:0.8x0.8x1.8,1.8,-,0.42,phys,1,14,1.0,-,none,none,-,0,0,0,any,0,-,GDD-GAP,1,normal,AM_THF_BAS_003,VX_THF_BAS_003_HIT,SD_THF_BAS_003_HIT
-THF_T1_001,潜行,THF,T1,buff,45,0,20,6,持续,8,-,none,-,-,0,none,-,0,0,-,none,none,-,0,0,0,any,0,完全隐身:移速60%(满阶85%);攻击/耗耐解除,正面2m内不可发起,5,normal,AM_THF_T1_001,VX_THF_T1_001,SD_THF_T1_001
+THF_T1_001,潜行,THF,T1,buff,45,0,20,6,hold,8,-,none,-,-,0,none,-,0,0,-,none,none,-,0,0,0,any,0,完全隐身:移速60%(满阶85%);攻击/耗耐解除,正面2m内不可发起,5,normal,AM_THF_T1_001,VX_THF_T1_001,SD_THF_T1_001
 THF_T1_002,陷阱扣,THF,T1,deploy,45,0,12,12,-,8,-,deploy:r1.5:触发,12.0,-,0,none,-,0,0,-,root:1.5s;打断攻击,none,none,0,0,0,-,0,限制移动+打断攻击,不打断技能（原著）,1,normal,AM_THF_T1_002,VX_THF_T1_002,SD_THF_T1_002
 THF_T2_001,毒云陷阱,THF,T2,deploy,60,0,14,12,-,10,-,deploy:r2.5:触发,12.0,-,1.00,dark,-,10,0,-,poison:35:持续;僵直0.3s,none,none,0,0,0,-,0,持续中毒+触发小僵直,-,10,normal,AM_THF_T2_001,VX_THF_T2_001_HIT,SD_THF_T2_001_HIT
 THF_T2_002,火焰陷阱,THF,T2,deploy,60,0,14,12,-,10,-,deploy:r2.5:触发,12.0,-,1.11,fire,-,15,0,-,burn:50:持续,none,none,0,0,0,-,0,伤害高且持续,不限制行动（原著）,15,normal,AM_THF_T2_002,VX_THF_T2_002_HIT,SD_THF_T2_002_HIT
 THF_T3_001,沙暴陷阱,THF,T3,deploy,75,0,20,14,-,12,-,deploy:r3.0:触发,12.0,-,0.55,phys,-,15,0,-,blind:3s,none,none,0,0,0,-,0,伤害+失明,高阶陷阱,35,job_change,AM_THF_T3_001,VX_THF_T3_001_HIT,SD_THF_T3_001_HIT
 THF_T3_002,暗影陷阱,THF,T3,deploy,85,0,25,14,-,12,-,deploy:r2.0:触发+瞬移,12.0,-,0,none,-,0,0,-,none,none,-,0,0,0,-,0,触发后盗贼立即出现在陷阱位置,陷阱即传送门（原著）,40,job_change,AM_THF_T3_002,VX_THF_T3_002,SD_THF_T3_002
 THF_T1_003,陷阱解除,THF,T1,active,25,0,8,8,-,8,-,circle:r3.0,3.0,-,0,none,-,0,0,-,none,none,-,0,0,0,any,0,拔除非己方陷阱,反制陷阱系,25,job_change,AM_THF_T1_003,VX_THF_T1_003,SD_THF_T1_003
-THF_T2_003,脱逃,THF,T2,buff,55,0,25,6,持续,8,-,none,-,-,0,none,-,0,0,-,none,none,-,0,0,0,any,0,下一次所受攻击无效化(满阶100%),一次免击,25,job_change,AM_THF_T2_003,VX_THF_T2_003,SD_THF_T2_003
+THF_T2_003,脱逃,THF,T2,buff,55,0,25,6,hold,8,-,none,-,-,0,none,-,0,0,-,none,none,-,0,0,0,any,0,下一次所受攻击无效化(满阶100%),一次免击,25,job_change,AM_THF_T2_003,VX_THF_T2_003,SD_THF_T2_003
 THF_T2_004,偷袭,THF,T2,active,60,0,12,10,3,12,-,box:0.8x0.8x1.8,1.8,-,1.20,phys,1,0,0,-,僵直:3s,none,none,0,0,0,T2+,0,二倍刺杀伤害,潜行起手技,20,job_change,AM_THF_T2_004,VX_THF_T2_004_HIT,SD_THF_T2_004_HIT
 THF_T2_005,闷棍,THF,T2,active,55,0,18,10,-,10,-,box:0.7x0.7x1.5,1.5,-,0.30,phys,1,0,0,-,stun:1.5s,none,none,0,0,0,T2+,0,眩晕,背击窗口×1.2,25,job_change,AM_THF_T2_005,VX_THF_T2_005_HIT,SD_THF_T2_005_HIT
 THF_PAS_001,陷阱精通,THF,PAS,passive,0,0,0,-,-,-,-,none,-,-,0,none,-,0,0,-,none,none,-,0,0,0,-,0,潜行状态可设陷阱不解除,转职被动（原著）,20,job_change,AM_THF_PAS_001,VX_THF_PAS_001,SD_THF_PAS_001
@@ -381,12 +381,12 @@ NJA_T2_003,忍法·火炎斩,NJA,T2,active,55,0,11,12,-,12,-,fan:r2.0:a110,2.0,1
 NJA_T2_004,忍法·空蝉双杀,NJA,T2,active,60,0,12,12,6,14,3,fan:r2.0:a160,2.0,160,0.59,phys,2,12,0,-,none,none,-,0,0,0,T2+,0,刀与鞘交叉分袭左右,可操作打同一目标,30,job_change,AM_NJA_T2_004,VX_NJA_T2_004_HIT,SD_NJA_T2_004_HIT
 NJA_T2_005,忍法·雀落,NJA,T2,active,60,0,13,10,-,10,-,fan:r2.2:a120,2.2,120,1.15,phys,1,14,0,-,none,none,-,0,0,0,T2+,0,方向角度随操作任意改变;收招无僵直,45级（原著）,45,job_change,AM_NJA_T2_005,VX_NJA_T2_005_HIT,SD_NJA_T2_005_HIT
 NJA_T3_001,背身缚首术,NJA,T3,grab,85,0,24,14,-,16,-,cone:r2.0:a120,2.0,120,1.84,phys,1,0,0,-,none,none,-,0,0,0,T3+,0,需背身120°;绳索套颈背投,50级前（原著）,30,job_change,AM_NJA_T3_001,VX_NJA_T3_001_HIT,SD_NJA_T3_001_HIT
-NJA_T3_002,地心斩首术,NJA,T3,active,95,0,28,16,5s,14,-,circle:r2.5:头顶,2.5,-,1.88,phys,1,0,0,7.5,none,none,invincible:地底16-146f,0,0,0,T3+,0,地底潜伏;小幅移动;每局2次,忍刀鞘作吸管（原著35级）,35,job_change,AM_NJA_T3_002,VX_NJA_T3_002_HIT,SD_NJA_T3_002_HIT
+NJA_T3_002,地心斩首术,NJA,T3,active,95,0,28,16,5s,14,-,circle:r2.5:头顶,2.5,-,1.88,phys,1,0,0,7.5,none,none,16-146f,0,0,0,T3+,0,地底潜伏;小幅移动;每局2次,忍刀鞘作吸管（原著35级）,35,job_change,AM_NJA_T3_002,VX_NJA_T3_002_HIT,SD_NJA_T3_002_HIT
 NJA_T3_003,忍法·百流斩,NJA,T3,active,90,0,26,16,-,14,-,proj:水牢:r2.0:6s,10.0,-,1.50,ice,1,0,0,-,水牢:封印移动类技能:6s,none,none,0,0,1,T3+,0,内部破坏无效,满阶半分钟→arena6s,40,job_change,AM_NJA_T3_003,VX_NJA_T3_003_HIT,SD_NJA_T3_003_HIT
 NJA_T3_004,忍法·遁身之术,NJA,T3,buff,90,0,30,10,8s,10,-,none,-,-,0,none,-,0,0,-,none,none,-,0,0,0,any,0,不降移速+可用任何技能+移动攻击全无声,满阶30s→arena8s,40,job_change,AM_NJA_T3_004,VX_NJA_T3_004,SD_NJA_T3_004
-NJA_T3_005,忍法·替身术,NJA,T3,active,85,0,30,6,-,6,-,self:随机8m,8.0,-,0,none,-,0,0,-,none,none,invincible:6-12f,0,0,0,any,0,被打瞬间自动触发:草人替身+真身随机传送,随机是双刃剑,30,job_change,AM_NJA_T3_005,VX_NJA_T3_005,SD_NJA_T3_005
+NJA_T3_005,忍法·替身术,NJA,T3,active,85,0,30,6,-,6,-,self:随机8m,8.0,-,0,none,-,0,0,-,none,none,6-12f,0,0,0,any,0,被打瞬间自动触发:草人替身+真身随机传送,随机是双刃剑,30,job_change,AM_NJA_T3_005,VX_NJA_T3_005,SD_NJA_T3_005
 NJA_T2_006,忍法·缩地术,NJA,T2,active,55,0,14,6,-,8,-,self,6.0,-,0,none,-,0,0,-,none,none,-,0,0,0,any,0,一步跨出刹那拉近,位移6m,25,job_change,AM_NJA_T2_006,VX_NJA_T2_006,SD_NJA_T2_006
-NJA_T3_006,忍法·乱身冲,NJA,T3,active,80,0,24,8,-,10,-,self:三段2m×3,6.0,-,0,none,-,0,0,-,none,none,invincible:8-20f,0,0,0,any,0,高速移动追袭:空中如闪烁,可变向,35,job_change,AM_NJA_T3_006,VX_NJA_T3_006,SD_NJA_T3_006
+NJA_T3_006,忍法·乱身冲,NJA,T3,active,80,0,24,8,-,10,-,self:三段2m×3,6.0,-,0,none,-,0,0,-,none,none,8-20f,0,0,0,any,0,高速移动追袭:空中如闪烁,可变向,35,job_change,AM_NJA_T3_006,VX_NJA_T3_006,SD_NJA_T3_006
 NJA_T4_001,忍法·樱杀碎月,NJA,T4,active,160,0,55,18,-,20,-,cone:r8:a60,8.0,60,2.51,phys,-,20,0,-,none,none,-,0,1,0,T4+,0,忍刀幻化细碎樱花席卷,75级多段,75,job_change,AM_NJA_T4_001,VX_NJA_T4_001_HIT,SD_NJA_T4_001_HIT
 NJA_T4_002,忍法·爆炎龙,NJA,T4,active,160,0,55,20,-,18,-,line:10m,10.0,-,2.53,fire,1,25,1.0,-,burn:60:4s,none,none,0,0,1,T4+,0,三角结印:结印强化+20%范围,75级,75,job_change,AM_NJA_T4_002,VX_NJA_T4_002_HIT,SD_NJA_T4_002_HIT
 NJA_U_001,忍法·影舞,NJA,U,active,280,0,120,22,12s,24,-,self:分身×3,12.0,-,0,none,-,0,0,-,none,SA:0-22f,-,0,0,0,none,0,多活动影分身;影舞之心切换(1s CD);标杆被杀自动转移,70级觉醒,70,job_change,AM_NJA_U_001,VX_NJA_U_001,SD_NJA_U_001
@@ -402,7 +402,7 @@ WRK_T2_005,束缚术,WRK,T2,active,70,0,16,14,2s,12,-,proj:24m/s:16m,16,-,1.00,d
 WRK_T3_001,暗影烈焰,WRK,T3,active,90,0,22,16,-,14,-,proj:26m/s:18m,18,-,1.79,dark,1,20,0,-,burn:暗火:2s一跳6s;打断吟唱,none,none,0,0,1,T3+,0,暗为主火为辅,持续状态伤害,35,job_change,AM_WRK_T3_001,VX_WRK_T3_001_HIT,SD_WRK_T3_001_HIT
 WRK_T3_002,混乱之雨,WRK,T3,active,95,0,24,18,-,14,-,circle:r3.5,3.5,-,0.55,dark,-,15,0,-,confuse:3s@60%,none,none,0,0,1,T3+,0,指令混乱:不强制失控,每局对同一目标1次,40,job_change,AM_WRK_T3_002,VX_WRK_T3_002_HIT,SD_WRK_T3_002_HIT
 WRK_T3_003,魔镜,WRK,T3,deploy,95,0,25,14,8s,12,-,deploy:r1.5:悬浮:HP300,10.0,-,0,none,-,0,0,-,反射法术,none,none,0,0,0,-,0,反弹所有法术攻击效果,可由施术者移动悬浮,35,job_change,AM_WRK_T3_003,VX_WRK_T3_003,SD_WRK_T3_003
-WRK_T3_004,操纵术,WRK,T3,active,100,0,25,14,持续,12,-,proj:锁链:16m,16.0,-,0,none,-,0,0,-,操纵目标移动,none,none,0,0,1,T3+,0,活物加成;牵连可被攻击斩断;持续耗蓝,傀儡师玩法,40,job_change,AM_WRK_T3_004,VX_WRK_T3_004,SD_WRK_T3_004
+WRK_T3_004,操纵术,WRK,T3,active,100,0,25,14,hold,12,-,proj:锁链:16m,16.0,-,0,none,-,0,0,-,操纵目标移动,none,none,0,0,1,T3+,0,活物加成;牵连可被攻击斩断;持续耗蓝,傀儡师玩法,40,job_change,AM_WRK_T3_004,VX_WRK_T3_004,SD_WRK_T3_004
 WRK_T3_005,黑暗之爪,WRK,T3,grab,90,0,22,14,-,16,-,box:1.0x1.0x2.0,2.0,-,0.95,dark,1,0,0,-,none,none,-,0,0,0,T3+,0,强制抓取;混乱状态目标几率被撞出,-,35,job_change,AM_WRK_T3_005,VX_WRK_T3_005_HIT,SD_WRK_T3_005_HIT
 WRK_T3_006,鬼影缠身,WRK,T3,active,95,0,24,16,6s,14,20,proj:26m/s:16m,16,-,1.50,dark,-,10,0,-,附身DoT,none,none,0,0,1,T3+,0,结束后33%伤害补充为术士生命,攻防一体,40,job_change,AM_WRK_T3_006,VX_WRK_T3_006_HIT,SD_WRK_T3_006_HIT
 WRK_T4_001,击魂术,WRK,T4,active,120,0,45,18,-,14,-,proj:30m/s:18m,18,-,2.34,dark,1,0,0,-,出神:操作无效:1.2s,none,none,0,0,1,T4+,0,可打断任何动作（不只是吟唱）,强打断,50,job_change,AM_WRK_T4_001,VX_WRK_T4_001_HIT,SD_WRK_T4_001_HIT
@@ -419,7 +419,7 @@ PRI_T3_002,大治愈术,PRI,T3,heal,110,0,40,8,-,10,-,ally:单体,20.0,-,1600,he
 PRI_U_001,圣言治愈,PRI,U,heal,220,0,90,8,-,10,-,ally:单体,20.0,-,2400,heal,-,0,0,-,none,none,-,0,0,0,any,0,治疗量澎湃无双:瞬发,CD90s,55,job_change,AM_PRI_U_001,VX_PRI_U_001_HIT,SD_PRI_U_001_HIT
 PRI_T2_003,催眠术,PRI,T2,active,75,0,20,18,-,14,-,proj:22m/s:18m,18,-,1.00,dark,1,0,0,-,sleep:2.5s:受击即醒,none,none,0,0,1,T2+,0,必须正对目标:背身无效,原著催眠术（考据归牧师）,30,job_change,AM_PRI_T2_003,VX_PRI_T2_003_HIT,SD_PRI_T2_003_HIT
 PRI_T2_004,神圣之火,PRI,T2,active,70,0,14,14,5s,12,20,proj:26m/s:16m:地面燃烧,16,-,1.02,light,-,10,0,-,技能封印:3s;burn:递减,none,none,0,0,1,T2+,0,释放处保持5s燃烧:触碰全效发动,完整机制（原著30级）,30,job_change,AM_PRI_T2_004,VX_PRI_T2_004_HIT,SD_PRI_T2_004_HIT
-PRI_T2_005,净化,PRI,T2,active,60,0,12,10,-,10,-,ally:单体,20.0,-,0,none,-,0,0,-,驱散全部异状态,none,invincible:0-6f,0,0,0,any,0,1v1自体/团战友军,0.3s无敌帧,20,job_change,AM_PRI_T2_005,VX_PRI_T2_005,SD_PRI_T2_005
+PRI_T2_005,净化,PRI,T2,active,60,0,12,10,-,10,-,ally:单体,20.0,-,0,none,-,0,0,-,驱散全部异状态,none,0-6f,0,0,0,any,0,1v1自体/团战友军,0.3s无敌帧,20,job_change,AM_PRI_T2_005,VX_PRI_T2_005,SD_PRI_T2_005
 PRI_T3_003,天使之翼,PRI,T3,buff,70,0,25,10,6s,10,-,self:滞空,-,-,0,none,-,0,0,-,none,none,-,0,0,0,any,0,滞空不落地:可平移不可上升,下降=取消,35,job_change,AM_PRI_T3_003,VX_PRI_T3_003,SD_PRI_T3_003
 PRI_T1_003,专注,PRI,T1,active,40,0,15,8,-,8,-,self,-,-,0,none,-,0,0,-,none,none,-,0,0,0,any,0,解除被嘲讽状态,对骑士挑衅的答案,15,normal,AM_PRI_T1_003,VX_PRI_T1_003,SD_PRI_T1_003
 PRI_T3_004,神佑之光,PRI,T3,channel,130,0,30,40,4s,16,20,aura:r5.0,5.0,-,1200,heal,-,0,0,-,none,none,-,0,0,1,any,0,吟唱光幕内所有角色含自己,耗蓝可观性价比不高（原著）,45,job_change,AM_PRI_T3_004,VX_PRI_T3_004_HIT,SD_PRI_T3_004_HIT
@@ -463,7 +463,7 @@ EXO_BAS_003,战镰三段,EXO,BAS,basic,0,0,0,10,3,13,-,fan:r2.8:a120,2.8,120,0.3
 EXO_BAS_004,战镰四段,EXO,BAS,basic,0,0,0,13,4,16,-,fan:r2.8:a130,2.8,130,0.48,phys,1,15,1.2,-,none,none,-,0,0,0,any,0,-,GDD-GAP,1,normal,AM_EXO_BAS_004,VX_EXO_BAS_004_HIT,SD_EXO_BAS_004_HIT
 EXO_T1_001,升天阵,EXO,T1,active,55,0,10,14,-,14,-,circle:r3.5,3.5,-,0.84,magic,1,14,0,7.0,none,none,-,0,0,0,T1+,0,法术伤害+浮空,1级习得,1,normal,AM_EXO_T1_001,VX_EXO_T1_001_HIT,SD_EXO_T1_001_HIT
 EXO_T1_002,旋风,EXO,T1,active,50,0,9,12,1.5s,14,9,circle:r2.8,2.8,-,0.12,phys,8,10,0,-,none,none,-,0,0,0,T1+,1,战镰旋转切割,末段击退2m,20,job_change,AM_EXO_T1_002,VX_EXO_T1_002_HIT,SD_EXO_T1_002_HIT
-EXO_T1_003,加速符,EXO,T1,buff,40,0,18,8,8s,8,-,self/-,12.0,-,0,none,-,0,0,-,none,none,-,0,0,0,any,0,移速+25%,可给队友（团战）,15,normal,AM_EXO_T1_003,VX_EXO_T1_003,SD_EXO_T1_003
+EXO_T1_003,加速符,EXO,T1,buff,40,0,18,8,8s,8,-,self,12.0,-,0,none,-,0,0,-,none,none,-,0,0,0,any,0,移速+25%,可给队友（团战）,15,normal,AM_EXO_T1_003,VX_EXO_T1_003,SD_EXO_T1_003
 EXO_T2_001,落雷符,EXO,T2,active,60,0,12,12,-,12,-,circle:r2.0:延迟0.3s,12.0,-,1.20,light,1,20,0,-,paralysis:0.5s,none,none,0,0,0,T2+,0,半空滚雷落下,-,20,job_change,AM_EXO_T2_001,VX_EXO_T2_001_HIT,SD_EXO_T2_001_HIT
 EXO_T2_002,寒冰符,EXO,T2,active,60,0,12,12,-,12,-,proj:26m/s:12m,12.0,-,0.70,ice,1,12,0,-,冻结值+50,none,none,0,0,1,T2+,0,冻结效果,符咒,25,job_change,AM_EXO_T2_002,VX_EXO_T2_002_HIT,SD_EXO_T2_002_HIT
 EXO_T2_003,烈焰符,EXO,T2,active,55,0,12,10,4s,10,-,proj:贴符,10.0,-,1.04,fire,-,10,0,-,burn:40:4s,none,none,0,0,1,T2+,0,周身焰起持续伤害,符咒,25,job_change,AM_EXO_T2_003,VX_EXO_T2_003_HIT,SD_EXO_T2_003_HIT
@@ -472,7 +472,7 @@ EXO_T2_005,硬身符,EXO,T2,buff,60,0,25,8,6s,8,-,self,-,-,0,none,-,0,0,-,none,S
 EXO_T2_006,静心符,EXO,T2,active,50,0,20,8,-,8,-,self,-,-,0,none,-,0,0,-,解除被嘲讽,none,none,0,0,0,any,0,解除嘲讽,符咒,25,job_change,AM_EXO_T2_006,VX_EXO_T2_006,SD_EXO_T2_006
 EXO_T3_001,定身符,EXO,T3,active,80,0,22,12,-,12,-,proj:24m/s:12m,12.0,-,0.40,dark,1,0,0,-,root:1.8s,none,none,0,0,1,T3+,0,定身,符咒,35,job_change,AM_EXO_T3_001,VX_EXO_T3_001_HIT,SD_EXO_T3_001_HIT
 EXO_T3_002,星落,EXO,T3,active,90,0,24,16,-,16,-,circle:r2.5:天坠,15.0,-,1.98,phys,1,25,1.5,-,none,none,-,0,0,0,T3+,0,武器掷天化流星坠落;需魂御抓回,与魂御联动,1,normal,AM_EXO_T3_002,VX_EXO_T3_002_HIT,SD_EXO_T3_002_HIT
-EXO_T2_007,魂御,EXO,T2,active,50,0,10,8,飞行,8,-,proj:武器:25m:往返,15.0,-,0.70,phys,2,15,1.0,-,none,none,-,0,1,0,T2+,0,武器飞出+远距抓回;抓回瞬间抓取判定(可抓浮空),签名机制（原著）,1,normal,AM_EXO_T2_007,VX_EXO_T2_007_HIT,SD_EXO_T2_007_HIT
+EXO_T2_007,魂御,EXO,T2,active,50,0,10,8,projectilePhase,8,-,proj:武器:25m:往返,15.0,-,0.70,phys,2,15,1.0,-,none,none,-,0,1,0,T2+,0,武器飞出+远距抓回;抓回瞬间抓取判定(可抓浮空),签名机制（原著）,1,normal,AM_EXO_T2_007,VX_EXO_T2_007_HIT,SD_EXO_T2_007_HIT
 EXO_T3_003,勾魂,EXO,T3,active,85,0,24,14,-,14,-,proj:28m/s:12m,12.0,-,1.81,dark,1,20,0,-,拉拽:目标向自身2.5m,none,none,0,0,1,T3+,0,勾魂拉拽,-,1,normal,AM_EXO_T3_003,VX_EXO_T3_003_HIT,SD_EXO_T3_003_HIT
 EXO_T4_001,飞火流星,EXO,T4,active,155,0,50,18,-,18,-,circle:r4.0:天坠,15.0,-,2.55,phys,1,0,1.5,-,none,none,-,1,0,0,T4+,0,星落强化:炸裂击飞7.5,-,50,job_change,AM_EXO_T4_001,VX_EXO_T4_001_HIT,SD_EXO_T4_001_HIT
 EXO_U_001,封禁符,EXO,U,active,280,0,120,22,-,22,-,proj:30m/s:14m,14.0,-,0,dark,1,0,0,-,技能封禁:指定一技能8s(U档4s),none,none,0,0,1,none,0,每场1次,原著封装备1min→arena化,75,job_change,AM_EXO_U_001,VX_EXO_U_001,SD_EXO_U_001
@@ -482,7 +482,7 @@ UNS_BAS_003,万象伞·直剑形态,UNS,BAS,basic,0,0,0,9,3,13,-,fan:r2.1:a90,2.
 UNS_BAS_004,万象伞·双刃形态,UNS,BAS,basic,0,0,0,6,2,10,-,box:0.7x0.7x1.5,1.5,-,0.26,phys,1,10,0,-,none,none,-,0,0,0,any,0,形态:双刃:攻速+15%,-,1,normal,AM_UNS_BAS_004,VX_UNS_BAS_004_HIT,SD_UNS_BAS_004_HIT
 UNS_BAS_005,万象伞·盾形态,UNS,BAS,basic,0,0,0,11,3,15,-,fan:r2.0:a90,2.0,90,0.32,phys,1,13,1.4,-,none,none,-,0,0,0,any,0,形态:盾:剑盾-10%,-,1,normal,AM_UNS_BAS_005,VX_UNS_BAS_005_HIT,SD_UNS_BAS_005_HIT
 UNS_BAS_006,万象伞·手炮形态,UNS,BAS,basic,0,0,0,10,2,12,-,proj:35m/s:15m,15.0,-,0.21,phys,1,8,0,-,none,none,-,0,1,0,any,0,形态:手炮:炮系-5%,-,1,normal,AM_UNS_BAS_006,VX_UNS_BAS_006_HIT,SD_UNS_BAS_006_HIT
-UNS_T1_001,万象切换,UNS,T1,stance,0,0,1,15(0.25s),-,10,-,none,-,-,0,none,-,0,0,-,none,none,-,0,0,0,any,0,六形态切换:0.5s动作:1s CD,不做无动作快切,1,normal,AM_UNS_T1_001,VX_UNS_T1_001,SD_UNS_T1_001
+UNS_T1_001,万象切换,UNS,T1,stance,0,0,1,15,-,10,-,none,-,-,0,none,-,0,0,-,none,none,-,0,0,0,any,0,六形态切换:0.5s动作:1s CD,不做无动作快切,1,normal,AM_UNS_T1_001,VX_UNS_T1_001,SD_UNS_T1_001
 UNS_T1_002,伞护,UNS,T1,buff,40,0,14,16,0.8s,10,-,none,-,-,0,none,-,0,0,-,none,none,-,0,0,0,any,0,800护盾+空中滑翔,伞形态专属,10,normal,AM_UNS_T1_002,VX_UNS_T1_002,SD_UNS_T1_002
 UNS_T2_001,炮形态压制,UNS,T2,active,55,0,11,12,9,14,4,proj:35m/s:15m,15.0,-,0.41,phys,3,10,0,-,none,none,-,0,1,0,T2+,0,三连炮,手炮形态专属,20,job_change,AM_UNS_T2_001,VX_UNS_T2_001_HIT,SD_UNS_T2_001_HIT
 KNI_T1_004,上斩,KNI,T1,active,35,0,6,12,3,14,-,fan:r2.0:a90,2.0,90,0.79,phys,1,12,0,-,none,none,-,0,0,0,T1+,0,基础剑斩,原著骑士1级技能（用户技能全表）,1,normal,AM_KNI_T1_004,VX_KNI_T1_004_HIT,SD_KNI_T1_004_HIT

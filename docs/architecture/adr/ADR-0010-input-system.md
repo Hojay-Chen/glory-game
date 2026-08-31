@@ -73,3 +73,10 @@ CommandPacket { tick:int64, count:byte, commands[]: {kind:byte, skillId:u16, dir
 | T43 | 手柄量化 | 摇杆死区/角度分界阈值表两端一致 |
 
 ## 附：自审（10/10）——映射表完整覆盖 CmdKind✓ 缓冲语义 Sim 裁决（0 帧误差口径）✓ 网络投递不攒批+容差明确✓ 序列化确定性（16B 定长/无字符串）✓ 手柄 8 向量化阈值表编译器常量✓ AI 同权走 InputPipe（P4）✓ F1 关联不裁定✓ 重映射入 Save.Prefs✓ 受身方向判定边界成文✓ 测试表驱动可落地✓
+
+
+---
+
+## Errata（2026-09-01）
+
+**CmdKind 增补 `Steer`**（F-1 闭合）：操控型生效窗的连续意图采样——`AimQuantum:u16`（0..65535=360°，RoundHalfEven 量化，wrap 与零角约定见 SPEC-0001）+ DirIndex 移动意图。定义全文：`docs/architecture/spec/SPEC-0001-steer-command-and-aim-quantization.md`（ADR-0010/ADR-0001 的 implementation specification appendix）。鼠标连续角在客户端表现层量化为 uint16 后进 Command，Core 只见整数。

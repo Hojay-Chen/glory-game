@@ -282,3 +282,30 @@ OQ-2 / OQ-4 / OQ-5 / OQ-6 / OQ-7 / OQ-8 / OQ-9 全部维持未裁定状态（pre
 **自审结论：通过（15/15）。**
 
 *本 ADR 创建过程中未修改 GDD/Skill-Spec/CSV/class-base/技能数值/职业归属，未裁定任何设计问题，未开始 Arena.Core/Data Catalog/Godot 客户端实现。*
+
+
+---
+
+## Errata（2026-09-01，implementation-readiness-audit-v1 C-2/F-6 + SPEC-0004）
+
+### E-1 格式噪声处置统一规则（消解 §4.2/§4.4 的表述张力）
+
+所有异常数据按**唯一判据**分流，消除「按字面解析并标记」与「白名单外 fail-fast」的并存歧义：
+
+| 判据 | 处置 |
+|---|---|
+| **单位歧义**（同一串可读出两种量纲/数值，如 `SA:12-26s` 的 s 既可能是 f 笔误也可能是秒） | **fail-fast**——语义不可确定的数据阻止进入 RuntimeDef |
+| **格式超白名单但语义唯一可映射**（如 active `维持→hold` 纯别名） | 允许 Canonical 化进入 RuntimeDef，L2 记 `normalizedFrom`（2026-09-01 PATCH-001 已完成 19 处，见 docs/skill-spec/data-patch-log.md） |
+| **语义合法但疑似设计笔误**（可解析且确定，如超长霸体区间 7 行、`invincible:0f` 零宽窗） | 进入 RuntimeDef（字面语义确定）+ L2 `pendingSemanticReview` 标记 + 工作池（OQ-2 区间语义/OQ-5 意图） |
+
+**当前 L1 fail-fast 残留 = 3 项，全部待用户裁定**：`SA:12-26s`（OQ-2）、hitbox `形态三选:…` 与 `自身全部手雷种类`（**OQ-13**：运行时决定判定体语义——星云波动剑/乱雷，待裁定后转 controlled/scripted kind）。裁定前 Compiler 对这三行拒产 Catalog（设计行为）。
+
+### E-2 dataVersionHash 输入增补
+
+输入清单第 4 个 CSV：`docs/balance-sheet/arena.csv`（ArenaDef Canonical，SPEC-0004）。其余范围不变。
+
+### E-3 语法白名单增补（承认现状）
+
+- armor/invincible 空值显式值 `none` = 「无」（与 `-` 等价空语义，枚举值地位）
+- cooldown `公共<num>s` = 属性弹装填共享 CD 组（等价 canonical `shared:<num>s`，解析器双收）
+- active 形态词 canonical 化已完成（PATCH-001：维持/持续→hold、可控→controlled、飞行→projectilePhase），解析器只收英文 canonical + 数字/秒

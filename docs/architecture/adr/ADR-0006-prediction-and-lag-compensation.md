@@ -78,3 +78,10 @@ Hitstop 只冻结表现时轴；**预测推进、和解、回溯全部不感知 
 | T38 | 预测无 RNG | 静态检查：预测路径不触达 Roll100（ADR-0001 §4.1） |
 
 ## 附：自审（10/10）——预测范围严格限定✓ 逐位和解（定点语义自然成立）✓ ring buffer 只读契约不变✓ 结算幂等承接✓ 越界退化确定✓ Replay 可复算✓ Hitstop 边界重申✓ 预测历史上限✓ 与 ADR-0009 模式衔接✓ 未裁定设计问题（表现侧受击提示留给 UX）✓
+
+
+---
+
+## Errata（2026-09-01）
+
+**预测事件生命周期固化**（F-4 闭合）：预测事件带 `predicted` 标记、仅即时表现、和解整批作废、权威事件按 SemanticKey 去重补台（RecentTriggered，TTL 1s）；命中侧表现（伤害数字/Hitstop/受击反馈）只由权威事件触发。全文：`docs/architecture/spec/SPEC-0003-prediction-event-lifecycle.md`。

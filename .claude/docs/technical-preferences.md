@@ -38,6 +38,7 @@
 
 ## Allowed Libraries
 - Godot 4.3 内置 API only（不预填投机依赖；引入任何第三方库时在此登记并走 ADR）
+- **zstd 压缩**（Replay Body，ADR-0005 §1；2026-09-01 登记）：候选 `ZstdSharp`（MIT，纯托管，跨平台一致）或 `ZstdNet`（P/Invoke 原生）——实现期选定其一并记录；压缩仅作用于 Replay Body 字节，不参与 dataVersionHash（hash 对未压缩语义流计算）
 
 ## Engine Specialists
 见项目根 `CLAUDE.md` 的 Engine Specialists 节（C# 变体路由）。
