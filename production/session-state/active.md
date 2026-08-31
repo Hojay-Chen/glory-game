@@ -13,5 +13,6 @@
 - **Tech-Architecture v1.0 已完成（2026-08-31，commit c9af006）**: docs/architecture/architecture.md——TR 基线 45 条/五层架构（Core 纯 C# 引擎无关+Headless 纯 .NET 服务器）/模块所有权/五数据流（用户三修正：Hitstop 仅表现层、网络补偿与 Hitstop 无关、Rollback 幂等契约）/10 条必建 ADR。TD 自审 APPROVED WITH CONDITIONS（ADR-0001 定点化须先行）。引擎四件套落地：CLAUDE.md(项目级, Godot 4.3+C#+GdUnit4Net)+technical-preferences+engine-reference+review-mode lean
 - **ADR-0001 Accepted（2026-08-31）**: docs/architecture/adr/ADR-0001-deterministic-simulation.md——Q32.16 统一定点/MulShift RoundHalfEven 唯一舍入/预计算系数表禁 Math.Pow/容器纪律/Per-Stream Counter RNG 固化/四层时间模型/取整政策 P-1~P-3/Snapshot 完备清单/Determinism Contract+10 违约项/T1-T12 测试要求。自审 7/7 通过。TD 编码前置条件已解除
 - **ADR-0002 Accepted（2026-08-31，cfc61e3）**: docs/architecture/adr/ADR-0002-data-pipeline.md——Source-of-Truth 六层表/Compiler 九段管线/确定性八维度/One Compiler Two Emitters（JSON 承载 hash，.tres 隔离 Godot UID 非确定性+启动 re-hash 不变式）/Core 零 IO 构造注入/四层校验 fail-fast/数据问题 15 项登记四类。实测新发现：hitbox 17 种 kind（58 行超字典）、status ~40 种自由文本、class-base 13 列 vs README 12 列。自审 15/15
-- **下一步**: ①ADR-0003 事件协议 → 0009 Tick 循环 → 0004 网络 ②OQ-2/4/5/6 数据裁定 + S-1/S-2/S-7/S-8 字典补录待用户 ③F1 二轮裁定仍挂起
+- **ADR-0003 Accepted（2026-08-31）**: docs/architecture/adr/ADR-0003-event-protocol.md——两层事件身份(EventId=(Tick,Seq) 去重键/SemanticKey 命中族幂等)、封闭枚举 7 族 ~40 Kind、Snapshot/事件分工、签名派发序、单一可靠有序通道、EVENT_PROTOCOL_VERSION 与 dataVersionHash 分立。自审 14/14。文档同步项 D-1(architecture.md 五元组表述)登记
+- **下一步**: ①ADR-0009 Tick 循环与场景架构 → 0004 网络 → 0008 签名协议 ②OQ-2/4/5/6 裁定 + S-1/S-2/S-7/S-8 字典补录 ③F1 二轮裁定 ④文档同步项 D-1
 - **裁定记录**: 用户 2026-08-31 选定 Engine/Godot 4 + 暂不实机先无头验证
