@@ -32,9 +32,14 @@
 - prototypes/bmg-whitebox/：无头层 concluded（帧一致性 20/20、闸门 0 违规、峰值 27.9% HP）；实机手感层待 Windows 侧
 - v0.3.7 裁定已落地（launch_v 9.0/模板重写/幻影龙牙 15f）；F1 二轮（空中快刺 vs 接受三刺）挂起
 
+## Pre-Implementation Closure 完成（2026-09-01，94f4914）
+
+- audit v1 的 F-1/F-3/F-4/F-6/B-1/B-7/F-7 全部闭合：SPEC-0001~0004（Steer+AimQuantum u16/AI 队列派生式/预测事件生命周期/ArenaDef）+ Errata×4（ADR-0002/0006/0007/0010）+ PATCH-001（skills.csv 19 处纯格式规范化，data-patch-log.md）+ arena.csv（26×13）+ zstd 登记
+- **audit v2（implementation-readiness-audit-v2.md）：READY FOR PHASE 0**；L1 fail-fast 残留 3 行待用户裁定（OQ-2/OQ-13），OQ-5 精确化为单行意图待裁
+
 ## 待处理
 
-1. ADR-0007 AI 同权指令接口（最后一条必建 ADR，依赖 0008 框架已就绪）
+1. 【已完成】ADR-0007
 2. /create-control-manifest → /test-setup（GdUnit4Net+CI，落地 T1–T48）→ /ux-design → /architecture-review → gate-check pre-production
-3. 用户裁定项：OQ-2（12-26s）/ OQ-4（加点模型 vs D37）/ OQ-5（invincible:0f）/ OQ-6（几率数值补录）/ OQ-7（滚取消）/ OQ-8（counter 取消语义）/ OQ-9（跨技能变异归属）/ OQ-2·11（服务器部署与匹配服务形态）/ F1 二轮
+3. 用户裁定项：**OQ-2 + OQ-13（3 行数据，解除 Compiler 全量）**、OQ-4（加点）、OQ-5（0f 意图）、OQ-6（4 行几率数值）、OQ-7/8/9、OQ-2·11（部署/匹配）、F1 二轮
 4. 文档同步项：D-1（architecture.md 事件五元组→两层身份）、D-2（Arena.Infra 拆分纯核心+Godot 适配层）+ 各 README 数字漂移（501→487、94→96、携带 10 格树残留、12→13 列）
