@@ -329,3 +329,28 @@ OQ-2（SA:12-26s 本意）/ OQ-4（加点模型）/ OQ-5（invincible:0f）/ OQ-
 ---
 
 *决策记录人：Technical Director 流程（lean 模式）。本 ADR Accepted 后，ADR-0002（数据管线）方可依据 §6 政策与 §2.2 表版本机制编写。*
+
+
+---
+
+## Errata（2026-09-01，combat-granularity-collision-audit-v1 → SPEC-0005/0006）
+
+### E-3 §1.5 数学白名单增补：整数平方根
+
+碰撞 Sweep（SPEC-0005）需要平方根与法线归一化。增补白名单：
+
+```
+ISqrt(n)：n < 2⁶² 整数平方根（floor）——Newton 迭代固定 33 次取末值（整数域不动点，逐位跨平台一致）
+FSqrtFixed(x)：y=ISqrt(x.Raw×ONE) + RoundHalfEven 修正（(y+1)²−N 与 N−y² 比较，半值取偶）
+```
+
+仍禁止：`Math.Sqrt`（浮点 libm）——本增补是**整数算法**，与 §2.4 禁令不冲突（`Math.Sqrt` 禁令语义=禁浮点实现）。
+
+### E-4 §8.2 Snapshot 澄清：ContactList 为 Tick 内瞬态
+
+碰撞接触列表（SPEC-0005 §5/§6）在结算 Tick 内消费后即弃——**不入 Snapshot**（重演由命令流+状态重算，逐位一致）。快照持久化的是积分**终态位置/速度**。§8.2 清单不因此增删。
+
+### E-5 物理模型公理与 Tick 可变性（承接 ADR-0009/SPEC-0005）
+
+1. **Intra-Tick 线性运动公理**（SPEC-0005 §3）：速度在 Tick 内恒定、Tick 边界更新；Hitbox 位姿按 Tick 粒度离散（Tick 内不旋转/不渐变）——推论：全部相对运动线性 ⇒ 碰撞解析可解。本公理为 §7「确定性运动学」的操作化定义
+2. **Tick 可变性常量纪律**：所有「每 Tick 常量」（速度/加速度换算、KB_FRICTION、MP/耐力/控制值回复/衰减）**必须以秒制或物理模型表达于设计层，由 Compiler 按 TICK_RATE 推导 per-Tick 值**（如摩擦以半衰期秒数表达：0.85/Tick@60Hz ≈ 半衰期 71ms）——禁止在代码/数据中硬编码 per-Tick 系数。Tick 率变更时：Compiler 重推导 + QUANTIZATION_POLICY_VERSION 变更 ⇒ 旧回放显式失效；技能语义（设计帧/秒）与碰撞算法**零修改**（技能时长由 Compiler 重量化，碰撞操作数为 per-Tick 速度与 t∈[0,1] 相对参数）

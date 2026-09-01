@@ -182,3 +182,20 @@ public interface IEventConsumer {
 **自审结论：通过（14/14）。**
 
 *本 ADR 创建过程中未修改 GDD/Skill-Spec/CSV/architecture.md，未开始任何实现。*
+
+
+---
+
+## Errata（2026-09-01，SPEC-0006）
+
+**Hit/DelayedHit 事件载荷增补空间字段**（combat-granularity-audit C 级缺口闭合）：
+
+```
+Hit{…既有字段…, hitRegion:byte, hitPointX/Y/Z:long(Fixed Raw), hitNormalX/Z:long}
+DelayedHit{…同 Hit…}
+```
+
+- `hitRegion`：RegionId 枚举（None/Torso/Head/…可扩展，SPEC-0006 §1.2）——部位修正（弱点 ×1.5/×2、豪龙破军部位结算）的消费依据
+- `hitPoint/hitNormal`：Fixed Raw 直写（SPEC-0005 §5.3/§5.4）——VFX 锚点/反射方向/法线语义
+- **EVENT_PROTOCOL_VERSION bump 1→2**（既有机制，Kind 集合不变、载荷扩展）；与 dataVersionHash 分立原则不变（ADR-0003 §6-4）
+- 其余事件载荷不变；Whiff 不带空间字段（未接触）
