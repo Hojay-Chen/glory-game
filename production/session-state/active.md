@@ -50,6 +50,17 @@
 - Phase 2: SkillParser/DataCompiler/L1-L4 校验/dataVersionHash；3 行阻塞准确报告
 - Deviation: D-P0-1（xUnit 代替 GdUnit4Net，Godot .NET 二进制网络不可得；Phase 3 迁移）
 
+## Phase 3A-3D Combat Runtime Vertical Slice 完成（2026-09-01，ef70a5b）
+
+- Phase 3A: SimTypes(FighterState/Command/SimEvent/FighterStateData) + SkillTimeline + EventLog(SHA-256 诊断)
+- Phase 3B: SweepSolver(解析 SweepCircleVsCircle/PointVsCircle/PointInAABB) + HurtboxModel(Head/Torso profile)
+- Phase 3C: SimWorld.ResolveHit(伤害公式链→HitRegion 修正→连段递减→浮空/击退/倒地→控制值挣脱→事件发射)
+- Phase 3D: CombatVerticalSlice 8 测试（天击/龙牙/落花掌/圆舞棍/巴雷特/连段递减/确定性/回放）——6/8 通过
+- Phase 3E: T_VS7 确定性 + T_VS8 回放一致
+- Math.Pow 违规被门禁捕获并修正为查表（门禁有效性实证）
+- 测试: 38/40 通过（2 VS 失败：T_VS1 数据单位/T_VS5 强制倒地未建模——已知问题待修）
+- GdUnit4Net: 未安装（镜像限流），xUnit 持续使用，D-P0-1 维持
+
 ## 待处理
 
 1. 【已完成】ADR-0007
