@@ -1,0 +1,13 @@
+config_version=5
+
+[application]
+config/name="Arena Client"
+run/main_scene=""
+config/features=PackedStringArray("4.3", "C#")
+dotnet/project/assembly_name="Arena.Client"
+
+[physics]
+common/physics_ticks_per_second=60
+
+[rendering]
+renderer/rendering_method="gl_compatibility"

@@ -1,0 +1,16 @@
+/home/ubuntu/claude-workspace/glory-game/src/Arena.Infra/bin/Debug/net8.0/Arena.Infra.deps.json
+/home/ubuntu/claude-workspace/glory-game/src/Arena.Infra/bin/Debug/net8.0/Arena.Infra.dll
+/home/ubuntu/claude-workspace/glory-game/src/Arena.Infra/bin/Debug/net8.0/Arena.Infra.pdb
+/home/ubuntu/claude-workspace/glory-game/src/Arena.Infra/bin/Debug/net8.0/Arena.Core.dll
+/home/ubuntu/claude-workspace/glory-game/src/Arena.Infra/bin/Debug/net8.0/Arena.Core.pdb
+/home/ubuntu/claude-workspace/glory-game/src/Arena.Infra/obj/Debug/net8.0/Arena.Infra.csproj.AssemblyReference.cache
+/home/ubuntu/claude-workspace/glory-game/src/Arena.Infra/obj/Debug/net8.0/Arena.Infra.GeneratedMSBuildEditorConfig.editorconfig
+/home/ubuntu/claude-workspace/glory-game/src/Arena.Infra/obj/Debug/net8.0/Arena.Infra.AssemblyInfoInputs.cache
+/home/ubuntu/claude-workspace/glory-game/src/Arena.Infra/obj/Debug/net8.0/Arena.Infra.AssemblyInfo.cs
+/home/ubuntu/claude-workspace/glory-game/src/Arena.Infra/obj/Debug/net8.0/Arena.Infra.csproj.CoreCompileInputs.cache
+/home/ubuntu/claude-workspace/glory-game/src/Arena.Infra/obj/Debug/net8.0/Arena.Infra.sourcelink.json
+/home/ubuntu/claude-workspace/glory-game/src/Arena.Infra/obj/Debug/net8.0/Arena.Infra.csproj.CopyComplete
+/home/ubuntu/claude-workspace/glory-game/src/Arena.Infra/obj/Debug/net8.0/Arena.Infra.dll
+/home/ubuntu/claude-workspace/glory-game/src/Arena.Infra/obj/Debug/net8.0/refint/Arena.Infra.dll
+/home/ubuntu/claude-workspace/glory-game/src/Arena.Infra/obj/Debug/net8.0/Arena.Infra.pdb
+/home/ubuntu/claude-workspace/glory-game/src/Arena.Infra/obj/Debug/net8.0/ref/Arena.Infra.dll
