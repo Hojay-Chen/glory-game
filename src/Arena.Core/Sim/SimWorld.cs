@@ -328,7 +328,7 @@ public sealed class SimWorld
         else if (skill.KnockbackM > 0)
         {
             long hs = Math.Max(skill.HitstunTicks, 12);
-            hs = (long)(hs * Math.Pow(0.97, hn));
+            hs = DeterministicMath.MulShift(hs, Calc.DeterministicTables.HitstunDecay[Math.Min(hn, 64)]);
             hs = Math.Max(hs, 6);
             victim.State = FighterState.Hitstun;
             victim.StateTicksRemaining = (int)hs;
@@ -340,7 +340,7 @@ public sealed class SimWorld
         else if (victim.State != FighterState.Launch && victim.State != FighterState.Down)
         {
             victim.State = FighterState.Hitstun;
-            victim.StateTicksRemaining = (int)Math.Max(skill.HitstunTicks * Math.Pow(0.97, hn), 6);
+            victim.StateTicksRemaining = (int)Math.Max(DeterministicMath.MulShift(skill.HitstunTicks, Calc.DeterministicTables.HitstunDecay[Math.Min(hn, 64)]), 6);
         }
 
         Events.Emit(new SimEvent
