@@ -43,6 +43,13 @@
 - **SPEC-0006 Hurtbox/命中空间模型**：HurtboxDef（Region 可扩展枚举，v1 启用 Head/Torso，priority Head>Torso）+ hitboxId/hurtboxId 复合键 + CollisionResult 全字段进 Hit 事件（EVENT_PROTOCOL_VERSION bump→2）+ 巴雷特 80m/s 验证矩阵 T54a-j
 - **碰撞子系统实现解除阻塞**（Phase 3 按 SPEC-0005/0006 实施）；仍不实现（待 Phase 3）
 
+## Phase 0+1+2 实现完成（2026-09-01，0a07a8d）
+
+- arena.sln 六程序集编译通过，32/32 测试全绿，Math.*/依赖方向门禁验证可捕获违规
+- Phase 1: Fixed Q32.16/DeterministicMath/DeterministicTables/SimRng/SnapshotData
+- Phase 2: SkillParser/DataCompiler/L1-L4 校验/dataVersionHash；3 行阻塞准确报告
+- Deviation: D-P0-1（xUnit 代替 GdUnit4Net，Godot .NET 二进制网络不可得；Phase 3 迁移）
+
 ## 待处理
 
 1. 【已完成】ADR-0007
