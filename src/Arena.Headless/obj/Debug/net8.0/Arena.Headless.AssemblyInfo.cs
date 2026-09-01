@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Arena.Headless")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+c36e4b8e1e0298cc73c65034761f4e6bd79e4ae5")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+cb0deb75e9f41f25f2e6ab11e003673e28a10a5a")]
 [assembly: System.Reflection.AssemblyProductAttribute("Arena.Headless")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Arena.Headless")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
