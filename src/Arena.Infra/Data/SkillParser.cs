@@ -159,6 +159,8 @@ public static class SkillParser
             RecoveryTicks = rc,
             HitIntervalTicks = iv,
             HitboxRaw = hb,
+            RangeM = d.GetValueOrDefault("range_m", "-"),
+            AngleDeg = d.GetValueOrDefault("angle_deg", "-"),
             DamageMult = dmgMult,
             DamageType = d.GetValueOrDefault("damage_type", "none"),
             Hits = hits,

@@ -1,55 +1,143 @@
+using System;
 using System.Collections.Generic;
+using Arena.Core.Collision;
 // PRODUCTION - Arena.Core
-// ADR-0003/0009: SkillTimeline——技能执行的确定性时间轴
-// Startup → Active(含 hitSchedule) → Recovery，取消窗/无敌/霸体按 ADR-0001 语义独立表达
-using Arena.Core.Calc;
-
+// ADR-0002 §3 段7 RuntimeDef + ADR-0003/0009: SkillRuntimeData（Compiler 量化产物，Sim 唯一消费形态）
+// SkillTimeline: 技能执行状态机——Startup → Active(hitSchedule 逐段 hitbox) → Recovery + 取消窗。
+// 命中去重: per (execution, victimId, segmentIndex)——ADR-0003 SemanticKey 幂等。
 namespace Arena.Core.Sim;
 
-/// SkillRuntime 生成的 Hitbox 描述（激活窗口内每个 Tick 的空间语义）
-public struct ActiveHitbox
+/// hitbox 几何（Compiler 量化；Q32.16）
+public enum GeoKind : byte { None = 0, Sector = 1, Circle = 2, Obb = 3, Cylinder = 4 }
+
+public readonly record struct HitboxGeometry(
+    GeoKind Kind,
+    long Radius,          // Sector/Circle/Cylinder
+    int HalfDegIndex,     // Sector 半角的半度数（α=90° → 90）
+    long HalfForward,     // Obb
+    long HalfAcross,      // Obb
+    long BandLow,         // 高度带下沿（绝对高度基点 = Owner PosY）
+    long BandHigh)        // 高度带上沿
 {
-    public long ToiHit;          // 未使用（预留）
-    public int OwnerId;
-    public ushort SkillId;
-    public byte SegmentIndex;    // 0-based（多段）
-    public int StartupTick;      // 相对 cast 的 Tick
-    public int ActiveStart;      // 相对 cast
-    public int ActiveEnd;        // 相对 cast（含）
-    public long DamageMultRaw;   // Q32.16
-    public long HitstunTicks;
-    public long KnockbackRaw;    // Fixed Raw (米)
-    public long LaunchVRaw;      // Fixed Raw (米/Tick)
-    public bool IsSweep;         // 扫地
-    public bool IsLaunch;
-    public bool HasHitRegion;
-    public byte HitRegion;
-    public long HitboxShapeR;    // 简化：v1 所有 hitbox 视为圆（水平）
-    public long HitboxHeight;    // 中心高度
+    public static readonly HitboxGeometry None = default;
 }
 
-/// 技能执行状态（SkillRuntime 输出，SimWorld 消费）
+/// 状态效果（GDD §7.3 路由集；Compiler 解析 status 列产物）
+public readonly record struct StatusEffectDef(
+    StatusKind Kind,
+    long PotencyQ,        // Slow: 减速比例 Q32.16（0.30→19661）；DoT: 每秒伤害值（整数点数）
+    int DurationTicks,
+    int ChancePercent)    // 0 = 必定；>0 = Roll100 < chance
+{
+    public bool HasChance => ChancePercent > 0;
+}
+
+/// 霸体窗（GDD §6.4；armor 列解析产物）
+public readonly record struct ArmorWindowDef(bool SuperArmor, int StartTick, int EndTick)
+{
+    public bool Covers(int tickOffset) => tickOffset >= StartTick && tickOffset < EndTick;
+}
+
+/// 无敌窗（GDD §6.5；invincible_f 列解析产物）
+public readonly record struct InvulnWindowDef(int StartTick, int EndTick)
+{
+    public bool Covers(int tickOffset) => tickOffset >= StartTick && tickOffset < EndTick;
+}
+
+/// 技能运行时定义（全部数值已量化——Core 禁止再解析 CSV 原始语法）
+public sealed class SkillRuntimeData
+{
+    public ushort RuntimeId { get; init; }        // Catalog 内稳定 u16（行序）
+    public string SkillId { get; init; } = "";    // CSV 主键（诊断/映射）
+    public string ClassId { get; init; } = "";
+    public byte Tier { get; init; }               // 0=BAS 1=T1 2=T2 3=T3 4=T4 5=U
+    public string Type { get; init; } = "";       // basic/active/grab/…
+    public long MpCost { get; init; }
+    public long CooldownTicks { get; init; }
+    public int StartupTicks { get; init; }
+    public int ActiveTicks { get; init; }
+    public int RecoveryTicks { get; init; }
+    public int[] HitSchedule { get; init; } = Array.Empty<int>();  // 各段激活偏移（相对 active 起点）
+    public HitboxGeometry Geo { get; init; } = HitboxGeometry.None;
+    public long DamageMultQ { get; init; }        // Q32.16
+    public long HeadMultQ { get; init; }          // 弱点头部倍率（PA-H5/SPEC-0006 §1.4: 近战 1.5 / 巴雷特类 2.0）
+    public int HitstunTicks { get; init; }
+    public long KnockbackVelQ { get; init; }      // 击退初速 Q32.16 m/s（= kb_m × 9）
+    public long LaunchVelQ { get; init; }         // 浮空初速 Q32.16 m/s
+    public StatusEffectDef[] Statuses { get; init; } = Array.Empty<StatusEffectDef>();
+    public ArmorWindowDef? Armor { get; init; }
+    public InvulnWindowDef? Invuln { get; init; }
+    public bool Sweep { get; init; }              // 扫地（可打倒地）
+    public bool ArmorBreak { get; init; }         // 破霸体（GDD §6.4）
+    public bool IsProjectile { get; init; }       // proj/lob——spawn Projectile 而非自体 hitbox
+    public bool IsLob { get; init; }
+    public long ProjSpeedQ { get; init; }         // m/s Q32.16
+    public long ProjRadius { get; init; }
+    public int ProjRangeTicks { get; init; }      // 射程/存活
+    public long AimHeightQ { get; init; }         // PA-H5: 1.2 默认 / 1.6 弱点
+    public byte CancelMinTier { get; init; }      // 0=any 1=BAS..5=U 255=none（GDD §8.2）
+    public bool JumpCancel { get; init; }
+    public ushort ChainNext { get; set; }         // 普攻链下一段 RuntimeId（0=无；Catalog 装配期链接）
+    public byte ChainN { get; init; }
+    public bool ForcedDown { get; init; }         // 受身无效（GDD §5.6 圆舞棍/背摔/踏射）
+    public string Special { get; init; } = "-";   // 签名路由预留（ADR-0008）
+}
+
+/// active hitbox 实例（Tick 内瞬态语义锚——不入 Snapshot，由 execution 重建）
+public sealed class ActiveHitbox
+{
+    public required int Uid { get; init; }
+    public required int OwnerId { get; init; }
+    public required SkillRuntimeData Def { get; init; }
+    public required byte SegmentIndex { get; init; }
+    public required int SpawnTick { get; init; }   // 绝对 Tick
+    public required int ExpireTick { get; init; }  // 绝对 Tick（不含）
+    // 锚定: Owner 在 SpawnTick 的位置/朝向（PA-7 相对扫掠基准）
+    public required long AnchorX { get; init; }
+    public required long AnchorZ { get; init; }
+    public required long AnchorHeading { get; init; }
+    public required long AnchorVelX { get; init; } // Owner 本 Tick 位移（相对扫掠）
+    public required long AnchorVelZ { get; init; }
+    public readonly HashSet<int> HitVictims = new();   // (victimId) per segment——SemanticKey 幂等
+}
+
+/// 技能执行（SkillTimeline 状态机实例——入 Snapshot）
 public sealed class SkillExecution
 {
-    public required string SkillId { get; set; }
+    public int Uid { get; set; }
+    public ushort SkillRuntimeId { get; set; }
     public int OwnerId { get; set; }
     public int CastTick { get; set; }
-    public int StartupTicks { get; set; }
-    public int ActiveTicks { get; set; }
-    public int RecoveryTicks { get; set; }
-    public int TotalTicks => StartupTicks + ActiveTicks + RecoveryTicks;
-    public int CurrentTick { get; set; }   // 0-based since cast
-    public byte Phase { get; set; }         // 0=startup 1=active 2=recovery 3=done
-    public bool HitConfirmed { get; set; }
-    public bool IsHold { get; set; }
-    public bool IsControlled { get; set; }
-    public List<ActiveHitbox> Hitboxes { get; set; } = new();
-    public long MpCost { get; set; }
-    public bool IsBasicAttack { get; set; }
-    public int ChainN { get; set; }
+    public int CurrentOffset { get; set; }       // 自 cast 起 Tick 数
+    public bool HitConfirmed { get; set; }       // 命中确认（取消资格，GDD §8.2）
+    public bool Terminated { get; set; }         // 被取消/打断
+    public bool IsBasic => SkillRuntimeId != 0 && Def?.Type == "basic";
+    public byte SpawnedSegments;                 // 已 spawn 的段数（hitSchedule 推进指针）
+    public HashSet<int>[]? SegmentVictims;       // per-segment 去重（Snapshot 序列化）
+    [System.Text.Json.Serialization.JsonIgnore]
+    public SkillRuntimeData? Def;                // 运行时引用（由 Catalog 恢复，不入快照）
 
-    public bool IsExpired => CurrentTick >= TotalTicks;
-    public bool InStartup => CurrentTick < StartupTicks;
-    public bool InActive => CurrentTick >= StartupTicks && CurrentTick < StartupTicks + ActiveTicks;
-    public bool InRecovery => CurrentTick >= StartupTicks + ActiveTicks && CurrentTick < TotalTicks;
+    public int TotalTicks => Def is null ? 0 : Def.StartupTicks + Def.ActiveTicks + Def.RecoveryTicks;
+    public bool InStartup => Def is not null && CurrentOffset < Def.StartupTicks;
+    public bool InActive => Def is not null && CurrentOffset >= Def.StartupTicks && CurrentOffset < Def.StartupTicks + Def.ActiveTicks;
+    public bool InRecovery => Def is not null && CurrentOffset >= Def.StartupTicks + Def.ActiveTicks && CurrentOffset < TotalTicks;
+    public int ActiveEndOffset => Def is null ? 0 : Def.StartupTicks + Def.ActiveTicks;
+    public int RecoveryStartOffset => ActiveEndOffset;
+}
+
+/// hitSchedule → 段激活窗（P-2 编译期预计算 + 运行时窗口推导）
+public static class SkillTimeline
+{
+    /// 段 k 的 hitbox 存活窗（绝对偏移 [start, end)——至下一段激活或 active 结束）
+    public static (int start, int end) SegmentWindow(SkillRuntimeData def, int segment)
+    {
+        int activeStart = def.StartupTicks;
+        int activeEnd = def.StartupTicks + def.ActiveTicks;
+        int start = activeStart + (segment < def.HitSchedule.Length ? def.HitSchedule[segment] : 0);
+        int end = segment + 1 < def.HitSchedule.Length
+            ? Math.Min(activeStart + def.HitSchedule[segment + 1], activeEnd)
+            : activeEnd;
+        if (end <= start) end = start + 1;   // 至少 1T 判定窗
+        return (start, end);
+    }
 }

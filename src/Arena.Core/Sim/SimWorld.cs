@@ -1,486 +1,917 @@
-using System.Linq;
 using System;
 using System.Collections.Generic;
-// PRODUCTION - Arena.Core
-// ADR-0001 §3/ADR-0009: SimWorld——确定性战斗循环编排器
-// Step(tick, commands) 是唯一入口。Sim 是 Tick 的纯函数（ADR-0001 §9）。
-using System.Text;
 using Arena.Core.Calc;
 using Arena.Core.Collision;
 using Arena.Core.Rng;
-
+// PRODUCTION - Arena.Core
+// ADR-0001 §3.2/ADR-0009: SimWorld——确定性战斗循环编排器（Phase 4 SPEC 合规重建）。
+// Step(tick, commands) 唯一入口；Sim 是 Tick 的纯函数。
+// 结算总序（ADR-0001 §3.2）:
+//   ① 指令处理（per-Fighter CmdStream，FighterId 升序；GDD §2.3.2 优先级）
+//   ② Sim 主动推进（技能时间轴 hitbox spawn + 投射物推进，Uid 升序）
+//   ③ 命中结算（ContactList 按 SPEC-0005 §6 总序 → HitResolve——零几何）
+//   ④ 运动积分（IntegrateMove 统一路径 + 垂直物理 + L2 软推挤）
+//   ⑤ 状态/闸门/资源 Tick（FighterId 升序）
+//   ⑥ 死亡判定
 namespace Arena.Core.Sim;
 
-public sealed class SimWorld
+public sealed partial class SimWorld
 {
-    public const long TICK_RATE = 60;
-    public const long GRAVITY_PER_TICK = 22 * Fixed.ONE / TICK_RATE;  // 22 m/s² 量化
-    public const long ARENA_HALF_W = 30 * Fixed.ONE;
-    public const long ARENA_HALF_D = 42 * Fixed.ONE;
-    public const long BOUNCE_FACTOR_NUM = 6, BOUNCE_FACTOR_DEN = 10;   // ×0.6
-    public const long KB_VEL_MULT = 9;                                   // 击退初速 = 距离×9
-    public const int MAX_WALL_ITERATIONS = 2;
-    public const long FIGHTER_RADIUS = 29491;  // 0.45m × 65536 = 29491         // r=0.45m (白盒 0.45)
-    public const long FIGHTER_HEIGHT = 98304;  // 1.5m × 65536   // 1.5m 站高
+    public const string ProtocolVersion = "sim-event-v2";
 
     public long Tick { get; private set; }
     public long MatchSeed { get; }
     public string DataVersionHash { get; }
     public EventLog Events { get; } = new();
-    public List<FighterStateData> Fighters { get; } = new();
-    public List<SkillExecution> ActiveSkills { get; } = new();
     public Rng.SimRng Rng { get; }
+    public CollisionSystem Collision { get; }
 
-    // SkillDef 数据（Phase 3D 从 Compiler 输出注入；Phase 3A 用硬编码最小集）
+    // 实体容器（全部按 Id/Uid 升序维护——ADR-0001 §3.1 容器纪律）
+    public List<FighterStateData> Fighters { get; } = new();
+    public List<SkillExecution> Executions { get; } = new();
+    public List<ActiveHitbox> Hitboxes { get; } = new();
+    public List<ProjectileState> Projectiles { get; } = new();
+    public readonly List<PendingContact> PendingContacts = new();
+
     private readonly Dictionary<ushort, SkillRuntimeData> _skills = new();
-    public record SkillRuntimeData(
-        ushort SkillId, int StartupTicks, int ActiveTicks, int RecoveryTicks,
-        int Hits, int HitInterval, double DamageMult, int HitstunTicks,
-        double KnockbackM, double LaunchV, bool IsSweep, bool IsLaunch,
-        bool HasHitRegion, byte HitRegion, long HitboxShapeR, long MpCost);
+    private readonly Dictionary<int, List<Command>> _cmdBuf = new();
+    private readonly Dictionary<int, List<(Command cmd, int expiry)>> _inputBuffers = new();
+    private readonly Dictionary<int, byte> _teams = new();
+    private int _nextExecUid = 1;
+    private int _nextHitboxUid = 1;
+    private int _nextProjUid = 1;
 
     public SimWorld(long matchSeed, string dataVersionHash)
     {
         MatchSeed = matchSeed;
         DataVersionHash = dataVersionHash;
         Rng = new SimRng(matchSeed);
+        Collision = new CollisionSystem(RuntimeConstants.GRID_CELL_SIZE);
     }
 
-    public void AddSkill(SkillRuntimeData data) => _skills[data.SkillId] = data;
+    // ---- 装配（比赛开始前一次性；Step 后只读） ----
+
+    public void AddSkill(SkillRuntimeData def) => _skills[def.RuntimeId] = def;
     public SkillRuntimeData? GetSkill(ushort id) => _skills.GetValueOrDefault(id);
 
-    public void AddFighter(int id, string classId, Fixed x, Fixed z, long atk = 1100)
+    public void AddTerrain(TerrainBody body) => Collision.AddTerrain(body);
+    public void SealWorld()
+    {
+        Collision.SealTerrain();
+        Fighters.Sort((a, b) => a.Id.CompareTo(b.Id));
+        foreach (var f in Fighters) _teams[f.Id] = f.Team;
+    }
+
+    public void AddFighter(int id, string classId, Fixed x, Fixed z, byte team = 0, long atk = 1100, long def = 800)
     {
         Fighters.Add(new FighterStateData
         {
-            Id = id, ClassId = classId,
+            Id = id, ClassId = classId, Team = team,
             PosX = x, PosY = Fixed.Zero, PosZ = z,
-            HeadingQuantum = z.Raw > 0 ? 0 : 32768,  // 朝原点
-            Atk = atk,
+            HeadingQuantum = z.Raw > 0 ? 32768 : 0,   // 朝向对方半场（0=+Z；z<0 面向 +Z）
+            Atk = atk, Def = def,
         });
+        _teams[id] = team;   // 阵营注册随装配即时生效（SealWorld 前后均可 AddFighter）
     }
 
-    // ---- ADR-0001 Step：确定性状态转移 ----
+    // ---- Step（唯一入口） ----
+
     public void Step(int tick, ReadOnlySpan<Command> commands)
     {
         Tick = tick;
         Events.BeginTick(tick);
+        PendingContacts.Clear();
 
         // ① 指令处理（FighterId 升序）
         ProcessCommands(commands);
 
-        // ② Sim 主动推进（技能时间轴）
-        AdvanceSkills();
+        // ② Sim 主动推进（executions Uid 升序 → hitbox spawn；projectiles Uid 升序）
+        AdvanceExecutions();
+        DrainBuffers();
+        for (int i = 0; i < Projectiles.Count; i++)
+            ProjectileSystem.Advance(this, Projectiles[i], tick, Fighters);
 
-        // ③ 运动积分 + 碰撞（IntegrateMove：统一路径）
-        IntegrateAll();
+        // ③ 命中结算（ContactList 总序 → HitResolve）
+        SweepCombat();
+        ResolveContacts();
 
-        // ④ 状态机 Tick 结算
-        TickStates();
+        // ④ 运动积分（IntegrateMove 统一路径；L2 软推挤）
+        IntegrateFighters();
 
-        // ⑤ 事件冻结
-        // (EventLog 自动记录)
+        // ⑤ 状态/闸门/资源 Tick（FighterId 升序）
+        TickFighters();
 
-        // 清理
-        foreach (var f in Fighters)
+        // ⑥ 死亡判定
+        for (int i = 0; i < Fighters.Count; i++)
         {
+            var f = Fighters[i];
             if (f.Hp <= 0 && f.State != FighterState.Dead)
             {
                 f.State = FighterState.Dead;
-                Events.Emit(new SimEvent { Kind = EventKind.Died, AttackerId = f.Id, VictimId = f.Id });
+                Events.Emit(new SimEvent { Kind = EventKind.Died, VictimId = f.Id });
             }
         }
     }
 
-    // ---- 指令处理 ----
+    // ---- ① 指令处理 ----
+
     private void ProcessCommands(ReadOnlySpan<Command> commands)
     {
-        foreach (var cmd in commands)
+        // per-Fighter 分组（FighterId 升序——Sort 稳定化）
+        _cmdBuf.Clear();
+        for (int i = 0; i < commands.Length; i++)
         {
-            var f = Fighters.FirstOrDefault(x => x.Id == GetFighterIdForCommand(cmd));
-            if (f is null || f.State == FighterState.Dead) continue;
-            if (f.State != FighterState.Normal) continue;
+            var cmd = commands[i];
+            if (!_cmdBuf.TryGetValue(cmd.FighterId, out var list))
+                _cmdBuf[cmd.FighterId] = list = new List<Command>();
+            list.Add(cmd);
+        }
 
-            switch (cmd.Kind)
-            {
-                case CmdKind.Skill: TryCastSkill(f, cmd); break;
-                case CmdKind.Basic: TryCastSkill(f, cmd); break;
-                case CmdKind.Move: HandleMove(f, cmd); break;
-                case CmdKind.Jump: break; // Phase 3D
-            }
+        foreach (var f in Fighters)
+        {
+            if (f.State == FighterState.Dead) continue;
+            if (!_cmdBuf.TryGetValue(f.Id, out var cmds)) continue;
+            // GDD §2.3.2 优先级（高覆盖低）——稳定排序保持同优先级到达序
+            cmds.Sort((a, b) => CommandPriority.Of(a.Kind).CompareTo(CommandPriority.Of(b.Kind)));
+            for (int i = 0; i < cmds.Count; i++)
+                Dispatch(f, cmds[i]);
         }
     }
 
-    private int GetFighterIdForCommand(Command cmd) => cmd.TargetTick >= 0 ? cmd.TargetTick % Fighters.Count : 0;
+    private void Dispatch(FighterStateData f, Command cmd)
+    {
+        switch (cmd.Kind)
+        {
+            case CmdKind.Roll:
+                TryUkemi(f, cmd);
+                break;
+            case CmdKind.ForceCancel:
+                TryForceCancel(f);
+                break;
+            case CmdKind.Skill:
+                TryCastSkill(f, cmd, fromBuffer: false);
+                break;
+            case CmdKind.Basic:
+                TryCastBasic(f, cmd, fromBuffer: false);
+                break;
+            case CmdKind.Jump:
+                TryJump(f, cmd, fromBuffer: false);
+                break;
+            case CmdKind.Move:
+                HandleMove(f, cmd);
+                break;
+            case CmdKind.Steer:
+                break;   // 操控型生效窗（ADR-0008 controlled）——签名阶段接通（报告登记）
+        }
+    }
 
+    /// 8 向移动（GDD §3.2: 奔跑 6.0 m/s；攻击制动；状态门控）
     private void HandleMove(FighterStateData f, Command cmd)
     {
-        // 8 向移动：DirIndex → 方向向量
-        if (f.State != FighterState.Normal || f.ActiveSkillId != "") return;
-        long speed = 6 * Fixed.ONE + Fixed.ONE / 3; // 6.3 m/s
-        long dx = DirIndexToDX(cmd.DirIndex);
-        long dz = DirIndexToDZ(cmd.DirIndex);
-        f.VelX = Fixed.FromRaw(dx * speed / 100);
-        f.VelZ = Fixed.FromRaw(dz * speed / 100);
-        if (dx != 0 || dz != 0) { f.VelX = Fixed.Zero; f.VelZ = Fixed.Zero; } // 移动简化
+        if (f.State != FighterState.Normal || f.ActiveSkillUid != 0) return;   // Act 制动
+        if (!StatusSystem.CanMove(f)) return;
+        if (cmd.DirIndex > 7) return;
+        long speed = RuntimeConstants.RUN_MPS * Fixed.ONE;
+        speed = DeterministicMath.MulShift(speed, StatusSystem.MoveSpeedMultQ(f));
+        if (cmd.DirIndex == 0 && cmd.AimQuantum == 0 && cmd.TargetTick == int.MinValue)
+        { }   // 占位：v1 无「停走」区分——DirIndex=0 表示 +Z；停止 = 不发 Move
+        (long dx, long dz) = DirVector(cmd.DirIndex);
+        f.VelX = Fixed.FromRaw(DeterministicMath.MulShift(dx, speed));
+        f.VelZ = Fixed.FromRaw(DeterministicMath.MulShift(dz, speed));
+        // 朝向 = 移动方向（SPEC-0001 量化: DirIndex × 45°）
+        f.HeadingQuantum = cmd.DirIndex * 8192;
     }
 
-    private static long DirIndexToDX(byte idx) => idx switch { 1 => Fixed.ONE, 7 => -Fixed.ONE, _ => 0 };
-    private static long DirIndexToDZ(byte idx) => idx switch { 0 => Fixed.ONE, 4 => -Fixed.ONE, _ => 0 };
-
-    // ---- 技能施放 ----
-    private void TryCastSkill(FighterStateData f, Command cmd)
+    internal static (long, long) DirVector(byte dirIndex) => dirIndex switch
     {
-        if (cmd.Kind != CmdKind.Skill && cmd.Kind != CmdKind.Basic) return;
-        var skill = GetSkill(cmd.SkillId);
-        if (skill is null) return;
+        0 => (0, Fixed.ONE),                    // +Z
+        1 => (72405, 72405),                    // +X+Z（0.7071）
+        2 => (Fixed.ONE, 0),                    // +X
+        3 => (72405, -72405),                   // +X−Z
+        4 => (0, -Fixed.ONE),                   // −Z
+        5 => (-72405, -72405),                  // −X−Z
+        6 => (-Fixed.ONE, 0),                   // −X
+        7 => (-72405, 72405),                   // −X+Z
+        _ => (0, 0),
+    };
 
-        // CD 检查
-        if (f.Cooldowns.TryGetValue(cmd.SkillId, out var cd) && cd > 0) return;
-        // MP 检查
-        if (f.Mp < skill.MpCost) return;
+    // ---- 技能施放（含取消窗判定 GDD §8.2） ----
 
-        // 设置 CD
-        f.Cooldowns[cmd.SkillId] = skill.ActiveTicks + skill.RecoveryTicks + (long)(6 * Fixed.ONE / Fixed.ONE); // 简化
-        f.Mp -= skill.MpCost;
-        f.State = FighterState.Act;
-        f.ActiveSkillId = $"SKILL_{cmd.SkillId}";
-        f.ActivePhaseTick = 0;
-        f.HitConfirmed = false;
+    private bool TryCastSkill(FighterStateData f, Command cmd, bool fromBuffer)
+    {
+        var def = GetSkill(cmd.SkillId);
+        if (def is null) return false;
+        if (!StatusSystem.CanAct(f) || !StatusSystem.CanCastSkill(f)) return false;
+        if (f.State == FighterState.Dead) return false;
 
-        // 创建 SkillExecution
-        var exec = new SkillExecution
+        // Act 中: 取消窗判定（GDD §8.2）——资源/CD 预检在终止当前技能之前（原子切换）
+        if (f.State == FighterState.Act && f.ActiveSkillUid != 0)
         {
-            SkillId = f.ActiveSkillId,
-            OwnerId = f.Id,
-            CastTick = (int)Tick,
-            StartupTicks = skill.StartupTicks,
-            ActiveTicks = skill.ActiveTicks,
-            RecoveryTicks = skill.RecoveryTicks,
-            CurrentTick = 0,
-            Phase = 0,
-            MpCost = skill.MpCost,
-            IsBasicAttack = cmd.Kind == CmdKind.Basic,
-        };
-
-        // 生成 hitSchedule 对应的 ActiveHitbox
-        for (int seg = 0; seg < skill.Hits; seg++)
-        {
-            exec.Hitboxes.Add(new ActiveHitbox
+            var exec = GetExecution(f.ActiveSkillUid);
+            if (exec is not null && !IsCancelable(exec, def))
             {
-                OwnerId = f.Id, SkillId = cmd.SkillId, SegmentIndex = (byte)seg,
-                StartupTick = skill.StartupTicks,
-                ActiveStart = skill.StartupTicks,
-                ActiveEnd = skill.StartupTicks + skill.ActiveTicks,
-                DamageMultRaw = (long)(skill.DamageMult * Fixed.ONE),
-                HitstunTicks = skill.HitstunTicks,
-                KnockbackRaw = Fixed.FromInt((long)(skill.KnockbackM * 1000)).Raw / 1000,
-                LaunchVRaw = Fixed.FromRaw((long)(skill.LaunchV * Fixed.ONE / TICK_RATE)).Raw,
-                IsSweep = skill.IsSweep, IsLaunch = skill.IsLaunch,
-                HasHitRegion = skill.HasHitRegion, HitRegion = skill.HitRegion,
-                HitboxShapeR = skill.HitboxShapeR,
-            });
+                if (!fromBuffer) BufferInput(f, cmd);   // 缓冲排水尝试不再重复入队
+                return false;
+            }
+            if (!CanStartExecution(f, def)) return false;   // CD/MP 不足 → 取消不成立，当前技能不受影响
+            if (exec is not null) TerminateExecution(exec, cancelled: true);
+        }
+        else if (f.State != FighterState.Normal)
+        {
+            return false;   // 受击不可出招（铁则——不缓冲）
         }
 
-        ActiveSkills.Add(exec);
-        Events.Emit(new SimEvent
-        {
-            Kind = EventKind.SkillCast, AttackerId = f.Id, SkillId = cmd.SkillId,
-            VictimId = f.Id, DamageRaw = skill.MpCost,
-        });
+        return StartExecution(f, def, cmd);
     }
 
-    // ---- 技能推进 ----
-    private void AdvanceSkills()
+    /// 施放前置资源检查（MP/CD——不消耗）
+    private bool CanStartExecution(FighterStateData f, SkillRuntimeData def)
     {
-        for (int i = ActiveSkills.Count - 1; i >= 0; i--)
+        if (def.Type.StartsWith("basic")) return true;
+        if (f.Mp < def.MpCost) return false;
+        if (f.Cooldowns.TryGetValue(def.RuntimeId, out var cd) && cd > 0) return false;
+        return true;
+    }
+
+    /// 普攻（链式：生效帧后可取消下一段/技能，GDD §4.2）
+    private bool TryCastBasic(FighterStateData f, Command cmd, bool fromBuffer)
+    {
+        if (!StatusSystem.CanAct(f)) return false;
+        if (f.State == FighterState.Act && f.ActiveSkillUid != 0)
         {
-            var exec = ActiveSkills[i];
-            exec.CurrentTick++;
-            var owner = Fighters.FirstOrDefault(f => f.Id == exec.OwnerId);
-            if (owner is null) { ActiveSkills.RemoveAt(i); continue; }
-
-            if (exec.IsExpired)
+            var exec = GetExecution(f.ActiveSkillUid);
+            if (exec is null) return false;
+            if (!exec.IsBasic)
             {
-                owner.State = FighterState.Normal;
-                owner.ActiveSkillId = "";
-                Events.Emit(new SimEvent { Kind = EventKind.ActEnded, AttackerId = owner.Id, VictimId = owner.Id });
-                ActiveSkills.RemoveAt(i);
-                continue;
+                // 技能执行中不可普攻取消——缓冲
+                BufferInput(f, cmd);
+                return false;
             }
-
-            // 相位更新
-            if (exec.InActive && owner.State == FighterState.Act)
-                exec.Phase = 1;
-            else if (exec.InRecovery)
-                exec.Phase = 2;
-
-            // 命中判定（active 阶段，每段 hitSchedule 到点时）
-            if (exec.InActive && !exec.IsHold)
+            // 普攻段间: 生效帧后可衔接下一段（缓冲 18f 由缓冲机制承载）
+            if (exec.Def is null || exec.CurrentOffset < exec.Def.StartupTicks || exec.Def.ChainNext == 0)
             {
-                var skill = GetSkillForExecution(exec);
-                if (skill is not null) TryHit(exec, owner, skill);
+                if (!fromBuffer) BufferInput(f, cmd);
+                return false;
             }
+            var nextDef = GetSkill(exec.Def.ChainNext);
+            if (nextDef is null) return false;
+            TerminateExecution(exec, cancelled: false);
+            return StartExecution(f, nextDef, cmd);
         }
+        if (f.State != FighterState.Normal) return false;
+
+        // 链首: 职业第一条普攻（BAS 链 N=1）
+        var first = GetFirstBasic(f.ClassId);
+        if (first is null) return false;
+        return StartExecution(f, first, cmd);
     }
 
-    private SkillRuntimeData? GetSkillForExecution(SkillExecution exec)
+    private SkillRuntimeData? GetFirstBasic(string classId)
     {
-        // 从 ActiveSkillId 反查——简化实现
-        foreach (var kv in _skills)
+        // Catalog 遍历（确定性: RuntimeId 升序）——v1 直接线性扫描（487 规模可接受，索引化登记报告）
+        for (ushort id = 1; ; id++)
         {
-            if (exec.SkillId.Contains(kv.Key.ToString()) || exec.SkillId == $"SKILL_{kv.Key}")
-                return kv.Value;
+            var def = GetSkill(id);
+            if (def is null) break;
+            if (def.ClassId == classId && def.Type == "basic" && def.ChainN == 1) return def;
         }
         return null;
     }
 
-    private void TryHit(SkillExecution exec, FighterStateData owner, SkillRuntimeData skill)
+    private static bool IsCancelable(SkillExecution exec, SkillRuntimeData next)
     {
-        // 对每个 Hitbox 检查
-        foreach (var hb in exec.Hitboxes)
+        if (exec.Def is null) return false;
+        if (exec.IsBasic)
         {
-            // 检查当前 Tick 是否在命中窗口
-            int tickInWindow = exec.CurrentTick - exec.StartupTicks;
-            if (tickInWindow < 0 || tickInWindow >= skill.ActiveTicks) continue;
-
-            // 对每个敌方 Fighter 做碰撞检测
-            foreach (var target in Fighters)
-            {
-                if (target.Id == owner.Id || target.State == FighterState.Dead) continue;
-                if (target.State == FighterState.Getup) continue;  // 起身无敌
-                if (target.State == FighterState.Break) continue;   // 免控
-
-                // 简化距离判定（Circle hitbox）
-                long dx = target.PosX.Raw - owner.PosX.Raw;
-                long dz = target.PosZ.Raw - owner.PosZ.Raw;
-                long distSq = dx * dx + dz * dz;
-                long range = skill.HitboxShapeR;
-                if (distSq > range * range) continue;
-
-                // 已命中检查（同 segment 去重）
-                long hitKey = (long)target.Id << 32 | (long)Tick << 8 | hb.SegmentIndex;
-                if (owner.HitTargets.Contains(hitKey)) continue;
-                owner.HitTargets.Add(hitKey);
-
-                // 命中！
-                ResolveHit(owner, target, skill, hb, exec);
-            }
+            // 普攻→技能: 自生效帧后 4f 起（GDD §4.2）
+            return exec.CurrentOffset >= exec.Def.StartupTicks + RuntimeConstants.BASIC_CANCEL_TO_SKILL_TICKS;
         }
+        // 技能→技能: 命中确认 + 后摇取消窗 + 档位递进（GDD §8.2）
+        if (!exec.HitConfirmed) return false;
+        if (exec.CurrentOffset < exec.RecoveryStartOffset) return false;
+        if (exec.Def.CancelMinTier == 255) return false;
+        return next.Tier >= exec.Def.CancelMinTier;
     }
 
-    // ---- HitResolve（Phase 3C 核心）----
-    private void ResolveHit(FighterStateData attacker, FighterStateData victim, SkillRuntimeData skill, ActiveHitbox hb, SkillExecution exec)
+    private bool StartExecution(FighterStateData f, SkillRuntimeData def, Command cmd)
     {
-        if (victim.State == FighterState.Down && hb.IsSweep == false) return;  // 倒地保护
-        if (victim.State == FighterState.Dead) return;
-
-        victim.HitstunCount++;
-        int hn = victim.HitstunCount;
-
-        // 伤害计算（ADR-0001 §2.5 + SPEC-0006 HitRegion）
-        long mult = (long)(skill.DamageMult * Fixed.ONE);
-        long dmg = DeterministicMath.MulShift(mult, attacker.Atk);
-        dmg = DeterministicMath.MulShift(dmg, 3 * Fixed.ONE / 5);  // ×0.6 防御
-
-        // HitRegion 修正（GDD §4.6 弱点头部 / 巴雷特头部×2）
-        var region = HitRegion.Torso;
-        if (skill.HasHitRegion) region = (HitRegion)skill.HitRegion;
-        else if (victim.PosY.Raw > Fixed.FromInt(1).Raw) region = HitRegion.Head; // 空中目标近头
-
-        if (region == HitRegion.Head && skill.HitRegion > 0)
-            dmg = DeterministicMath.MulShift(dmg, Calc.DeterministicTables.Modifiers.WeakPointX150);
-        else if (region == HitRegion.Head)
-            dmg = DeterministicMath.MulShift(dmg, Calc.DeterministicTables.Modifiers.WeakPointX200);
-
-        // 连段递减（ADR-0001 §2 伤害递减表）
-        if (hn >= 7)
+        // MP/CD 消耗（普攻无消耗；调用方已 CanStartExecution 预检——此处直接消耗）
+        if (!def.Type.StartsWith("basic"))
         {
-            int idx = Math.Min(hn, Calc.DeterministicTables.DamageDecay.Length - 1);
-            dmg = DeterministicMath.MulShift(dmg, Calc.DeterministicTables.DamageDecay[idx]);
+            f.Mp -= def.MpCost;
+            f.Cooldowns[def.RuntimeId] = def.CooldownTicks;
         }
 
-        victim.Hp -= dmg / Fixed.ONE;
+        var exec = new SkillExecution
+        {
+            Uid = _nextExecUid++,
+            SkillRuntimeId = def.RuntimeId,
+            OwnerId = f.Id,
+            CastTick = (int)Tick,
+            Def = def,
+            SegmentVictims = def.HitSchedule.Length > 0 ? new HashSet<int>[def.HitSchedule.Length] : Array.Empty<HashSet<int>>(),
+        };
+        for (int i = 0; i < exec.SegmentVictims.Length; i++) exec.SegmentVictims[i] = new HashSet<int>();
+        Executions.Add(exec);
+        f.State = FighterState.Act;
+        f.ActiveSkillUid = exec.Uid;
+        f.VelX = Fixed.Zero; f.VelZ = Fixed.Zero;   // 攻击制动（GDD §3.2）
+        // 施放朝向: Steer/Aim 量化（SPEC-0001）——Skill 指令的 AimQuantum 直接锁定朝向
+        if (cmd.AimQuantum != 0 || cmd.Kind == CmdKind.Skill) f.HeadingQuantum = cmd.AimQuantum;
 
-        // 浮空 vs 击退 vs 倒地
-        if (skill.LaunchV > 0)
+        // 投射物技: active 起点发射（hitSchedule[0] 偏移）
+        if (def.IsProjectile)
         {
-            if (victim.State == FighterState.Launch)
-            {
-                // 浮空刷新（×0.8^n，下限 3.0）
-                victim.LaunchCount++;
-                int idx = Math.Min(victim.LaunchCount, Calc.DeterministicTables.LaunchDecay.Length - 1);
-                long newV = DeterministicMath.MulShift(Fixed.FromRaw((long)(skill.LaunchV * 1000)).Raw,
-                    Calc.DeterministicTables.LaunchDecay[idx]);
-                if (newV < 3 * Fixed.ONE) newV = 3 * Fixed.ONE;
-                victim.VelY = Fixed.FromRaw(newV);
-                Events.Emit(new SimEvent { Kind = EventKind.Launched, AttackerId = attacker.Id, VictimId = victim.Id, SkillId = 0 });
-            }
-            else
-            {
-                victim.LaunchCount = 0;
-                victim.AirTime = 0;
-                victim.VelY = Fixed.FromRaw((long)(skill.LaunchV * 1000));
-                victim.State = FighterState.Launch;
-                Events.Emit(new SimEvent { Kind = EventKind.Launched, AttackerId = attacker.Id, VictimId = victim.Id });
-            }
-        }
-        else if (skill.KnockbackM > 0)
-        {
-            long hs = Math.Max(skill.HitstunTicks, 12);
-            hs = DeterministicMath.MulShift(hs, Calc.DeterministicTables.HitstunDecay[Math.Min(hn, 64)]);
-            hs = Math.Max(hs, 6);
-            victim.State = FighterState.Hitstun;
-            victim.StateTicksRemaining = (int)hs;
-            // 击退方向
-            long dirX = victim.PosX.Raw > attacker.PosX.Raw ? 1 : -1;
-            victim.VelX = Fixed.FromRaw(dirX * (long)(skill.KnockbackM * 1000) * DeterministicMath.FRAC / 1000);
-            Events.Emit(new SimEvent { Kind = EventKind.WallBounced, AttackerId = attacker.Id, VictimId = victim.Id });
-        }
-        else if (victim.State != FighterState.Launch && victim.State != FighterState.Down)
-        {
-            victim.State = FighterState.Hitstun;
-            victim.StateTicksRemaining = (int)Math.Max(DeterministicMath.MulShift(skill.HitstunTicks, Calc.DeterministicTables.HitstunDecay[Math.Min(hn, 64)]), 6);
+            _pendingProjectileSpawns.Add((exec, def.StartupTicks));
         }
 
         Events.Emit(new SimEvent
         {
-            Kind = EventKind.Hit, AttackerId = attacker.Id, VictimId = victim.Id,
-            SkillId = 0, SegmentIndex = hb.SegmentIndex,
-            DamageRaw = dmg, HitNumber = hn,
-            VictimStateBefore = (byte)victim.State,
-            HitRegion = (byte)region,
-            HitPointX = victim.PosX.Raw, HitPointY = victim.PosY.Raw + FIGHTER_HEIGHT / 2,
-            HitPointZ = victim.PosZ.Raw,
-            SweepFlag = hb.IsSweep, AirMod = victim.State == FighterState.Launch,
+            Kind = EventKind.SkillCast, AttackerId = f.Id, SkillId = def.RuntimeId,
+            ValueRaw = def.MpCost,
         });
-
-        // 控制值挣脱
-        if (victim.ControlValue >= 100 && victim.State != FighterState.Break)
-        {
-            victim.ControlValue = 0;
-            victim.State = FighterState.Break;
-            victim.StateTicksRemaining = 90;
-            Events.Emit(new SimEvent { Kind = EventKind.BreakTriggered, VictimId = victim.Id });
-        }
+        return true;
     }
 
-    // ---- 运动积分（IntegrateMove 统一路径）----
-    private void IntegrateAll()
+    private readonly List<(SkillExecution exec, int atOffset)> _pendingProjectileSpawns = new();
+
+    private bool TryJump(FighterStateData f, Command cmd, bool fromBuffer)
+    {
+        if (f.State == FighterState.Act && f.ActiveSkillUid != 0)
+        {
+            // 跳跃取消（GDD §8.2: 标注【跳取消】技能命中后）
+            var exec = GetExecution(f.ActiveSkillUid);
+            if (exec is null || exec.Def is null || !exec.Def.JumpCancel || !exec.HitConfirmed ||
+                exec.CurrentOffset < exec.RecoveryStartOffset)
+            {
+                if (!fromBuffer) BufferInput(f, cmd);
+                return false;
+            }
+            TerminateExecution(exec, cancelled: true);
+        }
+        else if (f.State != FighterState.Normal)
+        {
+            return false;
+        }
+        if (f.PosY.Raw > 0 || !StatusSystem.CanAct(f)) return false;
+        f.VelY = Fixed.FromRaw(RuntimeConstants.JUMP_VELOCITY_MPS * Fixed.ONE);
+        return true;
+    }
+
+    /// 受身（GDD §5.6/§10.3: 倒地 0–20f（连续倒地 30f）+ 方向 ≤90°）
+    private void TryUkemi(FighterStateData f, Command cmd)
+    {
+        if (f.State != FighterState.Down) return;
+        if (f.UkemiIneffective) return;   // 【受身无效】（GDD §5.6）
+        int window = f.DownCount >= 2 ? RuntimeConstants.UKEMI_WINDOW_EXTENDED : RuntimeConstants.UKEMI_WINDOW_TICKS;
+        if (f.DownTicks > window) return;
+        // 方向判定: 输入方向 vs 摔倒方向 ≤90°（DirIndex 环距 ≤1）
+        int diff = Math.Abs(cmd.DirIndex - f.FallDirIndex);
+        diff = Math.Min(diff, 8 - diff);
+        if (diff > 1) return;
+        // 受身: 立即弹起 → Getup 24f 全程无敌
+        f.State = FighterState.Getup;
+        f.StateTicksRemaining = RuntimeConstants.GETUP_TICKS;
+        f.InvulnTicks = RuntimeConstants.GETUP_TICKS;
+        f.VelX = Fixed.Zero; f.VelZ = Fixed.Zero;
+        Events.Emit(new SimEvent { Kind = EventKind.Ukemi, VictimId = f.Id });
+    }
+
+    /// 强制中断（GDD §10.4: 后摇立即结束，60 MP + CD 4s）
+    private void TryForceCancel(FighterStateData f)
+    {
+        if (f.State != FighterState.Act || f.ActiveSkillUid == 0) return;
+        var exec = GetExecution(f.ActiveSkillUid);
+        if (exec is null || !exec.InRecovery) return;   // 仅后摇（不含前摇/生效）
+        if (f.Mp < RuntimeConstants.FORCE_CANCEL_MP_COST) return;
+        if (f.Cooldowns.TryGetValue(0, out var fcd) && fcd > 0) return;
+        f.Mp -= RuntimeConstants.FORCE_CANCEL_MP_COST;
+        f.Cooldowns[0] = RuntimeConstants.FORCE_CANCEL_CD_TICKS;
+        TerminateExecution(exec, cancelled: true);
+    }
+
+    // ---- 输入缓冲（ADR-0010 §2: Sim 裁决，12f 窗口） ----
+
+    private void BufferInput(FighterStateData f, Command cmd)
+    {
+        if (!_inputBuffers.TryGetValue(f.Id, out var buf))
+            _inputBuffers[f.Id] = buf = new List<(Command, int)>();
+        if (buf.Count >= RuntimeConstants.MAX_BUFFERED_COMMANDS) buf.RemoveAt(0);   // 满则丢最旧
+        buf.Add((cmd, (int)Tick + RuntimeConstants.INPUT_BUFFER_TICKS));
+    }
+
+    /// 缓冲排水: 最早合法指令在恢复可操作瞬间执行（GDD §2.3.1）
+    private void DrainBuffers()
     {
         foreach (var f in Fighters)
         {
-            if (f.State == FighterState.Dead) continue;
-            if (f.State == FighterState.Launch) continue;
-
-            // 水平运动
-            if (f.VelX.Raw != 0 || f.VelZ.Raw != 0)
+            if (!_inputBuffers.TryGetValue(f.Id, out var buf) || buf.Count == 0) continue;
+            if (f.State == FighterState.Dead) { buf.Clear(); continue; }
+            for (int i = 0; i < buf.Count; i++)
             {
-                f.PosX = Fixed.FromRaw(f.PosX.Raw + f.VelX.Raw / TICK_RATE);
-                f.PosZ = Fixed.FromRaw(f.PosZ.Raw + f.VelZ.Raw / TICK_RATE);
-
-                // 边界碰撞（矩形 arena）
-                bool bounced = false;
-                if (f.PosX.Raw > ARENA_HALF_W) { f.PosX = Fixed.FromRaw(ARENA_HALF_W); f.VelX = Fixed.FromRaw(-f.VelX.Raw * BOUNCE_FACTOR_NUM / BOUNCE_FACTOR_DEN); bounced = true; }
-                if (f.PosX.Raw < -ARENA_HALF_W) { f.PosX = Fixed.FromRaw(-ARENA_HALF_W); f.VelX = Fixed.FromRaw(-f.VelX.Raw * BOUNCE_FACTOR_NUM / BOUNCE_FACTOR_DEN); bounced = true; }
-                if (f.PosZ.Raw > ARENA_HALF_D) { f.PosZ = Fixed.FromRaw(ARENA_HALF_D); f.VelZ = Fixed.FromRaw(-f.VelZ.Raw * BOUNCE_FACTOR_NUM / BOUNCE_FACTOR_DEN); bounced = true; }
-                if (f.PosZ.Raw < -ARENA_HALF_D) { f.PosZ = Fixed.FromRaw(-ARENA_HALF_D); f.VelZ = Fixed.FromRaw(-f.VelZ.Raw * BOUNCE_FACTOR_NUM / BOUNCE_FACTOR_DEN); bounced = true; }
-                if (bounced)
+                var (cmd, expiry) = buf[i];
+                if (expiry < Tick) { buf.RemoveAt(i); i--; continue; }
+                bool ok = cmd.Kind switch
                 {
-                    if (f.State == FighterState.Hitstun) f.StateTicksRemaining += 10;
-                    Events.Emit(new SimEvent { Kind = EventKind.WallBounced, VictimId = f.Id });
-                }
-
-                // 摩擦
-                f.VelX = Fixed.FromRaw(f.VelX.Raw * 85 / 100);
-                f.VelZ = Fixed.FromRaw(f.VelZ.Raw * 85 / 100);
-                if (Math.Abs(f.VelX.Raw) < Fixed.ONE / 20 && Math.Abs(f.VelZ.Raw) < Fixed.ONE / 20)
+                    CmdKind.Skill => TryCastSkill(f, cmd, fromBuffer: true),
+                    CmdKind.Basic => TryCastBasic(f, cmd, fromBuffer: true),
+                    CmdKind.Jump => TryJump(f, cmd, fromBuffer: true),
+                    _ => false,
+                };
+                if (ok)
                 {
-                    f.VelX = Fixed.Zero; f.VelZ = Fixed.Zero;
+                    buf.RemoveAt(i);
+                    break;   // 每 Tick 至多消费一条
                 }
             }
+        }
+    }
 
-            // 垂直运动（Launch）
-            if (f.State == FighterState.Launch)
+    // ---- ② 技能时间轴推进 ----
+
+    private void AdvanceExecutions()
+    {
+        _pendingProjectileSpawns.Clear();
+        for (int i = Executions.Count - 1; i >= 0; i--)
+        {
+            var exec = Executions[i];
+            if (exec.Terminated) { Executions.RemoveAt(i); continue; }
+            var owner = GetFighter(exec.OwnerId);
+            if (owner is null || owner.ActiveSkillUid != exec.Uid)
             {
-                f.AirTime++;
-                if (f.AirTime >= 180) { f.ForcedFall = true; f.VelY = Fixed.FromRaw(-12 * Fixed.ONE); }
-                f.VelY = Fixed.FromRaw(f.VelY.Raw - GRAVITY_PER_TICK);
-                f.PosY = Fixed.FromRaw(f.PosY.Raw + f.VelY.Raw / TICK_RATE);
+                // Owner 已被打断/切换（防御——正常路径走 TerminateExecution）
+                Executions.RemoveAt(i);
+                continue;
+            }
+            exec.CurrentOffset++;
+            var def = exec.Def!;
+
+            // hitSchedule → hitbox spawn（P-2 编译期预计算偏移）
+            while (exec.SpawnedSegments < def.HitSchedule.Length &&
+                   exec.CurrentOffset >= SkillTimeline.SegmentWindow(def, exec.SpawnedSegments).start)
+            {
+                SpawnSegmentHitbox(exec, def, owner, exec.SpawnedSegments);
+                exec.SpawnedSegments++;
+            }
+
+            // 投射物发射点
+            if (def.IsProjectile && exec.CurrentOffset == def.StartupTicks)
+            {
+                ProjectileSystem.Spawn(this, owner, def, owner.HeadingQuantum, (int)Tick);
+            }
+
+            // 结束（恢复完毕）
+            if (exec.CurrentOffset >= exec.TotalTicks)
+            {
+                EndExecution(exec, owner);
+                Executions.RemoveAt(i);
+            }
+        }
+        // 过期 hitbox 回收
+        for (int i = Hitboxes.Count - 1; i >= 0; i--)
+            if (Tick >= Hitboxes[i].ExpireTick) Hitboxes.RemoveAt(i);
+    }
+
+    private void SpawnSegmentHitbox(SkillExecution exec, SkillRuntimeData def, FighterStateData owner, int segment)
+    {
+        if (def.Geo.Kind == GeoKind.None) return;
+        var (start, end) = SkillTimeline.SegmentWindow(def, segment);
+        var hb = new ActiveHitbox
+        {
+            Uid = _nextHitboxUid++,
+            OwnerId = owner.Id,
+            Def = def,
+            SegmentIndex = (byte)segment,
+            SpawnTick = (int)Tick,
+            ExpireTick = (int)Tick + Math.Max(end - start, 1),
+            AnchorX = owner.PosX.Raw,
+            AnchorZ = owner.PosZ.Raw,
+            AnchorHeading = owner.HeadingQuantum,
+            AnchorVelX = owner.VelX.Raw,
+            AnchorVelZ = owner.VelZ.Raw,
+        };
+        exec.SegmentVictims![segment] = hb.HitVictims;
+        Hitboxes.Add(hb);
+    }
+
+    private void EndExecution(SkillExecution exec, FighterStateData owner)
+    {
+        if (!exec.HitConfirmed)
+        {
+            // 空技能 = 暴露破绽（GDD §4.4）——Whiff 事件（取消资格缺失的可观测形式）
+            Events.Emit(new SimEvent { Kind = EventKind.Whiff, AttackerId = owner.Id, SkillId = exec.SkillRuntimeId, ReasonByte = (byte)WhiffReason.Range });
+        }
+        owner.State = FighterState.Normal;
+        owner.ActiveSkillUid = 0;
+        Events.Emit(new SimEvent { Kind = EventKind.ActEnded, AttackerId = owner.Id, SkillId = exec.SkillRuntimeId });
+    }
+
+    private void TerminateExecution(SkillExecution exec, bool cancelled)
+    {
+        var owner = GetFighter(exec.OwnerId);
+        exec.Terminated = true;
+        if (owner is not null && owner.ActiveSkillUid == exec.Uid)
+        {
+            owner.State = FighterState.Normal;
+            owner.ActiveSkillUid = 0;
+        }
+        if (cancelled)
+            Events.Emit(new SimEvent { Kind = EventKind.Cancelled, AttackerId = exec.OwnerId, SkillId = exec.SkillRuntimeId });
+    }
+
+    // ---- ③ 命中结算（SPEC-0005 §6 总序 → HitResolve 零几何） ----
+
+    private void SweepCombat()
+    {
+        // 主动 hitbox × 敌方 Fighter（相对扫掠，PA-7）
+        foreach (var hb in Hitboxes)   // Hitboxes 按 Uid 升序追加
+        {
+            if (Tick < hb.SpawnTick || Tick >= hb.ExpireTick) continue;
+            var def = hb.Def;
+            var owner = GetFighter(hb.OwnerId);
+            if (owner is not { } ownerN || ownerN.State == FighterState.Dead) continue;
+            var own = ownerN;
+
+            var region = BuildHitboxRegion(def.Geo, hb.AnchorX, hb.AnchorZ, hb.AnchorHeading);
+            long relBaseX = hb.AnchorVelX, relBaseZ = hb.AnchorVelZ;
+
+            foreach (var vic in Fighters)   // Id 升序（SPEC-0005 §6.2 多目标 victimId 序）
+            {
+                if (vic.Id == hb.OwnerId || vic.State == FighterState.Dead) continue;
+                if (SameTeam(hb.OwnerId, vic.Id)) continue;
+                if (hb.HitVictims.Contains(vic.Id)) continue;
+                if (vic.State == FighterState.Break) continue;   // 免控≠免伤，但 Break 源自挣脱保护窗
+
+                // PA-7 相对扫掠: mover = victim 体圆，位移 = victim 位移 − owner 位移
+                long dispX = DeterministicMath.DivRoundHalfEven(vic.VelX.Raw, RuntimeConstants.TICK_RATE) - DeterministicMath.DivRoundHalfEven(relBaseX, RuntimeConstants.TICK_RATE);
+                long dispZ = DeterministicMath.DivRoundHalfEven(vic.VelZ.Raw, RuntimeConstants.TICK_RATE) - DeterministicMath.DivRoundHalfEven(relBaseZ, RuntimeConstants.TICK_RATE);
+                if (!SweepSolver.SweepRegion(region, vic.PosX.Raw, vic.PosZ.Raw, dispX, dispZ,
+                        RuntimeConstants.FIGHTER_RADIUS, out long toi, out _, out long nx, out long nz))
+                    continue;
+
+                // 垂直门控: hitbox 高度带（绝对 = Owner PosY + 相对带）× victim 体带
+                long bandLo = own.PosY.Raw + def.Geo.BandLow;
+                long bandHi = own.PosY.Raw + def.Geo.BandHigh;
+                long vicLo = vic.PosY.Raw, vicHi = vic.PosY.Raw + (vic.State == FighterState.Down ? RuntimeConstants.DOWN_TORSO_TOP : RuntimeConstants.FIGHTER_HEIGHT);
+                if (bandHi < vicLo || bandLo > vicHi) continue;   // 高度带不相交 → 无命中
+
+                // 倒地保护: 仅【扫地】可打（几何接触后资格否决 → Whiff）
+                if (vic.State == FighterState.Down && !def.Sweep)
+                {
+                    Events.Emit(new SimEvent { Kind = EventKind.Whiff, AttackerId = hb.OwnerId, SkillId = def.RuntimeId, ReasonByte = (byte)WhiffReason.DownProtected });
+                    hb.HitVictims.Add(vic.Id);
+                    continue;
+                }
+
+                // 部位选取（PA-H2: Head priority 20 > Torso 10——几何精判）
+                byte regionSel = SelectHitRegion(def, region, hb, vic, bandLo, bandHi);
+                (long px, long py, long pz) = ContactPoint(def, hb, vic, dispX, dispZ, toi, nx, nz, regionSel);
+
+                PendingContacts.Add(new PendingContact
+                {
+                    ToiRaw = toi, LayerRank = 2,
+                    AttackerId = hb.OwnerId, DefenderId = vic.Id,
+                    HitboxUid = hb.Uid, Region = regionSel, Kind = (byte)ContactKind.CombatHit,
+                    SkillRuntimeId = def.RuntimeId, SegmentIndex = hb.SegmentIndex,
+                    HitPointX = px, HitPointY = py, HitPointZ = pz,
+                    NormalX = nx, NormalZ = nz,
+                });
+                hb.HitVictims.Add(vic.Id);   // SemanticKey 幂等（同段同 victim 一次）
+                MarkHitConfirmed(own, def.RuntimeId);
+            }
+        }
+
+        // 排序（SPEC-0006 §2 稳定排序键；同键 = 同一离散时刻去重语义 PA-4.1）
+        PendingContacts.Sort((a, b) =>
+        {
+            int c = a.ToiRaw.CompareTo(b.ToiRaw);
+            if (c != 0) return c;
+            c = a.LayerRank.CompareTo(b.LayerRank);
+            if (c != 0) return c;
+            c = a.AttackerId.CompareTo(b.AttackerId);
+            if (c != 0) return c;
+            c = a.DefenderId.CompareTo(b.DefenderId);
+            if (c != 0) return c;
+            c = a.HitboxUid.CompareTo(b.HitboxUid);
+            if (c != 0) return c;
+            c = a.Region.CompareTo(b.Region);
+            return c != 0 ? c : a.Kind.CompareTo(b.Kind);
+        });
+    }
+
+    private void MarkHitConfirmed(FighterStateData owner, ushort skillId)
+    {
+        var exec = GetExecution(owner.ActiveSkillUid);
+        if (exec is not null && exec.SkillRuntimeId == skillId) exec.HitConfirmed = true;
+    }
+
+    /// 部位几何精判（SPEC-0006 PA-H1.2/PA-H2 + GDD §4.6 弱点门控）:
+    /// 仅【弱点】类技能（HeadMultQ>0）使用头部 Hurtbox——其余技能命中一律 Torso。
+    private byte SelectHitRegion(SkillRuntimeData def, ConvexRegion region, ActiveHitbox hb,
+        FighterStateData vic, long bandLo, long bandHi)
+    {
+        if (def.HeadMultQ <= 0) return (byte)HitRegion.Torso;   // GDD §4.6: 非弱点技不使用头部判定
+        long headCy = HurtboxModel.HeadCenterY(vic.PosY.Raw);
+        // 头部球水平: 头心 vs hitbox 膨胀 headR（PA-H1.2 真 3D 由弹道路径承担；近战带语义走带交）
+        bool head2D = SweepSolver.SweepRegion(region, vic.PosX.Raw, vic.PosZ.Raw, 0, 0,
+            RuntimeConstants.HEAD_RADIUS, out _, out _, out _, out _);
+        // 头部球垂直带 [headCy−r, headCy+r] ∩ hitbox 带
+        bool headBand = bandHi >= headCy - RuntimeConstants.HEAD_RADIUS && bandLo <= headCy + RuntimeConstants.HEAD_RADIUS;
+        if (head2D && headBand) return (byte)HitRegion.Head;
+        return (byte)HitRegion.Torso;
+    }
+
+    /// 接触点（SPEC-0005 §5.4: Circle mover = TOI 位置 + 法线 × r 表面投影）
+    private (long, long, long) ContactPoint(SkillRuntimeData def, ActiveHitbox hb, FighterStateData vic,
+        long dispX, long dispZ, long toi, long nx, long nz, byte regionSel)
+    {
+        long cx = vic.PosX.Raw + DeterministicMath.MulShift(dispX, toi);
+        long cz = vic.PosZ.Raw + DeterministicMath.MulShift(dispZ, toi);
+        // HitPoint = victim 中心 TOI 位置 − normal × bodyR（体表面朝 hitbox 侧）
+        long px = cx - DeterministicMath.MulShift(nx, RuntimeConstants.FIGHTER_RADIUS);
+        long pz = cz - DeterministicMath.MulShift(nz, RuntimeConstants.FIGHTER_RADIUS);
+        long py = regionSel == (byte)HitRegion.Head
+            ? HurtboxModel.HeadCenterY(vic.PosY.Raw)
+            : vic.PosY.Raw + RuntimeConstants.TORSO_TOP / 2;
+        return (px, py, pz);
+    }
+
+    internal ConvexRegion BuildHitboxRegion(HitboxGeometry geo, long anchorX, long anchorZ, long heading)
+    {
+        return geo.Kind switch
+        {
+            GeoKind.Sector => ConvexRegion.Sector(anchorX, anchorZ, heading, geo.HalfDegIndex, geo.Radius),
+            GeoKind.Circle => ConvexRegion.Circle(anchorX, anchorZ, geo.Radius),
+            GeoKind.Obb => ObbForward(anchorX, anchorZ, heading, geo.HalfForward, geo.HalfAcross),
+            GeoKind.Cylinder => ConvexRegion.Circle(anchorX, anchorZ, geo.Radius),
+            _ => throw new InvalidOperationException("hitbox geo none"),
+        };
+    }
+
+    private static ConvexRegion ObbForward(long x, long z, long heading, long halfForward, long halfAcross)
+    {
+        DeterministicMath.CordicCosSin(heading, out var fx, out var fz);
+        // box 从 Owner 原点沿前向延伸: 中心 = owner + f × halfForward
+        long cx = x + DeterministicMath.MulShift(fx, halfForward);
+        long cz = z + DeterministicMath.MulShift(fz, halfForward);
+        return ConvexRegion.Obb(cx, cz, fx, fz, halfForward, halfAcross);
+    }
+
+    // ---- 命中结算（PA-H3 时序） ----
+
+    private void ResolveContacts()
+    {
+        for (int i = 0; i < PendingContacts.Count; i++)
+        {
+            var c = PendingContacts[i];
+            var attacker = GetFighter(c.AttackerId);
+            var victim = GetFighter(c.DefenderId);
+            var def = GetSkill(c.SkillRuntimeId);
+            if (attacker is null || victim is null || def is null) continue;
+
+            HitResolve.Resolve(new HitResolve.HitContext
+            {
+                World = this,
+                Attacker = attacker,
+                Victim = victim,
+                Def = def,
+                SegmentIndex = c.SegmentIndex,
+                HitRegion = c.Region,
+                HitPointX = c.HitPointX, HitPointY = c.HitPointY, HitPointZ = c.HitPointZ,
+                HitNormalX = c.NormalX, HitNormalZ = c.NormalZ,
+            });
+
+            // PA-H3: 投射物命中后处理
+            if (c.FromProjectileUid != 0)
+            {
+                var proj = FindProjectile(c.FromProjectileUid);
+                if (proj is not null && !proj.Expired)
+                {
+                    if (proj.PierceRemaining > 0) proj.PierceRemaining--;
+                    else ProjectileSystem.Destroy(this, proj, ProjectileSystem.ProjectileEndReason.Hit);
+                }
+            }
+        }
+    }
+
+    private ProjectileState? FindProjectile(int uid)
+    {
+        for (int i = 0; i < Projectiles.Count; i++)
+            if (Projectiles[i].Uid == uid) return Projectiles[i];
+        return null;
+    }
+
+    // ---- ④ 运动积分（IntegrateMove 统一路径——SPEC-0005 §2 禁止旁路） ----
+
+    private void IntegrateFighters()
+    {
+        foreach (var f in Fighters)   // Id 升序
+        {
+            if (f.State == FighterState.Dead) continue;
+
+            // 垂直运动（Launch/跳跃共用重力路径；GroundStop）
+            bool wasAirborne = f.PosY.Raw > 0;
+            if (f.PosY.Raw > 0 || f.VelY.Raw != 0)
+            {
+                f.VelY = Fixed.FromRaw(f.VelY.Raw - RuntimeConstants.GRAVITY_PER_TICK);
+                f.PosY = Fixed.FromRaw(f.PosY.Raw + DeterministicMath.DivRoundHalfEven(f.VelY.Raw, RuntimeConstants.TICK_RATE));
                 if (f.PosY.Raw <= 0)
                 {
-                    f.PosY = Fixed.Zero; f.VelY = Fixed.Zero;
-                    f.State = FighterState.Down;
-                    f.DownTicks = 0;
-                    f.VelX = Fixed.Zero; f.VelZ = Fixed.Zero;
-                    Events.Emit(new SimEvent { Kind = EventKind.Landed, VictimId = f.Id });
+                    f.PosY = Fixed.Zero;
+                    f.VelY = Fixed.Zero;
+                    if (f.State == FighterState.Launch)
+                    {
+                        // 浮空落地 → 倒地（GDD §5.3；长倒地 = 强制落地）
+                        f.State = FighterState.Down;
+                        f.DownTicks = 0;
+                        f.DownCount++;
+                        Events.Emit(new SimEvent { Kind = EventKind.Landed, VictimId = f.Id, ValueRaw = f.FloatAirTicks });
+                    }
+                    else if (wasAirborne)
+                    {
+                        Events.Emit(new SimEvent { Kind = EventKind.Landed, VictimId = f.Id });
+                    }
                 }
             }
-            else if (f.PosY.Raw > 0 && f.State != FighterState.Down)
+
+            // 浮空连时钟（GDD §5.3 第二道闸: 累计 3s 强制落地）
+            if (f.State == FighterState.Launch)
             {
-                // 地面约束
-                f.VelY = Fixed.FromRaw(f.VelY.Raw - GRAVITY_PER_TICK);
-                f.PosY = Fixed.FromRaw(f.PosY.Raw + f.VelY.Raw / TICK_RATE);
-                if (f.PosY.Raw <= 0) { f.PosY = Fixed.Zero; f.VelY = Fixed.Zero; }
+                f.FloatAirTicks++;
+                if (f.FloatAirTicks >= RuntimeConstants.FLOAT_PROTECT_TICKS && !f.ForcedFall)
+                {
+                    f.ForcedFall = true;
+                    f.VelY = Fixed.FromRaw(-12 * Fixed.ONE);
+                    Events.Emit(new SimEvent { Kind = EventKind.FloatProtect, VictimId = f.Id, ValueRaw = f.FloatAirTicks });
+                }
+            }
+
+            // 水平运动（IntegrateMove: 走位 Stop / 击退 Bounce）
+            bool bounce = f.State == FighterState.Hitstun || f.State == FighterState.Launch;
+            var move = Collision.IntegrateMove(f.PosX.Raw, f.PosZ.Raw, f.VelX.Raw, f.VelZ.Raw,
+                RuntimeConstants.FIGHTER_RADIUS, bounceEnabled: bounce);
+            f.PosX = Fixed.FromRaw(move.FinalX);
+            f.PosZ = Fixed.FromRaw(move.FinalZ);
+            f.VelX = Fixed.FromRaw(move.FinalVelX);
+            f.VelZ = Fixed.FromRaw(move.FinalVelZ);
+            if (move.BounceCount > 0)
+            {
+                if (f.State == FighterState.Hitstun)
+                    f.StateTicksRemaining += RuntimeConstants.WALL_STUN_EXTEND_TICKS;   // GDD §5.8 硬直延长 10f
+                Events.Emit(new SimEvent { Kind = EventKind.WallBounced, VictimId = f.Id, HitNormalX = move.ContactNormalX, HitNormalZ = move.ContactNormalZ });
+            }
+
+            // 摩擦（击退衰减——仅 Hitstun 状态；走位速度每 Tick 由指令重设）
+            if (f.State == FighterState.Hitstun)
+            {
+                f.VelX = Fixed.FromRaw(DeterministicMath.MulShift(f.VelX.Raw * RuntimeConstants.FRICTION_KEEP_NUM, Fixed.ONE) / RuntimeConstants.FRICTION_KEEP_DEN);
+                f.VelZ = Fixed.FromRaw(DeterministicMath.MulShift(f.VelZ.Raw * RuntimeConstants.FRICTION_KEEP_NUM, Fixed.ONE) / RuntimeConstants.FRICTION_KEEP_DEN);
+                if (Math.Abs(f.VelX.Raw) < RuntimeConstants.FRICTION_STOP_EPSILON && Math.Abs(f.VelZ.Raw) < RuntimeConstants.FRICTION_STOP_EPSILON)
+                {
+                    f.VelX = Fixed.Zero; f.VelZ = Fixed.Zero;
+                }
+            }
+        }
+
+        // L2 SoftPush（击退/浮空位移驱动的重叠分离——(minId,maxId) 对序，PA-4.2）
+        for (int i = 0; i < Fighters.Count; i++)
+        {
+            var a = Fighters[i];
+            if (a.State is not (FighterState.Hitstun or FighterState.Launch)) continue;
+            for (int j = i + 1; j < Fighters.Count; j++)
+            {
+                var b = Fighters[j];
+                if (b.State == FighterState.Dead || a.State == FighterState.Dead) continue;
+                var (pa, pa2, pb, pb2) = CollisionSystem.SoftPushPair(
+                    a.PosX.Raw, a.PosZ.Raw, b.PosX.Raw, b.PosZ.Raw, RuntimeConstants.FIGHTER_RADIUS);
+                a.PosX = Fixed.FromRaw(a.PosX.Raw + pa); a.PosZ = Fixed.FromRaw(a.PosZ.Raw + pa2);
+                b.PosX = Fixed.FromRaw(b.PosX.Raw + pb); b.PosZ = Fixed.FromRaw(b.PosZ.Raw + pb2);
             }
         }
     }
 
-    // ---- 状态机 Tick 结算 ----
-    private void TickStates()
+    // ---- ⑤ 状态/闸门/资源 Tick（FighterId 升序） ----
+
+    private void TickFighters()
     {
         foreach (var f in Fighters)
         {
-            if (f.ProtectTicks > 0) f.ProtectTicks--;
             if (f.State == FighterState.Dead) continue;
+
+            StatusSystem.Tick(f, this);
+
+            // CD / 强制中断 CD
+            var keys = new List<ushort>(f.Cooldowns.Keys);
+            foreach (var k in keys)
+            {
+                long v = f.Cooldowns[k] - 1;
+                if (v <= 0) f.Cooldowns.Remove(k); else f.Cooldowns[k] = v;
+            }
+
+            // MP 回复（20/s 连续量——分数累积，ADR-0003 §1）
+            if (f.Mp < 1000)
+            {
+                f.MpFracNum += RuntimeConstants.MP_REGEN_PER_TICK_NUM;
+                if (f.MpFracNum >= RuntimeConstants.MP_REGEN_PER_TICK_DEN)
+                {
+                    long whole = f.MpFracNum / RuntimeConstants.MP_REGEN_PER_TICK_DEN;
+                    f.MpFracNum -= whole * RuntimeConstants.MP_REGEN_PER_TICK_DEN;
+                    f.Mp = Math.Min(1000, f.Mp + whole);
+                }
+            }
+
+            if (f.ProtectTicks > 0) f.ProtectTicks--;
+            if (f.InvulnTicks > 0) f.InvulnTicks--;
 
             switch (f.State)
             {
                 case FighterState.Hitstun:
-                    if (--f.StateTicksRemaining <= 0) { f.State = FighterState.Normal; ResetVictim(f); }
+                    f.StateTicksRemaining--;
+                    // GDD §5.1: 击退解除 = 位移结束 + 硬直结束（双条件）——位移未结束维持击退状态
+                    if (f.StateTicksRemaining > 0) break;
+                    if (Math.Abs(f.VelX.Raw) > RuntimeConstants.FRICTION_STOP_EPSILON ||
+                        Math.Abs(f.VelZ.Raw) > RuntimeConstants.FRICTION_STOP_EPSILON) break;
+                    Recover(f);
+                    break;
+                case FighterState.Launch:
+                    // 状态时长由落地驱动（④ 运动积分）
                     break;
                 case FighterState.Down:
                     f.DownTicks++;
-                    if (f.DownTicks >= 45)  // 普通倒地
+                    int downTotal = f.ForcedFall || f.DownCount >= 2 ? RuntimeConstants.DOWN_TICKS_LONG : RuntimeConstants.DOWN_TICKS_NORMAL;
+                    if (f.DownTicks >= downTotal)
                     {
                         f.State = FighterState.Getup;
-                        f.StateTicksRemaining = 24;
+                        f.StateTicksRemaining = RuntimeConstants.GETUP_TICKS;
+                        f.InvulnTicks = RuntimeConstants.GETUP_TICKS;   // 起身 24f 全程无敌（GDD §5.7）
                     }
                     break;
                 case FighterState.Getup:
                     if (--f.StateTicksRemaining <= 0)
                     {
-                        f.State = FighterState.Normal;
-                        f.ProtectTicks = 60;
-                        ResetVictim(f);
+                        f.ProtectTicks = RuntimeConstants.GETUP_PROTECT_TICKS;
+                        Recover(f);
                     }
                     break;
                 case FighterState.Break:
-                    if (--f.StateTicksRemaining <= 0) f.State = FighterState.Normal;
-                    break;
-                case FighterState.Normal:
-                    f.ControlValue = Math.Max(0, f.ControlValue - 20 / 1);
+                    if (--f.StateTicksRemaining <= 0) Recover(f);
                     break;
             }
         }
     }
 
-    private void ResetVictim(FighterStateData f)
+    /// 恢复行动（GDD §8.4: 连段计数器恢复行动即清零）
+    private void Recover(FighterStateData f)
     {
-        f.HitstunCount = 0; f.LaunchCount = 0; f.AirTime = 0;
-        f.ForcedFall = false; f.NoUkemi = false;
+        f.State = FighterState.Normal;
+        f.StateTicksRemaining = 0;
+        f.HitstunCount = 0;
+        f.LaunchCount = 0;
+        f.FloatAirTicks = 0;
+        f.ForcedFall = false;
+        f.DownCount = 0;
+        f.UkemiIneffective = false;
     }
 
-    private const FighterState LAUNCH_STATE = FighterState.Launch;
-}
+    // ---- Sim 内部服务（HitResolve/StatusSystem/ProjectileSystem 消费） ----
 
-// 扩展 FighterStateData 辅助
-public static class FighterExtensions
-{
-    public static long DistSqTo(this FighterStateData a, FighterStateData b)
+    public FighterStateData? GetFighter(int id)
     {
-        long dx = a.PosX.Raw - b.PosX.Raw;
-        long dz = a.PosZ.Raw - b.PosZ.Raw;
-        return dx * dx + dz * dz;
+        for (int i = 0; i < Fighters.Count; i++)
+            if (Fighters[i].Id == id) return Fighters[i];
+        return null;
     }
+
+    public SkillExecution? GetExecution(int uid)
+    {
+        for (int i = 0; i < Executions.Count; i++)
+            if (Executions[i].Uid == uid) return Executions[i];
+        return null;
+    }
+
+    public bool SameTeam(int a, int b) =>
+        _teams.TryGetValue(a, out var ta) && _teams.TryGetValue(b, out var tb) && ta == tb;
+
+    public int NextProjectileUid() => _nextProjUid++;
+
+    /// 控制值积累 + 挣脱（GDD §7.4: 满 100 → Break 1.5s 免控）
+    public void AddControlValue(FighterStateData f, long amount)
+    {
+        if (f.State == FighterState.Break || f.State == FighterState.Dead) return;
+        f.ControlValue += amount;
+        if (f.ControlValue < RuntimeConstants.CONTROL_VALUE_MAX) return;
+        // Break: 解除一切控制 + 清零（GDD §7.4）
+        f.ControlValue = 0;
+        for (int k = 1; k < f.Statuses.Length; k++)
+            if (f.Statuses[k].Active) RemoveStatus(f, (StatusKind)k);
+        f.State = FighterState.Break;
+        f.StateTicksRemaining = RuntimeConstants.BREAK_TICKS;
+        f.VelX = Fixed.Zero; f.VelZ = Fixed.Zero;
+        Events.Emit(new SimEvent { Kind = EventKind.BreakTriggered, VictimId = f.Id });
+    }
+
+    public void ApplyStatus(FighterStateData f, StatusEffectDef eff, int sourceFighterId, ushort skillId) =>
+        StatusSystem.Apply(f, eff, sourceFighterId, this);
+
+    public void RemoveStatus(FighterStateData f, StatusKind kind) => StatusSystem.Remove(f, kind, this);
 }

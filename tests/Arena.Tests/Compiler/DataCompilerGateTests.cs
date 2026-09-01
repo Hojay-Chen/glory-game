@@ -27,14 +27,16 @@ public class DataCompiler_Gate
             Path.Combine(_root, "docs/weapon-spec/weapons.csv"),
             Path.Combine(_root, "docs/balance-sheet/class-base.csv"));
 
-        // 487 行中有 484 行通过 L1，3 行被阻塞（OQ-2/OQ-13）
-        Assert.Equal(484, result.ValidRows);
-        Assert.Equal(3, result.Blockers.Count);
+        // 487 行中有 483 行通过 L1，4 行被阻塞（OQ-2/OQ-13 + SPEC-0005 §4 扇角凸性 Schema Failure）
+        Assert.Equal(483, result.ValidRows);
+        Assert.Equal(4, result.Blockers.Count);
 
         // 阻塞行具体核对
         Assert.Contains(result.Blockers, b => b.Detail.Contains("BER_T3_004") && b.Rule.Contains("ARMOR_UNIT_AMBIGUOUS"));
         Assert.Contains(result.Blockers, b => b.Detail.Contains("SBL_U_001") && b.Rule.Contains("HITBOX_KIND"));
         Assert.Contains(result.Blockers, b => b.Detail.Contains("SPF_U_001") && b.Rule.Contains("HITBOX_KIND"));
+        // Phase 4 发现: SPEC-0005 §4 称「CSV 现值 a90–a160」但 GBL_T2_001 = a200 → 凸性 Schema Failure（待设计裁定）
+        Assert.Contains(result.Blockers, b => b.Detail.Contains("GBL_T2_001") && b.Rule.Contains("RUNTIME_QUANTIZE"));
     }
 
     [Fact]

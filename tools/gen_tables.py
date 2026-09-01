@@ -3,7 +3,7 @@
 重跑必须逐位复现 src/Arena.Core/Calc/DeterministicTables.cs（ContentSha256 校验）。
 含下限钳制：伤害递减 ×0.40（GDD §8.5③）；硬直 ×0.5 下限由消费侧钳制（非表值）。"""
 from fractions import Fraction
-import hashlib, sys
+import hashlib, math, sys
 
 OUT = "src/Arena.Core/Calc/DeterministicTables.cs"
 
@@ -27,6 +27,18 @@ launch = pow_table(4, 5, 8)
 hitstun = pow_table(97, 100, 64)
 damage = pow_table(47, 50, 64, floor=(40, 100))
 
+# SPEC-0005 §4: fan/cone 扇形边界几何的 cos/sin 表——半度粒度静态角度表。
+# 数据来源: skills.csv angle_deg 全部为整数度 → 扇形半角 = α/2 ∈ {0.5° 步长}。
+# 运行时朝向旋转（heading quantum）不经本表——走 DeterministicMath.CordicCosSin（E-6）。
+# 索引 i = 半度数 (0..720)，角度 = i × 0.5°。构建期 double trig → RHE 量化（表本身即事实源）。
+half_deg = []
+for i in range(721):
+    ang = math.radians(i * 0.5)
+    half_deg.append((rhe(Fraction(math.cos(ang)) * 65536),
+                     rhe(Fraction(math.sin(ang)) * 65536)))
+cos_half = [c for c, s in half_deg]
+sin_half = [s for c, s in half_deg]
+
 MODS = {
     "BackstabX120": (120, 100), "AntiAirX115": (115, 100), "AirborneX105": (105, 100),
     "SweepX070": (70, 100), "FreezeDecayX088": (88, 100), "GetupProtX090": (90, 100),
@@ -38,7 +50,7 @@ def fmt_arr(name, arr, comment):
     lines = ",\n".join("        " + str(v) for v in arr)
     return "    /// " + comment + "\n    public static readonly long[] " + name + " =\n    {\n" + lines + "\n    };"
 
-content_all = repr(launch) + repr(hitstun) + repr(damage) + repr(mods)
+content_all = repr(launch) + repr(hitstun) + repr(damage) + repr(mods) + repr(cos_half) + repr(sin_half)
 sha = hashlib.sha256(content_all.encode()).hexdigest()[:32]
 mods_lines = "\n".join("        public const long " + k + " = " + str(v) + ";" for k, v in mods.items())
 
@@ -59,6 +71,10 @@ for name, arr, cmt in [
     ("DamageDecay", damage, "伤害递减 max((47/50)^n, ×0.40)，n=0..64。表值已钳制 0.40 下限（GDD §8.5③）"),
 ]:
     src += "\n    /// " + cmt + "\n    public static readonly long[] " + name + " =\n    {\n" + ",\n".join("        " + str(v) for v in arr) + "\n    };\n"
+
+src += "\n    /// SPEC-0005 §4: 静态角度 cos 表——索引=半度 (0..720)，角度=i×0.5°。扇形/圆锥半角几何用；朝向旋转走 CordicCosSin (E-6)。\n    public static readonly long[] CosHalfDeg =\n    {\n" + ",\n".join("        " + str(v) for v in cos_half) + "\n    };\n"
+src += "\n    /// SPEC-0005 §4: 静态角度 sin 表——索引=半度 (0..720)。\n    public static readonly long[] SinHalfDeg =\n    {\n" + ",\n".join("        " + str(v) for v in sin_half) + "\n    };\n"
+src += "\n    /// 半度角查表（SPEC-0005 §4：angle_deg 整数度 → 半角 = deg×2 半度索引）\n    public static void HalfDegTrig(int halfDegIndex, out long cosQ, out long sinQ)\n    {\n        var i = ((halfDegIndex % 720) + 720) % 720;\n        cosQ = CosHalfDeg[i];\n        sinQ = SinHalfDeg[i];\n    }\n"
 src += "\n    public static class Modifiers\n    {\n" + mods_lines + "\n    }\n}\n"
 open(OUT, 'w', encoding='utf-8').write(src)
 print(f"OK sha={sha}")
