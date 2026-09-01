@@ -37,6 +37,12 @@
 - audit v1 的 F-1/F-3/F-4/F-6/B-1/B-7/F-7 全部闭合：SPEC-0001~0004（Steer+AimQuantum u16/AI 队列派生式/预测事件生命周期/ArenaDef）+ Errata×4（ADR-0002/0006/0007/0010）+ PATCH-001（skills.csv 19 处纯格式规范化，data-patch-log.md）+ arena.csv（26×13）+ zstd 登记
 - **audit v2（implementation-readiness-audit-v2.md）：READY FOR PHASE 0**；L1 fail-fast 残留 3 行待用户裁定（OQ-2/OQ-13），OQ-5 精确化为单行意图待裁
 
+## 碰撞专项设计完成（2026-09-01，6beb5bf）
+
+- **SPEC-0005 确定性碰撞与扫掠**：Intra-Tick 线性运动公理（速度 Tick 内恒定/Hitbox 位姿 Tick 离散）⇒ 全部碰撞对解析可解（二次判别+区间裁剪，无二分万能路径；K=16 误差 1.33 Fixed 量子可翻转 HitRegion 故解析为生产路径）；统一 IntegrateMove 七种运动；Sim.Collision 新模块（Terrain 收窄/HitResolve 消费 CollisionResult）；多碰撞 (toiFixed,layerRank,Id) 总序；ISqrt/FSqrtFixed 入 ADR-0001 白名单（Errata E-3~E-5）
+- **SPEC-0006 Hurtbox/命中空间模型**：HurtboxDef（Region 可扩展枚举，v1 启用 Head/Torso，priority Head>Torso）+ hitboxId/hurtboxId 复合键 + CollisionResult 全字段进 Hit 事件（EVENT_PROTOCOL_VERSION bump→2）+ 巴雷特 80m/s 验证矩阵 T54a-j
+- **碰撞子系统实现解除阻塞**（Phase 3 按 SPEC-0005/0006 实施）；仍不实现（待 Phase 3）
+
 ## 待处理
 
 1. 【已完成】ADR-0007
