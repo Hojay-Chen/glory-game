@@ -118,3 +118,52 @@ SkillRuntime（active 窗口/schedule 到点）
 ## 6. 与 Tick 可变性的关系（承接用户 §七）
 
 碰撞算法操作数 = per-Tick 速度（Compiler 预量化）+ t∈[0,1]（Tick 相对参数）——**Tick 率变化零改动**。需重推导的是全部「每 Tick 常量」（摩擦/回复/衰减，见 SPEC-0005 §12 表）——详见 ADR-0001 Errata §E-4（摩擦秒制化）。
+
+
+---
+
+## Preflight Amendments（2026-09-01，collision-preflight-audit-v1）
+
+### PA-H1 高度模型精确化（§1.1/§1.3 补充）
+
+1. **高度带双端 inclusive**：Torso 带 [0, 1.6] 闭区间；接触判定 ≤ 语义（与 T54d 边界一致）
+2. **头部 = 3D 球测试**：弹体/攻击点 P 与球心 C=(x,y,1.6)：3D 距离² ≤ r²（int64 三平方和）——非「高度带内再查水平圆」（该近似会在球面边缘漏判/错判）
+3. **地面 y=0 强制下界**（GroundStop）；上方无界（跳跃/launch 峰值 1.84m+高台）
+4. **Projectile 高度模型**：直线弹 = 恒定高度飞行；**aimHeight 语义由 GDD §4.6 推导**——special 含「头部/弱点」标注的弹技（巴雷特/暴射类）aimHeight=1.6m（头部）；其余默认 1.2m（躯干带内）；lob = 抛物线（vel_y 逐 Tick 量化递减）。**Schema-15 登记**：hitbox proj 语法需增 aimHeight 字段（当前缺失——数据补丁轮处理，未裁定前 Compiler 按默认 1.2m 通过并 L2 标记）
+5. HitRegion 判定 = 3D 谓词逐 Region 测试（Torso 水平盒+带；Head 球）——**高度由 Sim 的 fighter.pos.y 与 proj 高度通道提供，均为状态面**
+
+### PA-H2 HitRegion 唯一选取规则（§1.2 priority 的落地语义）
+
+同一 (Hitbox, Defender, Tick) 的 ContactList 可能含多个 Region 接触（Head 球与 Torso 带同时相交的颈部穿越）：
+
+```
+HitRegion = argmax(priority) over {该 Defender 本 Tick 全部 Hurtbox 接触}
+  （priority 全互异：Head=20 > Torso=10 ⇒ 唯一，无并列）
+并列保护：若未来 priority 相同（不可能于 v1）→ 取 toiFixed 最小者——规则预置
+HitPoint/HitNormal = 取所选 Region 对应接触的值
+```
+
+单 Defender 单 Segment **恰一个 Hit 事件**（multi-hit policy 按段计）——多 Region 不产生多事件。
+
+### PA-H3 命中后处理顺序固化（§新增，回应 HitDestroy/Pierce/Bounce/MultiHit 时序）
+
+```
+ContactList（排序键总序）逐条处理：
+  CombatHit 结算 → 若 mover=Projectile：
+    Destroy 属性 ⇒ 停止处理本列表全部剩余条目（同 Tick 后续目标不受击）
+    Pierce 属性 ⇒ 扣减剩余次数（次数在 Projectile 运行时状态，随快照）；>0 继续下一条；=0 视同 Destroy
+    Bounce 属性 ⇒ 本 Tick 终态（SPEC-0005 §6.3：反弹消耗剩余运动）——不再处理剩余条目
+  Multi-hit（hits/hit_interval）裁决阶段 = HitResolve：per (victim, SegmentIndex) 幂等；
+    同一 Hurtbox 同 Segment 禁止重复；跨 Segment（间隔 ≥3T）合法
+  同一 Projectile 同 Tick 命中多目标：允许（T54e），Pierce/Destroy 规则如上
+```
+
+### PA-H4 状态豁免核对（HitRegion 选取前的资格过滤）
+
+接触结算前逐 Defender 过滤：无敌帧/倒地保护（仅扫地可打）/隐形（Visibility 投影）在 **ContactList 生成前**由 Sim 层提供资格——Collision 只做几何，资格豁免在 HitResolve 前置过滤器（避免 Collision 依赖规则状态）。
+
+### PA-H5 Schema-15 登记（proj/近战 hitbox 高度语义）
+
+- proj 语法增 `aimHeight`（推导规则：GDD §4.6 弱点标注 ⇒ 1.6 头部；默认 1.2 躯干）——数据补丁轮处理
+- 近战/横扫 hitbox 高度带默认 [0.2, 1.9]（覆盖头部球 1.42–1.78 与躯干）——**部位结算（豪龙破军）依赖此默认**
+- 两者均为 Schema 增补登记，**未修改 CSV**；编译器白名单在数据补丁轮同步

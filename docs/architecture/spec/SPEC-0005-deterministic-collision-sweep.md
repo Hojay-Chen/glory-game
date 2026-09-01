@@ -190,3 +190,52 @@ Deploy           Block     Block        —          —         —
 ## 10. 测试挂钩（并入 T 体系）
 
 T54–T62 定义于 SPEC-0006 §7（巴雷特端到端 + 穿透/边界/近失/多目标/墙角矩阵）——碰撞算法与其共享谓词级用例（T54a：ISqrt 边界；T54b：二次判别 Δ=0 恰切）。
+
+
+---
+
+## Preflight Amendments（2026-09-01，collision-preflight-audit-v1）
+
+### PA-1 数学性质表述修正（§5.1 全表「单调性证明」列的正确读法）
+
+v1 表述「『扫掠前缀已接触』对 t 单调」**作为生产依据不够准确**，修正为如下三段精确性质（生产实现只依赖性质 P1/P2）：
+
+- **P1（区间性）**：Intra-Tick 公理（§3 线性相对运动）+ 凸图元（§4 全部 Primitive 凸，ConvexPoly 扇角 ≤180° 强制）下，每条约束的「接触集」S_i = {t∈[0,1] : overlap_i(t)} 是**闭区间**（半平面→线性不等式解；角圆/圆→二次不等式解；线段→分段二次、各段闭区间取并——线段最近点轨迹分段但「前缀扫掠接触」仍为区间：线段障碍是凸的，Minkowski 差凸 ⇒ 接触集区间）。**凸性是前提**：非凸/旋转连续体进入 ShapeLibrary 前必须先过本条证明。
+- **P2（可交性）**：S = ∩S_i 仍为闭区间（区间交封闭）——TOI = min S（S ≠ ∅ 时），**解析求出**（线性裁剪+二次求根），这就是生产实现——不依赖任何单调性论证。
+- **P3（推论，仅供 oracle）**：前缀谓词 t ↦ (S∩[0,t] ≠ ∅) 非降——它是 P1 的推论，**只**被测试 oracle 的二分使用；生产代码禁止以「谓词单调」为理由实现二分。
+
+### PA-2 [0,1] 裁剪、起点重叠、相切语义（§5.1 缺失的三条边界规则）
+
+1. **[0,1] 裁剪**：解析区间先裁剪到 [0,1]；TOI = max(t_in, 0)。
+2. **起点重叠（t_in ≤ 0）**：S 含 0 ⇒ 实体在 Tick 起点已接触 ⇒ **TOI=0，立即结算**（Hitbox 激活即与既有 Hurtbox 重叠、出生即重叠、被推入重叠均为合法接触——**spawn-overlap 不是错误**，消灭「出生在体内是否命中」的实现歧义）。
+3. **相切（退化区间 t_in = t_out）**：闭区间语义 ⇒ **相切=接触**（≤ 判定，与 T54d 一致）；区间为空才无接触。
+4. **接触结束早于 0**（t_out < 0）：无接触（扫掠发生在本 Tick 之前——不追溯）。
+
+### PA-3 TOI 量化与「同一离散时刻」语义（§5.5/§6 补充）
+
+1. toiFixed = RHE(t_in × ONE) ∈ [0, ONE]——比较/排序/幂等键**一律使用量化后的 toiFixed**，禁止用未量化解析值做任何决策
+2. **两个不同真实 TOI 量化到同一 toiFixed** ⇒ 视为**同一离散时刻发生**（Tick 内时间分辨率即 Q32.16）——按排序键后续字段（layerRank/Id/kind）定序，语义上等价于「同时发生，按稳定序处理」；无实现者裁量
+3. 同一 (mover, obstacle) 对在单 Tick 内至多一个接触区间 ⇒ 至多一个 toiFixed ⇒ 键内无自碰撞
+4. toiFixed=0 与 toiFixed=ONE 的特殊语义：0=Tick 起点已接触（含起点重叠）；ONE=Tick 终点恰接触（下一 Tick 状态由该接触定）
+
+### PA-4 排序键充分性与 Push 键（§6 补充）
+
+1. **键充分性证明**：ContactList 内任意两个不同 ContactResult 的排序键必不同——同一 (mover, obstacle) 对单 Tick 单区间 ⇒ 单 TOI；同一 obstacle 不可能以两个身份出现（object_id 唯一）；键全字段相等 ⇒ 按 §2.2「同一对单 Tick 单区间」构造上必为同一事件 ⇒ **键相等即去重**（显式条款，非「实现时决定」）
+2. **L2 Push 排序键**：Push 不产生 TOI（Tick 末重叠分离）——键 = (layerRank=1, minId, maxId)（成对无向键，升序规范化），对序即处理序
+3. **L3 跨 mover 合并序**：多攻击者 Hitbox 同 Tick 命中同一 victim——键含 attackerId/hitboxId 已可全序；victim 侧同一 Hitbox 同 Tick 命中多 victim 由 victimId 升序
+
+### PA-5 墙角迭代充分性证明与通用上限（§6.1 修正）
+
+1. **ARENA001 几何证明（2 次迭代充分）**：mover 直径 0.9m；同 Tick 可同时接触的两个静态阻挡体中心距必须 ≤ 0.9+两体半径之和。实测 ARENA001 阻挡体两两间距全部 ≥8m（边界-掩体 8m/掩体-立柱 >20m/立柱-立柱 36m/掩体-木箱 >20m）——**唯二可同时接触组合 = 边界两邻边（墙角）+ 边界+单障碍**，均 ≤2 约束 ⇒ 2 次迭代对 ARENA001 v1 **数学充分**
+2. **通用上限改 4 + 确定性降级**：未来 ArenaDef 扩展无法静态证明时，迭代上限统一为 **4**；超限 ⇒ snap 至排序键最首接触面、清零法向速度分量、Telemetry 记录——**确定性降级，无实现期裁量**
+3. **Bounce 与角落交互明确化**：反弹（每 Tick ≤1 次）作用于第一 TOI 面；同 Tick 第二约束面做 **L1 clamp（无第二次反弹）**，剩余运动归下 Tick——两机制（bounce/iteration）职责分离，无歧义
+
+### PA-6 BroadPhase 等价性条款（§新增，回应「性能层不得成为第二事实源」）
+
+1. **保守性定义**：候选集必须 ⊇ 真接触集——实体按其 **swept-AABB**（from/to 端点与半径的并集包围盒）入格，格覆盖取 [minCell, maxCell] 闭区间（含端点）；格索引 = floor(DivRoundHalfEven(coord, 8m))——边界点归属单格（floor 语义），由 swept 跨格覆盖保证不漏
+2. **等价性契约**：`BroadPhase+NarrowPhase` 的 CollisionResult 必须 ≡ `全量 NarrowPhase` 的结果（逐位）——**T55**：随机化场景（50 实体/随机速度/1000 Tick）双路径逐位比对，进 CI
+3. BroadPhase 结果**不进任何事件/快照/hash**——纯瞬时性能缓存
+
+### PA-7 全 Combat 对统一相对扫掠（§2/§7 增补，堵「Fighter 冲刺穿过静态 Hitbox」缺口）
+
+v1 只写了「七种运动走 IntegrateMove」；补：**全部 CombatContact 对（Hitbox×Hurtbox / Projectile×Fighter / Fighter×静态Hitbox）的检测 = 相对运动线性扫掠**——静止侧速度贡献为零，运动侧（含 Dash 中 Fighter，8m/数 Tick=≤1m/Tick）作为 mover。消除「静止 fan 被 1m/Tick 突进穿越」的采样漏判（与弹体同级风险，v1 遗漏）。Fan 类技能无此风险（Owner 在 Act 中朝向锁定，hitbox 静止）——突进者作为 mover 被 sweep。
