@@ -38,6 +38,11 @@ public partial class SimWorld
             snap.Set(c++, (f.ForcedFall ? 1 : 0) | (f.UkemiIneffective ? 2 : 0));
             snap.Set(c++, f.DownCount); snap.Set(c++, f.DownTicks); snap.Set(c++, f.FallDirIndex);
             snap.Set(c++, f.ProtectTicks); snap.Set(c++, f.InvulnTicks);
+            snap.Set(c++, f.CounterWindowTicks); snap.Set(c++, f.ParryCdTicks);
+            snap.Set(c++, f.Shield); snap.Set(c++, f.ShieldMax); snap.Set(c++, f.ShieldRegenTicks);
+            snap.Set(c++, f.GrabbedBy); snap.Set(c++, f.GrabThrowSkill);
+            snap.Set(c++, f.RollTicksRemaining); snap.Set(c++, f.RollDirIndex); snap.Set(c++, f.RollInvulnArmed ? 1 : 0);
+            snap.Set(c++, f.Stamina); snap.Set(c++, f.StaminaFrac); snap.Set(c++, f.PeakY);
             snap.Set(c++, f.ActiveSkillUid); snap.Set(c++, f.PendingChainSkill);
             snap.Set(c++, f.Cooldowns.Count);
             foreach (var kv in f.Cooldowns) { snap.Set(c++, kv.Key); snap.Set(c++, kv.Value); }
@@ -140,6 +145,11 @@ public partial class SimWorld
             f.ForcedFall = (flags & 1) != 0; f.UkemiIneffective = (flags & 2) != 0;
             f.DownCount = (int)snap.Get(c++); f.DownTicks = snap.Get(c++); f.FallDirIndex = (byte)snap.Get(c++);
             f.ProtectTicks = snap.Get(c++); f.InvulnTicks = snap.Get(c++);
+            f.CounterWindowTicks = (int)snap.Get(c++); f.ParryCdTicks = (int)snap.Get(c++);
+            f.Shield = snap.Get(c++); f.ShieldMax = snap.Get(c++); f.ShieldRegenTicks = (int)snap.Get(c++);
+            f.GrabbedBy = (int)snap.Get(c++); f.GrabThrowSkill = (int)snap.Get(c++);
+            f.RollTicksRemaining = (int)snap.Get(c++); f.RollDirIndex = (byte)snap.Get(c++); f.RollInvulnArmed = snap.Get(c++) != 0;
+            f.Stamina = snap.Get(c++); f.StaminaFrac = snap.Get(c++); f.PeakY = snap.Get(c++);
             f.ActiveSkillUid = (int)snap.Get(c++); f.PendingChainSkill = (ushort)snap.Get(c++);
             f.Cooldowns.Clear();
             int cdCount = (int)snap.Get(c++);

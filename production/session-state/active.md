@@ -27,9 +27,18 @@
 - **新 L1 阻塞**: GBL_T2_001 fan a200>180° 违反 SPEC-0005 §4 凸性 → Schema Failure（待设计裁定）
 - **未路由注册表**（Compiler 显式登记）: status 47 / hitbox 48（unit/deploy/ally/可控弹/分身等 → ADR-0008 签名阶段）
 
+## Phase 5 Combat Capability Closure（2026-09-02，本次）
+
+- **核心战斗原语闭环**（全部数据驱动原语、零 per-skill 分支）: 格挡/盾值/完美格挡（120°/化解物理70%/×1.2/破盾45f/8s回满/弹刀20f+15f窗）/抓取体系（Grabbed锁定+投技结算+第三方免疫+无视霸体+死亡释放）/反击窗（inv窗内命中→攻击者强硬直20f+免费取消窗）/Steer（SPEC-0001 饱和步进）/hold 姿态（不自然结束+格挡移速-60%+禁普攻）/蓄力（前摇追加+伤害加成数据化）/翻滚+耐力（3m/30f+无敌4-18f+25耐力）/地形高度场（平台顶+坠落伤害高度×80+长倒地）/GDD §4.3 技能中断/ISignature+ISimContext 框架（ADR-0008 最小闭环）/Replay 原语（ADR-0005 最小闭环）
+- **探针 18 项（CC01–CC18）+ 既有 78 全绿 = 96/96**；门禁 PASS
+- **审计结论 Verdict B+**: 复杂机制全部经统一原语表达、Sim 内 per-skill 分支=0；余 6 项可枚举原语（UnitSystem/资源槽/Visibility/Weapon overlay/法术反射/可控弹）收口后 → Verdict A 进 487 技迁移
+- **审计文档**: docs/architecture/combat-capability-closure-audit-v1.md（八项重点检查裁决+缺口分类表）
+- **事件协议 v3**: +Parry/GuardHit/GuardBroken/GrabStarted/GrabReleased/Countered/Interrupted/FallLanded；FighterState +Roll
+- **待用户裁定（Design Decision，不代裁）**: ①格挡锥 dmg=0 判定体意图 ②盾值 GDD 60% vs 数据 70% ③counter 行触发式建模 ④按住蓄力需 ADR-0010 release 指令协议扩展
+
 ## 待处理（下一阶段优先序）
 
-1. **ISignature/ISimContext**（ADR-0008）——60 C 类技 + 未路由语义载体；SimWorld 内部服务已按九原语形态暴露
-2. 格挡+盾值+完美格挡（G-04/G-09）→ 3. 抓取+反击（G-08）→ 4. GdUnit4Net 迁移评估 → 5. 高台/坠落 TerrainSystem
-6. 数据裁定: GBL_T2_001 a200、冻结@P% 中文别名 2 行、OQ-2/OQ-13 既有 3 行
-7. 规格歧义请设计确认: 软推挤范围（走位重叠合法 vs L2 成对分离——已按 GDD 解释）；Hitstop 归属（ADR-0009 表现层 vs GDD §2.2.3）
+1. **原语收口阶段**: UnitSystem → 职业资源槽 → Weapon overlay → Visibility → 反射+可控弹（完成后 Verdict A）
+2. **487 技大规模迁移**（Verdict A 后）: A/B/C/D 类按序，C 类签名插件体随迁
+3. 数据裁定: GBL_T2_001 a200、冻结@P% 中文别名 2 行、OQ-2/OQ-13 既有 3 行、CC 审计 4 项 Design Decision
+4. 规格歧义请设计确认: 软推挤范围（已按 GDD 解释）；Hitstop 归属（按 ADR-0009 表现层）

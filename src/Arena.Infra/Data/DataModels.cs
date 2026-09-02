@@ -17,6 +17,7 @@ public sealed record SkillDef
     public required int ActiveTicks { get; init; }
     public required int RecoveryTicks { get; init; }
     public required int HitIntervalTicks { get; init; }
+    public required string ActiveRaw { get; init; }
     public required string HitboxRaw { get; init; }
     public required string RangeM { get; init; }
     public required string AngleDeg { get; init; }

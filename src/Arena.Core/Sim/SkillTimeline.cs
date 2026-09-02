@@ -59,6 +59,7 @@ public sealed class SkillRuntimeData
     public int RecoveryTicks { get; init; }
     public int[] HitSchedule { get; init; } = Array.Empty<int>();  // 各段激活偏移（相对 active 起点）
     public HitboxGeometry Geo { get; init; } = HitboxGeometry.None;
+    public string DamageType { get; init; } = "phys";  // phys/magic（格挡物理门控消费）
     public long DamageMultQ { get; init; }        // Q32.16
     public long HeadMultQ { get; init; }          // 弱点头部倍率（PA-H5/SPEC-0006 §1.4: 近战 1.5 / 巴雷特类 2.0）
     public int HitstunTicks { get; init; }
@@ -81,7 +82,22 @@ public sealed class SkillRuntimeData
     public byte ChainN { get; init; }
     public bool ForcedDown { get; init; }         // 受身无效（GDD §5.6 圆舞棍/背摔/踏射）
     public string Special { get; init; } = "-";   // 签名路由预留（ADR-0008）
+    // ---- Phase 5 原语（全部来自数据，禁止按 skillId 分支） ----
+    public GuardDef? Guard { get; init; }         // 格挡姿态（BLA_T1_002 等）
+    public bool IsGrab { get; init; }             // type=grab——抓取体系（GDD §4.1/§7.2）
+    public bool IsCounter { get; init; }          // type=counter——反击架势（GDD §6.6）
+    public bool IsHold { get; init; }             // active=hold——姿态持续至释放
+    public int SteerRateDegPerSec { get; init; }  // controlled/可转向 → SPEC-0001 饱和步进
+    public int ChargeTicks { get; init; }         // 蓄力 Ts → startup 追加
+    public long ChargeBonusQ { get; init; }       // 蓄力 +P% → 伤害乘区（LAU_T3_001）
 }
+
+/// 格挡姿态定义（GDD §6.2/§6.3；盾值/减伤率来自技能 special 数据）
+public sealed record GuardDef(
+    long ShieldMax,            // 盾值（数据: 盾值1500）
+    long MitigateNum,          // 化解物理 70% → HP 承 30%（数据化覆盖 GDD 60% 基线）
+    long MitigateDen,
+    bool PhysicalOnly);        // 化解物理 = 仅 phys 伤害类型（magic 绕过）
 
 /// active hitbox 实例（Tick 内瞬态语义锚——不入 Snapshot，由 execution 重建）
 public sealed class ActiveHitbox
@@ -119,8 +135,11 @@ public sealed class SkillExecution
 
     public int TotalTicks => Def is null ? 0 : Def.StartupTicks + Def.ActiveTicks + Def.RecoveryTicks;
     public bool InStartup => Def is not null && CurrentOffset < Def.StartupTicks;
-    public bool InActive => Def is not null && CurrentOffset >= Def.StartupTicks && CurrentOffset < Def.StartupTicks + Def.ActiveTicks;
-    public bool InRecovery => Def is not null && CurrentOffset >= Def.StartupTicks + Def.ActiveTicks && CurrentOffset < TotalTicks;
+    /// hold 姿态: 生效窗开放至释放（取消/切换/打断）——无自然上界（GDD §6.2 格挡姿态）
+    public bool InActive => Def is not null && CurrentOffset >= Def.StartupTicks
+        && (Def.IsHold || CurrentOffset < Def.StartupTicks + Def.ActiveTicks);
+    public bool InRecovery => Def is not null && !Def.IsHold
+        && CurrentOffset >= Def.StartupTicks + Def.ActiveTicks && CurrentOffset < TotalTicks;
     public int ActiveEndOffset => Def is null ? 0 : Def.StartupTicks + Def.ActiveTicks;
     public int RecoveryStartOffset => ActiveEndOffset;
 }

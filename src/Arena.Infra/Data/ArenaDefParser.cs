@@ -52,16 +52,16 @@ public static class ArenaDefParser
         int id = 1;
         foreach (var o in objects)
         {
-            // spawn/pot/ramp 等非阻挡对象不入碰撞世界
-            if (o.Kind is "spawn" or "prop_pot" or "ramp" or "platform") continue;
+            // spawn/pot 不入碰撞世界；platform/ramp = 高地（QueryGround 消费，不阻挡）
+            if (o.Kind is "spawn" or "prop_pot") continue;
 
             var action = o.Kind switch
             {
                 "boundary" => TerrainAction.Bounce,
                 "cover_wall" or "pillar" or "prop_wood" or "prop_rock" => TerrainAction.DestroyProjectile,
-                _ => TerrainAction.PassThrough,
+                _ => TerrainAction.PassThrough,   // platform/ramp: 高地（不阻挡水平运动）
             };
-            if (action == TerrainAction.PassThrough) continue;
+            if (action == TerrainAction.PassThrough && o.Height == 0) continue;
 
             ConvexRegion? region;
             if (o.Kind == "boundary")

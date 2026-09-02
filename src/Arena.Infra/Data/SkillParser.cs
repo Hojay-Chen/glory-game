@@ -158,6 +158,7 @@ public static class SkillParser
             ActiveTicks = activeTicks,
             RecoveryTicks = rc,
             HitIntervalTicks = iv,
+            ActiveRaw = activeRaw,
             HitboxRaw = hb,
             RangeM = d.GetValueOrDefault("range_m", "-"),
             AngleDeg = d.GetValueOrDefault("angle_deg", "-"),

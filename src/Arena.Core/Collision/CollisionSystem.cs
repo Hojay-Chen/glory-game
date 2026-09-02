@@ -44,6 +44,21 @@ public sealed class CollisionSystem
 
     public IReadOnlyList<TerrainBody> Terrain => _terrain;
 
+    /// 地面高度查询（GDD §3.5/§19: 平台=可行走高地；HeightTop ≤ maxY 的最高平台顶）
+    /// maxY: 调用方给定（PosY + 台阶高度）——高于它的平台不吸附（悬崖语义）
+    public long QueryGround(long x, long z, long maxY)
+    {
+        long ground = 0;
+        for (int i = 0; i < _terrain.Count; i++)
+        {
+            var body = _terrain[i];
+            if (body.HeightTop <= ground || body.HeightTop > maxY) continue;
+            if (!body.Region.Contains(x, z)) continue;
+            ground = body.HeightTop;
+        }
+        return ground;
+    }
+
     /// <summary>
     /// SPEC-0005 §2 统一路径: 水平运动积分（走位/击退/突进共用；禁止旁路）。
     /// velX/velZ: Q32.16 m/s；位移 = RHE(vel/60)。bounceEnabled: 击退/击飞 true，走位 false（§2 响应策略）。
@@ -77,6 +92,7 @@ public sealed class CollisionSystem
             for (int i = 0; i < candidates.Count; i++)
             {
                 var body = _terrain[candidates[i]];
+                if (body.Action == TerrainAction.PassThrough) continue;   // 高地（QueryGround 域）非碰撞约束
                 // mover 半径由 SweepRegion 即时并入（地形 region 只读共享）
                 if (!SweepSolver.SweepRegion(body.Region, x, z, remX, remZ, radius, out long toi, out _, out long nx, out long nz))
                     continue;

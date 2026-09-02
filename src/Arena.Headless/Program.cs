@@ -22,6 +22,82 @@ public static class Program
             Path.Combine(root, "docs/skill-spec/skills.csv"),
             Path.Combine(root, "docs/weapon-spec/weapons.csv"),
             Path.Combine(root, "docs/balance-sheet/class-base.csv"));
+        // Guard diag
+        {
+            var wgd = new SimWorld(0x5EED, catalog!.DataVersionHash);
+            foreach (var sk in catalog.Skills) wgd.AddSkill(sk);
+            wgd.AddFighter(0, "BLA", Fixed.FromInt(0), Fixed.FromInt(0), team: 0);
+            wgd.AddFighter(1, "BMG", Fixed.FromInt(0), Fixed.FromInt(0), team: 1);
+            wgd.SealWorld();
+            wgd.Fighters[1].PosZ = Fixed.FromRaw(176947);
+            wgd.Step(1, new[] { new Command(0, CmdKind.Skill, catalog.IdMap["BLA_T1_002"], 0, 0, 1) });
+            wgd.Step(10, new[] { new Command(1, CmdKind.Skill, catalog.IdMap["BMG_T1_002"], 32768, 0, 10) });
+            for (int t = 11; t <= 19; t++) wgd.Step(t, Array.Empty<Command>());
+            var gd = catalog.Get("BLA_T1_002")!;
+            var gex = wgd.GetExecution(wgd.Fighters[0].ActiveSkillUid);
+            Console.WriteLine("[guard] def: guard=" + (gd.Guard is not null) + " isHold=" + gd.IsHold + " dmgType=" + gd.DamageType
+                + " | atkDef dmgType=" + catalog.Get("BMG_T1_002")!.DamageType);
+            if (gex is not null)
+                Console.WriteLine("[guard] exec: offset=" + gex.CurrentOffset + " inActive=" + gex.InActive + " uid=" + gex.Uid + " vicUid=" + wgd.Fighters[0].ActiveSkillUid + " state=" + wgd.Fighters[0].State);
+            else
+                Console.WriteLine("[guard] exec TERMINATED/missing; vicUid=" + wgd.Fighters[0].ActiveSkillUid);
+            Console.WriteLine("[guard] shield=" + wgd.Fighters[0].Shield + " hp=" + wgd.Fighters[0].Hp);
+        }
+
+// CC11 diag: roll + hitbox invuln
+        {
+            var wr = new SimWorld(0x5EED, catalog!.DataVersionHash);
+            foreach (var sk in catalog.Skills) wr.AddSkill(sk);
+            wr.AddFighter(0, "BLA", Fixed.FromInt(0), Fixed.FromInt(0), team: 0);
+            wr.AddFighter(1, "BMG", Fixed.FromInt(0), Fixed.FromInt(0), team: 1);
+            wr.SealWorld();
+            wr.Fighters[1].PosZ = Fixed.FromRaw(176947);
+            wr.Step(1, new[] { new Command(0, CmdKind.Roll, 0, 0, 0, 1), new Command(1, CmdKind.Skill, catalog.IdMap["BMG_T1_002"], 32768, 0, 1) });
+            for (int t = 2; t <= 6; t++)
+            {
+                wr.Step(t, Array.Empty<Command>());
+                Console.WriteLine("[roll] t" + t + " z=" + wr.Fighters[0].PosZ.Raw + " state=" + wr.Fighters[0].State + " ticks=" + wr.Fighters[0].RollTicksRemaining);
+            }
+            for (int t = 7; t <= 14; t++)
+            {
+                wr.Step(t, Array.Empty<Command>());
+                if (t is >= 9 and <= 12)
+                    Console.WriteLine("[cc11] t" + t + " rollerState=" + wr.Fighters[0].State + " z=" + wr.Fighters[0].PosZ.Raw
+                        + " invuln=" + wr.Fighters[0].InvulnTicks + " rollTicks=" + wr.Fighters[0].RollTicksRemaining);
+            }
+            foreach (var e in wr.Events.All)
+                Console.WriteLine("[cc11] E t" + e.Tick + " " + e.Kind + " vic=" + e.VictimId + " reason=" + e.ReasonByte);
+        }
+
+// CC04 diag
+        {
+            var wb = new SimWorld(0x5EED, catalog!.DataVersionHash);
+            foreach (var sk in catalog.Skills) wb.AddSkill(sk);
+            wb.AddFighter(0, "BLA", Fixed.FromInt(0), Fixed.FromInt(0), team: 0);
+            wb.AddFighter(1, "BMG", Fixed.FromInt(0), Fixed.FromInt(0), team: 1);
+            wb.SealWorld();
+            wb.Fighters[1].PosZ = Fixed.FromRaw(176947);
+            wb.Step(1, new[] { new Command(0, CmdKind.Skill, catalog.IdMap["BLA_T1_002"], 0, 0, 1) });
+            wb.Fighters[0].Shield = 500;
+            wb.Step(10, new[] { new Command(1, CmdKind.Skill, catalog.IdMap["BMG_T1_002"], 32768, 0, 10) });
+            for (int t = 11; t <= 30; t++) wb.Step(t, Array.Empty<Command>());
+            Console.WriteLine("[cc04] t30 shield=" + wb.Fighters[0].Shield + " max=" + wb.Fighters[0].ShieldMax + " regen=" + wb.Fighters[0].ShieldRegenTicks + " state=" + wb.Fighters[0].State);
+            for (int t = 31; t <= 500; t++) wb.Step(t, Array.Empty<Command>());
+            Console.WriteLine("[cc04] t500 shield=" + wb.Fighters[0].Shield + " max=" + wb.Fighters[0].ShieldMax + " regen=" + wb.Fighters[0].ShieldRegenTicks + " state=" + wb.Fighters[0].State);
+        }
+
+        // GS01 replica
+        var wg = new SimWorld(0x5EED, catalog!.DataVersionHash);
+        foreach (var sk in catalog.Skills) wg.AddSkill(sk);
+        wg.AddFighter(0, "BMG", Fixed.FromInt(0), Fixed.FromInt(0), team: 0);
+        wg.AddFighter(1, "BLA", Fixed.FromInt(0), Fixed.FromInt(2), team: 1);
+        wg.SealWorld();
+        for (int t = 1; t <= 10; t++)
+        {
+            wg.Step(t, new[] { new Command(0, CmdKind.Move, 0, 0, 0, t) });
+            if (t <= 3) Console.WriteLine("[gs01] t" + t + " state=" + wg.Fighters[0].State + " velZ=" + wg.Fighters[0].VelZ.Raw + " z=" + wg.Fighters[0].PosZ.Raw + " grabbedBy=" + wg.Fighters[0].GrabbedBy + " staminamax=" + wg.Fighters[0].Stamina);
+        }
+
         Console.WriteLine($"catalog={catalog!.Count} blockers={result.Blockers.Count} unroutedStatus={catalog.UnroutedStatuses.Count} unroutedHitbox={catalog.UnroutedHitboxes.Count}");
         foreach (var g in catalog.UnroutedStatuses.GroupBy(x => x.Split(':')[^1].Split(':').LastOrDefault() ?? x).OrderBy(g => -g.Count()).Take(18))
             Console.WriteLine($"  [us] {g.Count()}× {g.First()}");

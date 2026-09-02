@@ -99,6 +99,44 @@ public static class RuntimeConstants
     /// 空中高度上限 12m 软性压回（GDD §2.1.1）
     public static readonly long CEILING_HEIGHT = RheM(12m);
 
+    // ---- 格挡/盾值/完美格挡（GDD §6.2/§6.3；盾值/减伤来自技能 special 数据化） ----
+    public const int GUARD_BLOCK_HALF_DEG = 60;          // 正面 120° 扇区 → 半角 60°（GDD §6.2）
+    public static readonly long GUARD_HP_TAKE_NUM = 40, GUARD_HP_TAKE_DEN = 100;   // 减伤 60% → HP 承 40%
+    public static readonly long GUARD_SHIELD_TAKE_NUM = 120, GUARD_SHIELD_TAKE_DEN = 100;  // 盾扣 = 伤害 ×1.2
+    public const int PARRY_WINDOW_TICKS = 6;             // 完美格挡 6f（§6.3）
+    public static readonly int PARRY_INTERVAL_TICKS = (int)(TICK_RATE / 2);   // 间隔 0.5s
+    public const int PARRY_ATTACKER_STUN = 20;           // 弹刀: 攻击者强硬直 20f（§6.3）
+    public const int PARRY_COUNTER_WINDOW = 15;          // 守方 15f 反击窗（§6.3）
+    public const int GUARD_BREAK_STUN = 45;              // 破盾强硬直 45f（§6.2）
+    public static readonly int SHIELD_REGEN_TICKS = (int)(8 * TICK_RATE);      // 盾 8s 恢复至满
+
+    // ---- 反击（GDD §6.6；奖励封顶: 攻击者强硬直 20f） ----
+    public const int COUNTER_ATTACKER_STUN = 20;
+
+    // ---- 抓取（GDD §4.1/§7.2；Grabbed 完全受控+唯一免受其他伤害） ----
+    public static readonly long GRAB_HOLD_DISTANCE = RheM(0.9m);   // 被抓者维持于抓取者身前
+
+    // ---- 翻滚/耐力（GDD §10.1/§10.2 原著通用技） ----
+    public const int ROLL_TICKS = 30;                    // 30f
+    public static readonly long ROLL_DISTANCE = RheM(3m);          // 3m
+    public const int ROLL_INVULN_START = 4;              // 无敌帧 4–18f
+    public const int ROLL_INVULN_END = 18;
+    public const long STAMINA_MAX = 100;
+    public const long STAMINA_REGEN_PER_SEC = 10;        // 战斗中 10/s
+    public const long STAMINA_ROLL_COST = 25;
+    public const long STAMINA_UKEMI_COST = 15;
+    public const long STAMINA_SPRINT_PER_SEC = 10;       // 疾跑 10/s——v1 无疾跑档（登记）
+
+    // ---- 地形（GDD §3.3/§3.5/§19） ----
+    public static readonly long STEP_UP_HEIGHT = RheM(0.5m);   // 台阶 ≤0.5m 自动踏上
+    public const long FALL_DAMAGE_PER_M = 80;            // 坠落伤害 高度×80
+    public const long FALL_DAMAGE_CAP = 1200;
+    public static readonly long FALL_DAMAGE_MIN_DROP = RheM(2m);   // 高差 >2m 才结算
+    public const int JUMP_LAND_LAG_TICKS = 6;            // 落地硬直 6f（受身则 0）
+
+    // ---- Steer（SPEC-0001；GDD §4.1 追踪转向 ≤120°/s） ----
+    public const int STEER_DEG_PER_SEC_DEFAULT = 120;
+
     // ---- BroadPhase（SPEC-0005 PA-6） ----
     public const long GRID_CELL_SIZE = 8 * Fixed.ONE;   // 8m cell
 

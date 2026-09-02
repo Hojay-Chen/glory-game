@@ -101,6 +101,9 @@ public sealed partial class SimWorld
         // ⑤ 状态/闸门/资源 Tick（FighterId 升序）
         TickFighters();
 
+        // ⑤' 签名钩子（ADR-0001 §3.2 ⑤——状态 Tick 后、死亡判定前）
+        DispatchSignatures();
+
         // ⑥ 死亡判定
         for (int i = 0; i < Fighters.Count; i++)
         {
@@ -108,7 +111,22 @@ public sealed partial class SimWorld
             if (f.Hp <= 0 && f.State != FighterState.Dead)
             {
                 f.State = FighterState.Dead;
+                if (f.ActiveSkillUid != 0) TerminateExecutionById(f.ActiveSkillUid, cancelled: false);
                 Events.Emit(new SimEvent { Kind = EventKind.Died, VictimId = f.Id });
+            }
+            if (f.State == FighterState.Dead)
+            {
+                // 死亡的抓取者释放被擒者（GDD §7.2）
+                foreach (var v in Fighters)
+                {
+                    if (v.GrabbedBy == f.Id)
+                    {
+                        v.GrabbedBy = -1;
+                        v.GrabThrowSkill = 0;
+                        if (v.State == FighterState.Grabbed) v.State = FighterState.Normal;
+                        Events.Emit(new SimEvent { Kind = EventKind.GrabReleased, VictimId = v.Id, AttackerId = f.Id });
+                    }
+                }
             }
         }
     }
@@ -144,6 +162,7 @@ public sealed partial class SimWorld
         {
             case CmdKind.Roll:
                 TryUkemi(f, cmd);
+                TryStandingRoll(f, cmd);
                 break;
             case CmdKind.ForceCancel:
                 TryForceCancel(f);
@@ -161,18 +180,69 @@ public sealed partial class SimWorld
                 HandleMove(f, cmd);
                 break;
             case CmdKind.Steer:
-                break;   // 操控型生效窗（ADR-0008 controlled）——签名阶段接通（报告登记）
+                TrySteer(f, cmd);
+                break;
         }
+    }
+
+    /// Steer（SPEC-0001: controlled 生效窗内朝向饱和步进，≤120°/s）
+    private void TrySteer(FighterStateData f, Command cmd)
+    {
+        if (f.State != FighterState.Act || f.ActiveSkillUid == 0) return;
+        var exec = GetExecution(f.ActiveSkillUid);
+        if (exec?.Def is not { } def || def.SteerRateDegPerSec <= 0) return;
+        // maxStep = rate × 65536 / 360 / 60（每 Tick 最大量子步）
+        long maxStep = DeterministicMath.DivRoundHalfEven(
+            (long)def.SteerRateDegPerSec * Fixed.ONE, 360 * RuntimeConstants.TICK_RATE);
+        int diff = (int)(((cmd.AimQuantum - f.HeadingQuantum) % 65536 + 65536) % 65536);
+        if (diff > 32768) diff -= 65536;   // 最短弧带符号差（SPEC-0001 §2）
+        long step = Math.Clamp(diff, -maxStep, maxStep);
+        f.HeadingQuantum = ((f.HeadingQuantum + step) % 65536 + 65536) % 65536;
+    }
+
+    /// 站立翻滚（GDD §10.1: 30f/3m/无敌 4–18f；耐力 25——Down 态走受身路径）
+    private void TryStandingRoll(FighterStateData f, Command cmd)
+    {
+        if (f.State == FighterState.Down || f.State == FighterState.Roll) return;
+        if (f.State == FighterState.Act && f.ActiveSkillUid != 0)
+        {
+            // hold 姿态可翻滚释放；其他技能不可翻滚取消（无【滚取消】数据）
+            var exec = GetExecution(f.ActiveSkillUid);
+            if (exec?.Def is not { } def || !def.IsHold) return;
+            TerminateExecution(exec, cancelled: false);
+        }
+        else if (f.State != FighterState.Normal)
+        {
+            return;
+        }
+        if (f.Stamina < RuntimeConstants.STAMINA_ROLL_COST) return;   // 耗尽 → 翻滚不可用（§10.2）
+        if (!StatusSystem.CanMove(f)) return;
+        if (cmd.DirIndex > 7) return;
+        f.Stamina -= RuntimeConstants.STAMINA_ROLL_COST;
+        f.State = FighterState.Roll;
+        f.RollTicksRemaining = RuntimeConstants.ROLL_TICKS;
+        f.RollDirIndex = cmd.DirIndex;
+        f.RollInvulnArmed = false;
+        f.ActiveSkillUid = 0;
     }
 
     /// 8 向移动（GDD §3.2: 奔跑 6.0 m/s；攻击制动；状态门控）
     private void HandleMove(FighterStateData f, Command cmd)
     {
-        if (f.State != FighterState.Normal || f.ActiveSkillUid != 0) return;   // Act 制动
+        // hold 姿态（格挡等）允许移动（GDD §6.2: 格挡移速 −60%）；其余 Act 制动
+        bool guardWalk = false;
+        if (f.State == FighterState.Act && f.ActiveSkillUid != 0)
+        {
+            var holdExec = GetExecution(f.ActiveSkillUid);
+            if (holdExec?.Def is { } hd && hd.IsHold) guardWalk = true;
+        }
+        if (f.State != FighterState.Normal && !guardWalk) return;   // Act 制动
         if (!StatusSystem.CanMove(f)) return;
+        if (f.GrabbedBy >= 0) return;
         if (cmd.DirIndex > 7) return;
         long speed = RuntimeConstants.RUN_MPS * Fixed.ONE;
         speed = DeterministicMath.MulShift(speed, StatusSystem.MoveSpeedMultQ(f));
+        if (guardWalk) speed = DeterministicMath.MulShift(speed, DeterministicMath.DivRoundHalfEven(40 * Fixed.ONE, 100));
         if (cmd.DirIndex == 0 && cmd.AimQuantum == 0 && cmd.TargetTick == int.MinValue)
         { }   // 占位：v1 无「停走」区分——DirIndex=0 表示 +Z；停止 = 不发 Move
         (long dx, long dz) = DirVector(cmd.DirIndex);
@@ -208,7 +278,7 @@ public sealed partial class SimWorld
         if (f.State == FighterState.Act && f.ActiveSkillUid != 0)
         {
             var exec = GetExecution(f.ActiveSkillUid);
-            if (exec is not null && !IsCancelable(exec, def))
+            if (exec is not null && !IsCancelable(f, exec, def))
             {
                 if (!fromBuffer) BufferInput(f, cmd);   // 缓冲排水尝试不再重复入队
                 return false;
@@ -241,6 +311,7 @@ public sealed partial class SimWorld
         {
             var exec = GetExecution(f.ActiveSkillUid);
             if (exec is null) return false;
+            if (exec.Def is { } gdef && gdef.Guard is not null) return false;   // 格挡姿态无法普攻（§6.2）
             if (!exec.IsBasic)
             {
                 // 技能执行中不可普攻取消——缓冲
@@ -278,9 +349,13 @@ public sealed partial class SimWorld
         return null;
     }
 
-    private static bool IsCancelable(SkillExecution exec, SkillRuntimeData next)
+    private bool IsCancelable(FighterStateData f, SkillExecution exec, SkillRuntimeData next)
     {
         if (exec.Def is null) return false;
+        // 完美格挡/反击免费取消窗（GDD §6.3/§6.6: 可取消任意技能）
+        if (f.CounterWindowTicks > 0) return true;
+        // hold 姿态（格挡等）: 姿态建立后即可切换释放（GDD §6.2 格挡姿态衔接）
+        if (exec.Def.IsHold) return exec.CurrentOffset >= exec.Def.StartupTicks;
         if (exec.IsBasic)
         {
             // 普攻→技能: 自生效帧后 4f 起（GDD §4.2）
@@ -315,6 +390,13 @@ public sealed partial class SimWorld
         Executions.Add(exec);
         f.State = FighterState.Act;
         f.ActiveSkillUid = exec.Uid;
+        // 格挡姿态激活: 盾值置满（GDD §6.2 盾值1500；破碎/结束后 8s 恢复）
+        if (def.Guard is { } g)
+        {
+            f.ShieldMax = g.ShieldMax;
+            f.Shield = g.ShieldMax;
+            f.ShieldRegenTicks = 0;
+        }
         f.VelX = Fixed.Zero; f.VelZ = Fixed.Zero;   // 攻击制动（GDD §3.2）
         // 施放朝向: Steer/Aim 量化（SPEC-0001）——Skill 指令的 AimQuantum 直接锁定朝向
         if (cmd.AimQuantum != 0 || cmd.Kind == CmdKind.Skill) f.HeadingQuantum = cmd.AimQuantum;
@@ -363,13 +445,15 @@ public sealed partial class SimWorld
     {
         if (f.State != FighterState.Down) return;
         if (f.UkemiIneffective) return;   // 【受身无效】（GDD §5.6）
+        if (f.Stamina < RuntimeConstants.STAMINA_UKEMI_COST) return;   // 耐力耗尽 → 受身不可用（§10.2）
         int window = f.DownCount >= 2 ? RuntimeConstants.UKEMI_WINDOW_EXTENDED : RuntimeConstants.UKEMI_WINDOW_TICKS;
         if (f.DownTicks > window) return;
         // 方向判定: 输入方向 vs 摔倒方向 ≤90°（DirIndex 环距 ≤1）
         int diff = Math.Abs(cmd.DirIndex - f.FallDirIndex);
         diff = Math.Min(diff, 8 - diff);
         if (diff > 1) return;
-        // 受身: 立即弹起 → Getup 24f 全程无敌
+        // 受身: 立即弹起 → Getup 24f 全程无敌（耐力 15，§10.2）
+        f.Stamina -= RuntimeConstants.STAMINA_UKEMI_COST;
         f.State = FighterState.Getup;
         f.StateTicksRemaining = RuntimeConstants.GETUP_TICKS;
         f.InvulnTicks = RuntimeConstants.GETUP_TICKS;
@@ -460,8 +544,14 @@ public sealed partial class SimWorld
                 ProjectileSystem.Spawn(this, owner, def, owner.HeadingQuantum, (int)Tick);
             }
 
-            // 结束（恢复完毕）
-            if (exec.CurrentOffset >= exec.TotalTicks)
+            // 抓取投技结算（GDD §7.2: 抓取后有专属投技演出——执行结束帧投出）
+            if (def.IsGrab && !exec.Terminated && exec.CurrentOffset >= def.StartupTicks + def.ActiveTicks)
+            {
+                ResolveGrabThrow(exec, def, owner);
+            }
+
+            // 结束（hold 姿态不自然结束——由取消/切换释放；其余恢复完毕即结束）
+            if (!def.IsHold && exec.CurrentOffset >= exec.TotalTicks)
             {
                 EndExecution(exec, owner);
                 Executions.RemoveAt(i);
@@ -506,17 +596,60 @@ public sealed partial class SimWorld
         Events.Emit(new SimEvent { Kind = EventKind.ActEnded, AttackerId = owner.Id, SkillId = exec.SkillRuntimeId });
     }
 
-    private void TerminateExecution(SkillExecution exec, bool cancelled)
+    private void TerminateExecution(SkillExecution exec, bool cancelled) =>
+        TerminateExecutionById(exec.Uid, cancelled);
+
+    /// 终止执行（取消/打断/破盾）。抓取执行终止 → 释放被擒者（无投技结算）。
+    internal void TerminateExecutionById(int uid, bool cancelled, bool interrupted = false)
     {
+        var exec = GetExecution(uid);
+        if (exec is null) return;
         var owner = GetFighter(exec.OwnerId);
         exec.Terminated = true;
         if (owner is not null && owner.ActiveSkillUid == exec.Uid)
         {
-            owner.State = FighterState.Normal;
+            if (owner.State == FighterState.Act) owner.State = FighterState.Normal;   // 打断路径: 状态已属受击
             owner.ActiveSkillUid = 0;
+        }
+        if (exec.Def is { } def && def.IsGrab)
+        {
+            // 释放全部被擒者（GDD §7.2 GrabReleased）
+            foreach (var f in Fighters)
+            {
+                if (f.GrabbedBy != exec.OwnerId) continue;
+                f.GrabbedBy = -1;
+                f.GrabThrowSkill = 0;
+                if (f.State == FighterState.Grabbed) { f.State = FighterState.Normal; f.StateTicksRemaining = 0; }
+                Events.Emit(new SimEvent { Kind = EventKind.GrabReleased, VictimId = f.Id, AttackerId = exec.OwnerId });
+            }
         }
         if (cancelled)
             Events.Emit(new SimEvent { Kind = EventKind.Cancelled, AttackerId = exec.OwnerId, SkillId = exec.SkillRuntimeId });
+        else if (interrupted)
+            Events.Emit(new SimEvent { Kind = EventKind.Interrupted, AttackerId = exec.OwnerId, SkillId = exec.SkillRuntimeId });
+    }
+
+    /// 抓取投技结算（执行结束帧: 伤害 + 落点反应 + 释放——GDD §7.2）
+    private void ResolveGrabThrow(SkillExecution exec, SkillRuntimeData def, FighterStateData owner)
+    {
+        foreach (var vic in Fighters)
+        {
+            if (vic.GrabbedBy != owner.Id || vic.GrabThrowSkill != def.RuntimeId) continue;
+            HitResolve.ResolveThrow(new HitResolve.HitContext
+            {
+                World = this,
+                Attacker = owner,
+                Victim = vic,
+                Def = def,
+                SegmentIndex = 0,
+                HitRegion = (byte)HitRegion.Torso,
+                HitPointX = vic.PosX.Raw, HitPointY = vic.PosY.Raw + RuntimeConstants.TORSO_TOP / 2, HitPointZ = vic.PosZ.Raw,
+                HitNormalX = 0, HitNormalZ = 0,
+            });
+            vic.GrabbedBy = -1;
+            vic.GrabThrowSkill = 0;
+            Events.Emit(new SimEvent { Kind = EventKind.GrabReleased, VictimId = vic.Id, AttackerId = owner.Id });
+        }
     }
 
     // ---- ③ 命中结算（SPEC-0005 §6 总序 → HitResolve 零几何） ----
@@ -599,7 +732,7 @@ public sealed partial class SimWorld
         });
     }
 
-    private void MarkHitConfirmed(FighterStateData owner, ushort skillId)
+    internal void MarkHitConfirmed(FighterStateData owner, ushort skillId)
     {
         var exec = GetExecution(owner.ActiveSkillUid);
         if (exec is not null && exec.SkillRuntimeId == skillId) exec.HitConfirmed = true;
@@ -709,29 +842,111 @@ public sealed partial class SimWorld
         {
             if (f.State == FighterState.Dead) continue;
 
-            // 垂直运动（Launch/跳跃共用重力路径；GroundStop）
-            bool wasAirborne = f.PosY.Raw > 0;
-            if (f.PosY.Raw > 0 || f.VelY.Raw != 0)
+            // 被抓取: 位置锁定于抓取者身前（GDD §7.2 完全受控）
+            if (f.State == FighterState.Grabbed)
             {
+                var grabber = GetFighter(f.GrabbedBy);
+                if (grabber is not null)
+                {
+                    DeterministicMath.CordicCosSin(grabber.HeadingQuantum, out var gfx, out var gfz);
+                    f.PosX = Fixed.FromRaw(grabber.PosX.Raw + DeterministicMath.MulShift(gfx, RuntimeConstants.GRAB_HOLD_DISTANCE));
+                    f.PosZ = Fixed.FromRaw(grabber.PosZ.Raw + DeterministicMath.MulShift(gfz, RuntimeConstants.GRAB_HOLD_DISTANCE));
+                }
+                f.VelX = Fixed.Zero; f.VelZ = Fixed.Zero; f.VelY = Fixed.Zero;
+                f.PosY = Fixed.Zero;
+                continue;
+            }
+
+            if (f.State == FighterState.Roll)
+            {
+                // 翻滚位移（GDD §10.1: 3m/30f 直线）
+                f.RollTicksRemaining--;
+                if (!f.RollInvulnArmed &&
+                    RuntimeConstants.ROLL_TICKS - f.RollTicksRemaining >= RuntimeConstants.ROLL_INVULN_START)
+                {
+                    f.RollInvulnArmed = true;
+                    f.InvulnTicks = RuntimeConstants.ROLL_INVULN_END - RuntimeConstants.ROLL_INVULN_START + 1;
+                }
+                (long rdx, long rdz) = DirVector(f.RollDirIndex);
+                // 翻滚速度 = 3m/30f × 60 = 6 m/s（IntegrateMove 入参为 m/s 域，内部 ÷60 得 Tick 位移）
+                long rollVel = DeterministicMath.DivRoundHalfEven(
+                    RuntimeConstants.ROLL_DISTANCE * RuntimeConstants.TICK_RATE, RuntimeConstants.ROLL_TICKS);
+                var rollMove = Collision.IntegrateMove(f.PosX.Raw, f.PosZ.Raw,
+                    DeterministicMath.MulShift(rdx, rollVel),
+                    DeterministicMath.MulShift(rdz, rollVel),
+                    RuntimeConstants.FIGHTER_RADIUS, bounceEnabled: false);
+                f.PosX = Fixed.FromRaw(rollMove.FinalX);
+                f.PosZ = Fixed.FromRaw(rollMove.FinalZ);
+                if (f.RollTicksRemaining <= 0)
+                {
+                    f.State = FighterState.Normal;
+                    f.RollTicksRemaining = 0;
+                }
+                // 翻滚期间贴地（地面高度跟随——垂直分量独立处理）
+            }
+
+            // 地面高度（GDD §3.5 高台/台阶: ≤0.5m 自动踏上；平台=悬崖边走出即坠落）
+            long ground = Collision.QueryGround(f.PosX.Raw, f.PosZ.Raw, f.PosY.Raw + RuntimeConstants.STEP_UP_HEIGHT);
+            bool wasGrounded = f.VelY.Raw == 0 && f.State != FighterState.Launch;
+            if (wasGrounded && ground > f.PosY.Raw && ground - f.PosY.Raw <= RuntimeConstants.STEP_UP_HEIGHT)
+                f.PosY = Fixed.FromRaw(ground);   // 台阶吸附
+
+            // 垂直运动（Launch/跳跃共用重力路径；GroundStop = 当前地面高度）
+            bool wasAirborne = f.PosY.Raw > ground;
+            if (f.PosY.Raw > ground || f.VelY.Raw > 0)
+            {
+                if (f.PeakY < f.PosY.Raw) f.PeakY = f.PosY.Raw;   // 空中峰值追踪（坠落伤害用）
                 f.VelY = Fixed.FromRaw(f.VelY.Raw - RuntimeConstants.GRAVITY_PER_TICK);
                 f.PosY = Fixed.FromRaw(f.PosY.Raw + DeterministicMath.DivRoundHalfEven(f.VelY.Raw, RuntimeConstants.TICK_RATE));
-                if (f.PosY.Raw <= 0)
+                if (f.PosY.Raw <= ground)
                 {
-                    f.PosY = Fixed.Zero;
+                    long drop = f.PeakY - ground;
+                    f.PosY = Fixed.FromRaw(ground);
                     f.VelY = Fixed.Zero;
+                    f.PeakY = ground;
                     if (f.State == FighterState.Launch)
                     {
-                        // 浮空落地 → 倒地（GDD §5.3；长倒地 = 强制落地）
+                        // 浮空落地 → 倒地（GDD §5.3）
                         f.State = FighterState.Down;
                         f.DownTicks = 0;
                         f.DownCount++;
                         Events.Emit(new SimEvent { Kind = EventKind.Landed, VictimId = f.Id, ValueRaw = f.FloatAirTicks });
+                    }
+                    else if (drop > RuntimeConstants.FALL_DAMAGE_MIN_DROP)
+                    {
+                        // 坠落（GDD §3.5: 高差 >2m → 高度×80 伤害（上限 1200）+ 强制长倒地）
+                        long meters = DeterministicMath.DivRoundHalfEven(drop, Fixed.ONE);
+                        long fallDmg = Math.Min(meters * RuntimeConstants.FALL_DAMAGE_PER_M, RuntimeConstants.FALL_DAMAGE_CAP);
+                        f.Hp -= fallDmg;
+                        f.State = FighterState.Down;
+                        f.DownTicks = 0;
+                        f.DownCount++;
+                        Events.Emit(new SimEvent { Kind = EventKind.FallLanded, VictimId = f.Id, DamageRaw = fallDmg, ValueRaw = drop });
+                    }
+                    else if (drop > RuntimeConstants.STEP_UP_HEIGHT)
+                    {
+                        // 落地硬直 6f（GDD §3.3；坠落/浮空落地走各自分支）
+                        Events.Emit(new SimEvent { Kind = EventKind.Landed, VictimId = f.Id });
+                        if (f.State == FighterState.Normal)
+                        {
+                            f.State = FighterState.Hitstun;
+                            f.StateTicksRemaining = RuntimeConstants.JUMP_LAND_LAG_TICKS;
+                        }
                     }
                     else if (wasAirborne)
                     {
                         Events.Emit(new SimEvent { Kind = EventKind.Landed, VictimId = f.Id });
                     }
                 }
+            }
+            else if (f.PosY.Raw < ground)
+            {
+                f.PosY = Fixed.FromRaw(ground);   // 贴地（台阶吸附后）
+                f.PeakY = ground;
+            }
+            else
+            {
+                f.PeakY = ground;   // 地面行进——峰值复位
             }
 
             // 浮空连时钟（GDD §5.3 第二道闸: 累计 3s 强制落地）
@@ -807,6 +1022,26 @@ public sealed partial class SimWorld
                 long v = f.Cooldowns[k] - 1;
                 if (v <= 0) f.Cooldowns.Remove(k); else f.Cooldowns[k] = v;
             }
+
+            // 耐力回复（GDD §10.2: 战斗中 10/s——脱离战斗 20/s 需战斗状态追踪，v1 常值登记）
+            if (f.Stamina < RuntimeConstants.STAMINA_MAX)
+            {
+                f.StaminaFrac += RuntimeConstants.STAMINA_REGEN_PER_SEC;
+                if (f.StaminaFrac >= RuntimeConstants.TICK_RATE)
+                {
+                    long whole = f.StaminaFrac / RuntimeConstants.TICK_RATE;
+                    f.StaminaFrac -= whole * RuntimeConstants.TICK_RATE;
+                    f.Stamina = Math.Min(RuntimeConstants.STAMINA_MAX, f.Stamina + whole);
+                }
+            }
+            // 盾回复（GDD §6.2: 8s 恢复至满——格挡结束/破盾起计）
+            if (f.ShieldRegenTicks > 0)
+            {
+                f.ShieldRegenTicks--;
+                if (f.ShieldRegenTicks == 0 && f.ShieldMax > 0) f.Shield = f.ShieldMax;
+            }
+            if (f.ParryCdTicks > 0) f.ParryCdTicks--;
+            if (f.CounterWindowTicks > 0) f.CounterWindowTicks--;
 
             // MP 回复（20/s 连续量——分数累积，ADR-0003 §1）
             if (f.Mp < 1000)

@@ -57,6 +57,9 @@ public static class RuntimeSkillFactory
         var idx = d.SkillId.LastIndexOf('_');
         if (d.Type == "basic" && idx >= 0 && int.TryParse(d.SkillId[(idx + 1)..], out var seg)) chainN = (byte)seg;
 
+        var guard = ParseGuard(d);
+        var charge = ParseCharge(d.Special);
+
         var def = new SkillRuntimeData
         {
             RuntimeId = runtimeId,
@@ -66,11 +69,13 @@ public static class RuntimeSkillFactory
             Type = d.Type,
             MpCost = d.CostMp,
             CooldownTicks = d.CooldownTicks,
-            StartupTicks = d.StartupTicks,
+            // 蓄力（GDD §4.1）: 蓄力时长追加至前摇（巴雷特 30+72=102 等）；v1 全额蓄力语义（登记）
+            StartupTicks = d.StartupTicks + (charge?.Item1 ?? 0),
             ActiveTicks = d.ActiveTicks,
             RecoveryTicks = d.RecoveryTicks,
             HitSchedule = d.HitSchedule,
             Geo = geo.Geometry,
+            DamageType = d.DamageType,
             DamageMultQ = Quantify(d.DamageMult),
             HeadMultQ = headMultQ,
             HitstunTicks = d.HitstunTicks,
@@ -92,6 +97,14 @@ public static class RuntimeSkillFactory
             ChainN = chainN,
             ForcedDown = forcedDown,
             Special = d.Special,
+            Guard = guard,
+            IsGrab = d.Type == "grab",
+            IsCounter = d.Type == "counter",
+            IsHold = d.ActiveRaw == "hold",
+            SteerRateDegPerSec = d.ActiveRaw == "controlled" || d.Special.Contains("可转向") || d.Special.Contains("自由转向")
+                ? RuntimeConstants.STEER_DEG_PER_SEC_DEFAULT : 0,
+            ChargeTicks = charge?.Item1 ?? 0,
+            ChargeBonusQ = charge?.Item2 ?? 0,
         };
         return (def, unroutedStatus, unroutedHitbox);
     }
@@ -327,6 +340,58 @@ public static class RuntimeSkillFactory
         if (s.EndsWith("s") && decimal.TryParse(s[..^1], NumberStyles.Float, CultureInfo.InvariantCulture, out var v))
             return (int)Math.Round(v * RuntimeConstants.TICK_RATE, MidpointRounding.ToEven);
         return defaultSec * (int)RuntimeConstants.TICK_RATE;
+    }
+
+    // ---- 格挡（GDD §6.2/§6.3；盾值/减伤率来自 special 数据化） ----
+
+    private static GuardDef? ParseGuard(SkillDef d)
+    {
+        var sp = d.Special;
+        var shieldIdx = sp.IndexOf("盾值");
+        if (shieldIdx < 0) return null;
+        var rest = sp[(shieldIdx + 2)..];
+        int end = 0;
+        while (end < rest.Length && char.IsDigit(rest[end])) end++;
+        if (end == 0 || !long.TryParse(rest[..end], out var shieldMax)) return null;
+        // 化解物理 P%（缺省 GDD §6.2 基线 60%）
+        long mitNum = 60, mitDen = 100;
+        var mitIdx = sp.IndexOf("化解物理");
+        if (mitIdx >= 0)
+        {
+            var mr = sp[(mitIdx + 4)..];
+            int pe = 0;
+            while (pe < mr.Length && (char.IsDigit(mr[pe]) || mr[pe] == '.')) pe++;
+            if (pe > 0 && double.TryParse(mr[..pe], NumberStyles.Float, CultureInfo.InvariantCulture, out var pct))
+            {
+                mitNum = (long)Math.Round(pct, MidpointRounding.ToEven);
+                mitDen = 100;
+            }
+        }
+        return new GuardDef(shieldMax, mitNum, mitDen, PhysicalOnly: true);
+    }
+
+    /// 蓄力:Ts[:+P%] → (追加前摇 Tick, 伤害加成 Q32.16)。蓄力突进:8m 类非时长蓄力不匹配。
+    private static (int, long)? ParseCharge(string special)
+    {
+        var idx = special.IndexOf("蓄力:");
+        if (idx < 0) return null;
+        var rest = special[(idx + 3)..];
+        int end = 0;
+        while (end < rest.Length && (char.IsDigit(rest[end]) || rest[end] == '.')) end++;
+        if (end == 0 || !double.TryParse(rest[..end], NumberStyles.Float, CultureInfo.InvariantCulture, out var sec))
+            return null;
+        int chargeTicks = (int)Math.Round(sec * RuntimeConstants.TICK_RATE, MidpointRounding.ToEven);
+        long bonus = 0;
+        var plus = rest.IndexOf('+', end);
+        if (plus >= 0)
+        {
+            var pr = rest[(plus + 1)..];
+            int pe = 0;
+            while (pe < pr.Length && (char.IsDigit(pr[pe]) || pr[pe] == '.')) pe++;
+            if (pe > 0 && double.TryParse(pr[..pe], NumberStyles.Float, CultureInfo.InvariantCulture, out var pct))
+                bonus = Quantify(1.0 + pct / 100.0);
+        }
+        return (chargeTicks, bonus);
     }
 
     // ---- armor / invincible / cancel ----

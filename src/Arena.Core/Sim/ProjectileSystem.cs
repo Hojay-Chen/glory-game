@@ -138,6 +138,7 @@ public static class ProjectileSystem
         {
             if (f.Id == p.OwnerId || f.State == FighterState.Dead) continue;
             if (w.SameTeam(p.OwnerId, f.Id)) continue;
+            if (f.GrabbedBy >= 0) continue;   // 被抓取目标不再被其他来源命中（GDD §2.4.4）
             long relX = p.DispX - DeterministicMath.DivRoundHalfEven(f.VelX.Raw, RuntimeConstants.TICK_RATE);
             long relZ = p.DispZ - DeterministicMath.DivRoundHalfEven(f.VelZ.Raw, RuntimeConstants.TICK_RATE);
             long relY = p.DispY;

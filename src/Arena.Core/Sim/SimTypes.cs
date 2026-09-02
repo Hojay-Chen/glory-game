@@ -6,18 +6,19 @@ using Arena.Core.Calc;
 namespace Arena.Core.Sim;
 
 // ---- ADR-0001 §3/ADR-0003: 稳定 ID 与状态枚举 ----
-// EVENT_PROTOCOL_VERSION = 2（SPEC-0006 §2: Hit 携带 hitRegion/hitPoint/hitNormal）
+// EVENT_PROTOCOL_VERSION = 3（v2: Hit 空间载荷；v3: +Parry/GuardHit/GuardBroken/GrabStarted/
+// GrabReleased/Countered/Interrupted/FallLanded——Phase 5 格挡/抓取/反击/坠落体系）
 
 public enum FighterState : byte
 {
     Normal = 0, Act = 1, Hitstun = 2, Launch = 3, Down = 4,
-    Getup = 5, Break = 6, Grabbed = 7, Dead = 8
+    Getup = 5, Break = 6, Grabbed = 7, Dead = 8, Roll = 9
 }
 
 // ADR-0001 §7.1 优先级: Dead > Break > Grabbed > Down > Launch > Hitstun > Act > Normal
 public static class FighterStatePriority
 {
-    private static readonly byte[] Rank = { 0, 1, 2, 3, 4, 5, 6, 7, 8 };
+    private static readonly byte[] Rank = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 1 };
     public static bool CanOverride(FighterState current, FighterState next) => Rank[(int)next] >= Rank[(int)current];
 }
 
@@ -64,6 +65,9 @@ public enum EventKind : byte
     GetupDone = 13, Knockback = 14, StatusApplied = 15, StatusExpired = 16,
     ProjectileSpawned = 17, ProjectileDestroyed = 18, Relaunched = 19,
     BasicStep = 20, ControlValueNearFull = 21,
+    Parry = 22, GuardHit = 23, GuardBroken = 24,
+    GrabStarted = 25, GrabReleased = 26, Countered = 27,
+    Interrupted = 28, FallLanded = 29,
 }
 
 /// Whiff 原因（ADR-0003 §3.2）
@@ -174,7 +178,29 @@ public sealed class FighterStateData
     public byte FallDirIndex { get; set; }          // 摔倒方向（8 向 DirIndex，受身判定）
 
     public long ProtectTicks { get; set; }          // 起身保护（×0.9 / 控制值×0.5）
-    public long InvulnTicks { get; set; }           // 状态性无敌（起身 24f 全程）
+    public long InvulnTicks { get; set; }           // 状态性无敌（起身 24f / 翻滚 4-18f / 技能窗）
+    public int CounterWindowTicks { get; set; }     // 完美格挡/反击免费取消窗（GDD §6.3/6.6）
+    public int ParryCdTicks { get; set; }           // 完美格挡 0.5s 间隔（GDD §6.3）
+
+    // 格挡/盾值（GDD §6.2；盾值/减伤来自技能数据）
+    public long Shield { get; set; }
+    public long ShieldMax { get; set; }
+    public int ShieldRegenTicks { get; set; }       // 格挡结束后 8s 恢复至满
+
+    // 抓取（GDD §7.2: Grabbed 完全受控+唯一免受其他伤害）
+    public int GrabbedBy { get; set; } = -1;        // 抓取者 FighterId（-1 = 无）
+    public int GrabThrowSkill { get; set; }         // 投技 RuntimeId（抓取执行结束时结算）
+
+    public long PeakY { get; set; }                 // 空中峰值（坠落伤害: 高差 = 峰值 − 落点）
+
+    // 翻滚（GDD §10.1: 30f/3m/无敌 4-18f）
+    public int RollTicksRemaining { get; set; }
+    public byte RollDirIndex { get; set; }
+    public bool RollInvulnArmed { get; set; }
+
+    // 耐力（GDD §10.2: 上限 100 / 战斗中 10/s / 翻滚 25 / 受身 15）
+    public long Stamina { get; set; } = 100;
+    public long StaminaFrac { get; set; }
 
     // Act（技能执行中）
     public int ActiveSkillUid { get; set; }         // SkillExecution.Uid（0=无）
@@ -205,6 +231,12 @@ public sealed class FighterStateData
             DownTicks = DownTicks, FallDirIndex = FallDirIndex,
             ProtectTicks = ProtectTicks, InvulnTicks = InvulnTicks,
             ActiveSkillUid = ActiveSkillUid, PendingChainSkill = PendingChainSkill,
+            CounterWindowTicks = CounterWindowTicks, ParryCdTicks = ParryCdTicks,
+            Shield = Shield, ShieldMax = ShieldMax, ShieldRegenTicks = ShieldRegenTicks,
+            GrabbedBy = GrabbedBy, GrabThrowSkill = GrabThrowSkill,
+            RollTicksRemaining = RollTicksRemaining, RollDirIndex = RollDirIndex,
+            RollInvulnArmed = RollInvulnArmed, PeakY = PeakY,
+            Stamina = Stamina, StaminaFrac = StaminaFrac,
         };
         foreach (var kv in Cooldowns) c.Cooldowns[kv.Key] = kv.Value;
         Array.Copy(Statuses, c.Statuses, Statuses.Length);
@@ -225,4 +257,23 @@ public static class HurtboxModel
 
     /// 头部球心高度（PA-H1 GDD-GAP 约定: 躯干顶 + 0，随 PosY 平移）
     public static long HeadCenterY(long posY) => posY + Sim.RuntimeConstants.HEAD_CENTER_Y;
+}
+
+/// 命中来源方向判定（格挡 120° 正面扇区 / 反击窗共用——纯整数点积）
+public static class FacingRules
+{
+    /// 命中来自 victim 正面 ±halfDeg 扇区 ⟺ cos(victim→attacker, facing) > cos(halfDeg)
+    /// 零除法: dot(v2a, f) / |v2a| > cosθ ⟺ dot·cosDen > |v2a|·cosNum（cos 来自半度表）
+    public static bool IsFromFront(FighterStateData victim, long attackerX, long attackerZ, int halfDegIndex)
+    {
+        long ax = attackerX - victim.PosX.Raw;
+        long az = attackerZ - victim.PosZ.Raw;
+        if (ax == 0 && az == 0) return true;   // 同心: 构造确定（正面）
+        DeterministicMath.CordicCosSin(victim.HeadingQuantum, out var fx, out var fz);
+        DeterministicTables.HalfDegTrig(halfDegIndex * 2, out var c, out var _);
+        long dot = DeterministicMath.MulShift(ax, fx) + DeterministicMath.MulShift(az, fz);
+        long len = DeterministicMath.ISqrt(ax * ax + az * az);
+        // dot/len > cosθ（Q32.16 恒等变形: dot×cosDen > len×cosNum, cosDen=65536）
+        return dot > DeterministicMath.MulShift(len, c);
+    }
 }

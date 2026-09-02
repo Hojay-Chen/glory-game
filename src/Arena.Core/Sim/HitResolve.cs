@@ -41,6 +41,13 @@ public static class HitResolve
         // ---- 资格过滤（PA-H4: 豁免在结算前） ----
         if (vic.State == FighterState.Dead) return;
         var vicExec = w.GetExecution(vic.ActiveSkillUid);
+        // 反击架势（GDD §6.6）优先于无敌豁免——反击窗 = invuln 窗，命中即反击成功而非落空
+        if (!def.IsGrab && vicExec is not null && vicExec.Def is not null &&
+            vicExec.Def.IsCounter && IsCounterArmed(vicExec))
+        {
+            CounterSuccess(w, ctx);
+            return;
+        }
         bool skillInvuln = vicExec is not null && vicExec.Def is not null &&
                            vicExec.Def.Invuln is { } inv && inv.Covers(vicExec.CurrentOffset);
         if (vic.IsInvulnerable || skillInvuln)
@@ -55,6 +62,23 @@ public static class HitResolve
             EmitWhiff(w, atk.Id, def.RuntimeId, WhiffReason.DownProtected);
             return;
         }
+        // 被抓取豁免（GDD §2.4.4: 被抓取目标不再被其他来源命中；抓取方续接走投技结算）
+        if (vic.GrabbedBy >= 0 && vic.GrabbedBy != atk.Id) return;
+
+        // ---- 抓取（GDD §4.1/§7.2: 无视普通霸体；对无敌无效；命中 → Grabbed） ----
+        if (def.IsGrab)
+        {
+            if (vic.GrabbedBy >= 0) return;   // 已被擒——不可重复抓取（§2.4.4）
+            vic.GrabbedBy = atk.Id;
+            vic.GrabThrowSkill = def.RuntimeId;
+            vic.State = FighterState.Grabbed;
+            vic.StateTicksRemaining = 0;
+            vic.VelX = Fixed.Zero; vic.VelZ = Fixed.Zero; vic.VelY = Fixed.Zero;
+            vic.PosY = Fixed.Zero;
+            w.MarkHitConfirmed(atk, def.RuntimeId);
+            w.Events.Emit(new SimEvent { Kind = EventKind.GrabStarted, AttackerId = atk.Id, VictimId = vic.Id, SkillId = def.RuntimeId });
+            return;
+        }
 
         // ---- 伤害公式（GDD §2.5.1） ----
         long dmg = def.DamageMultQ;                                        // Q32.16 倍率
@@ -63,6 +87,8 @@ public static class HitResolve
             RuntimeConstants.DEFENSE_CONST * Fixed.ONE,
             RuntimeConstants.DEFENSE_CONST + vic.Def);                     // D = 1200/(1200+DEF) Q32.16
         dmg = DeterministicMath.MulShift(dmg, defenseFactor);
+        // 蓄力加成（GDD §4.1 蓄力技能; 数据: 蓄力:Ts:+P%——如 LAU_T3_001 +40%）
+        if (def.ChargeBonusQ > 0) dmg = DeterministicMath.MulShift(dmg, def.ChargeBonusQ);
 
         // ---- 部位修正（SPEC-0006 §1.4/PA-H2: HitRegion 由 Collision 几何选取） ----
         var region = (HitRegion)ctx.HitRegion;
@@ -101,7 +127,65 @@ public static class HitResolve
         }
         if (dmg < 0) dmg = 0;
 
-        // ---- HP 结算（护盾池 G-09 未实现——直扣 HP，登记于实施报告） ----
+        // ---- 格挡体系（GDD §6.2/§6.3；盾值/减伤率来自技能数据）——在 HP 结算前裁决 ----
+        var guardExec = w.GetExecution(vic.ActiveSkillUid);
+        if (guardExec is not null && guardExec.Def is not null && guardExec.Def.Guard is { } guard &&
+            guardExec.InActive)
+        {
+            // 绕过格挡的通道: 投技（§6.2）/【破防】技/破防状态/法术（化解物理）/背身 120° 外
+            bool hasGuardBreakStatus = false;
+            for (int i = 0; i < def.Statuses.Length; i++)
+                if (def.Statuses[i].Kind == StatusKind.GuardBreak) hasGuardBreakStatus = true;
+            bool bypass = def.IsGrab
+                       || hasGuardBreakStatus
+                       || vic.Statuses[(int)StatusKind.GuardBreak].Active
+                       || (guard.PhysicalOnly && def.DamageType != "phys")
+                       || !FacingRules.IsFromFront(vic, atk.PosX.Raw, atk.PosZ.Raw, RuntimeConstants.GUARD_BLOCK_HALF_DEG);
+            if (!bypass)
+            {
+                // 完美格挡（§6.3: 姿态生效后 6f 内被近战命中 + 0.5s 间隔）
+                bool melee = !def.IsProjectile;
+                if (melee && guardExec.CurrentOffset - guardExec.Def.StartupTicks <= RuntimeConstants.PARRY_WINDOW_TICKS
+                    && vic.ParryCdTicks == 0)
+                {
+                    vic.ParryCdTicks = RuntimeConstants.PARRY_INTERVAL_TICKS;
+                    vic.CounterWindowTicks = RuntimeConstants.PARRY_COUNTER_WINDOW;
+                    w.Events.Emit(new SimEvent { Kind = EventKind.Parry, AttackerId = atk.Id, VictimId = vic.Id, SkillId = def.RuntimeId });
+                    // 攻击者强硬直 20f（弹刀）
+                    atk.State = FighterState.Hitstun;
+                    atk.StateTicksRemaining = RuntimeConstants.PARRY_ATTACKER_STUN;
+                    atk.VelX = Fixed.Zero; atk.VelZ = Fixed.Zero;
+                    if (atk.ActiveSkillUid != 0) w.TerminateExecutionById(atk.ActiveSkillUid, cancelled: false);
+                    w.Events.Emit(new SimEvent { Kind = EventKind.Countered, AttackerId = vic.Id, VictimId = atk.Id, ValueRaw = RuntimeConstants.PARRY_ATTACKER_STUN });
+                    return;   // 免伤、盾不掉、连段不成立
+                }
+                // 常规格挡吸收: HP 承 (den−num)/den，盾扣 = 伤害×1.2（§6.2）
+                long hpTake = DeterministicMath.MulShift(dmg, DeterministicMath.DivRoundHalfEven((guard.MitigateDen - guard.MitigateNum) * Fixed.ONE, guard.MitigateDen));
+                long shieldTake = DeterministicMath.MulShift(dmg, DeterministicMath.DivRoundHalfEven(RuntimeConstants.GUARD_SHIELD_TAKE_NUM * Fixed.ONE, RuntimeConstants.GUARD_SHIELD_TAKE_DEN));
+                vic.Shield -= shieldTake;
+                vic.Hp -= hpTake;
+                w.Events.Emit(new SimEvent
+                {
+                    Kind = EventKind.GuardHit, AttackerId = atk.Id, VictimId = vic.Id,
+                    SkillId = def.RuntimeId, DamageRaw = hpTake, ValueRaw = shieldTake,
+                });
+                if (vic.Shield <= 0)
+                {
+                    // 破盾（§6.2: 强硬直 45f + 盾碎；盾 8s 恢复至满）
+                    vic.Shield = 0;
+                    vic.ShieldRegenTicks = RuntimeConstants.SHIELD_REGEN_TICKS;
+                    vic.State = FighterState.Hitstun;
+                    vic.StateTicksRemaining = RuntimeConstants.GUARD_BREAK_STUN;
+                    w.TerminateExecutionById(guardExec.Uid, cancelled: false);
+                    w.Events.Emit(new SimEvent { Kind = EventKind.GuardBroken, VictimId = vic.Id });
+                }
+                // 攻击方命中确认（GDD §4.4: 格挡也算命中确认）
+                w.MarkHitConfirmed(atk, def.RuntimeId);
+                return;   // 格挡命中不产生受击反应/连段
+            }
+        }
+
+        // ---- HP 结算 ----
         vic.Hp -= dmg;
 
         // ---- 霸体判定（GDD §6.4） ----
@@ -148,6 +232,10 @@ public static class HitResolve
             ApplyReaction(ctx, hitNumber, airMod);
         }
 
+        // ---- 技能中断（GDD §4.3: 前摇/生效被命中（无霸体）→ 技能中断，MP 不退） ----
+        if (vic.ActiveSkillUid != 0)
+            w.TerminateExecutionById(vic.ActiveSkillUid, cancelled: false, interrupted: true);
+
         // ---- 沉睡受击即醒 ----
         if (sleepWakeup) w.RemoveStatus(vic, StatusKind.Sleep);
 
@@ -168,6 +256,95 @@ public static class HitResolve
             PosY = vic.PosY.Raw,
             SweepFlag = def.Sweep, AirMod = airMod,
         });
+    }
+
+    /// 投技结算（SimWorld 在抓取执行结束帧调用——伤害链同 HitResolve，反应走 def 数据）
+    public static void ResolveThrow(in HitContext ctx)
+    {
+        var w = ctx.World;
+        var vic = ctx.Victim;
+        var def = ctx.Def;
+        if (vic.State != FighterState.Grabbed) return;   // 已释放（抓取者死亡等）——不结算
+
+        long dmg = def.DamageMultQ;
+        dmg = DeterministicMath.MulShift(dmg, ctx.Attacker.Atk);
+        long defenseFactor = DeterministicMath.DivRoundHalfEven(
+            RuntimeConstants.DEFENSE_CONST * Fixed.ONE, RuntimeConstants.DEFENSE_CONST + vic.Def);
+        dmg = DeterministicMath.MulShift(dmg, defenseFactor);
+        int hitNumber = vic.HitstunCount + 1;
+        if (hitNumber >= 7)
+        {
+            int idx = Math.Min(hitNumber, Calc.DeterministicTables.DamageDecay.Length - 1);
+            dmg = DeterministicMath.MulShift(dmg, Calc.DeterministicTables.DamageDecay[idx]);
+        }
+        vic.Hp -= Math.Max(dmg, 0);
+        vic.HitstunCount = hitNumber;
+
+        w.Events.Emit(new SimEvent
+        {
+            Kind = EventKind.Hit, AttackerId = ctx.Attacker.Id, VictimId = vic.Id,
+            SkillId = def.RuntimeId, DamageRaw = dmg, HitNumber = hitNumber,
+            HitRegion = (byte)HitRegion.Torso,
+            HitPointX = ctx.HitPointX, HitPointY = ctx.HitPointY, HitPointZ = ctx.HitPointZ,
+            VictimStateBefore = (byte)FighterState.Grabbed,
+        });
+
+        // 落点反应（def 数据驱动: 受身无效/击飞/浮空/普通硬直）
+        if (def.ForcedDown)
+        {
+            ForceDown(w, vic);
+            vic.UkemiIneffective = true;
+        }
+        else if (def.LaunchVelQ > 0)
+        {
+            vic.State = FighterState.Launch;
+            vic.VelY = Fixed.FromRaw(def.LaunchVelQ);
+            vic.LaunchCount = 0;
+            w.Events.Emit(new SimEvent { Kind = EventKind.Launched, AttackerId = ctx.Attacker.Id, VictimId = vic.Id, SkillId = def.RuntimeId, ValueRaw = def.LaunchVelQ });
+        }
+        else if (def.KnockbackVelQ > 0)
+        {
+            vic.State = FighterState.Hitstun;
+            vic.StateTicksRemaining = CalcHitstunTicks(def.HitstunTicks, hitNumber);
+            long dx = vic.PosX.Raw - ctx.Attacker.PosX.Raw;
+            long dz = vic.PosZ.Raw - ctx.Attacker.PosZ.Raw;
+            DeterministicMath.Normalize(dx, dz, out var nx, out var nz);
+            vic.VelX = Fixed.FromRaw(DeterministicMath.MulShift(nx, def.KnockbackVelQ));
+            vic.VelZ = Fixed.FromRaw(DeterministicMath.MulShift(nz, def.KnockbackVelQ));
+            vic.FallDirIndex = DirIndexFromVel(vic.VelX.Raw, vic.VelZ.Raw);
+            w.Events.Emit(new SimEvent { Kind = EventKind.Knockback, AttackerId = ctx.Attacker.Id, VictimId = vic.Id, SkillId = def.RuntimeId, ValueRaw = def.KnockbackVelQ });
+        }
+        else
+        {
+            ForceDown(w, vic);   // GDD §7.2: 投技结束通常倒地
+        }
+    }
+
+    /// 反击架势窗口: invuln 窗覆盖 = 武装（STR_T3_001 8-16f）；无 invuln 数据 = active 窗（名义判定窗）
+    private static bool IsCounterArmed(SkillExecution exec)
+    {
+        var def = exec.Def!;
+        if (def.Invuln is { } inv && inv.Covers(exec.CurrentOffset)) return true;
+        return def.Invuln is null && exec.CurrentOffset >= def.StartupTicks && exec.CurrentOffset < def.StartupTicks + def.ActiveTicks;
+    }
+
+    /// 反击成功（GDD §6.6: 攻击者强硬直 20f + 反击者免费行动；奖励封顶不含直接伤害）
+    private static void CounterSuccess(SimWorld w, in HitContext ctx)
+    {
+        var atk = ctx.Attacker;
+        var vic = ctx.Victim;
+        var vicExec = w.GetExecution(vic.ActiveSkillUid);
+        w.Events.Emit(new SimEvent { Kind = EventKind.Countered, AttackerId = vic.Id, VictimId = atk.Id, SkillId = vicExec?.SkillRuntimeId ?? 0 });
+        // 攻击者强硬直 20f
+        atk.State = FighterState.Hitstun;
+        atk.StateTicksRemaining = RuntimeConstants.COUNTER_ATTACKER_STUN;
+        atk.VelX = Fixed.Zero; atk.VelZ = Fixed.Zero;
+        if (atk.ActiveSkillUid != 0) w.TerminateExecutionById(atk.ActiveSkillUid, cancelled: false);
+        // 反击者: 架势解除 + 免费取消窗（可立即衔接任意技能——GDD §6.6）
+        if (vicExec is not null) w.TerminateExecutionById(vicExec.Uid, cancelled: false);
+        vic.State = FighterState.Normal;
+        vic.ActiveSkillUid = 0;
+        vic.CounterWindowTicks = RuntimeConstants.PARRY_COUNTER_WINDOW;
     }
 
     /// 受击反应: 浮空/击退/硬直/强制倒地（GDD §5）
