@@ -76,6 +76,7 @@ public sealed partial class SimWorld
             PosX = x, PosY = Fixed.Zero, PosZ = z,
             HeadingQuantum = z.Raw > 0 ? 32768 : 0,   // 朝向对方半场（0=+Z；z<0 面向 +Z）
             Atk = atk, Def = def,
+            HpMax = 10000, MpMax = 1000,              // GDD §2.5.3 基线（未来 class-base 列驱动）
         };
         if (_classResources.TryGetValue(classId, out var cap))
         {
@@ -227,7 +228,7 @@ public sealed partial class SimWorld
         }
         else
         {
-            f.Hp = Math.Min(10000, f.Hp + amountQ);
+            f.Hp = Math.Min(f.HpMax, f.Hp + amountQ);
         }
         Events.Emit(new SimEvent { Kind = EventKind.Healed, VictimId = f.Id, DamageRaw = amountQ });
     }
@@ -1195,6 +1196,7 @@ public sealed partial class SimWorld
             if (f.CounterWindowTicks > 0) f.CounterWindowTicks--;
             if (f.ReflectTicks > 0) f.ReflectTicks--;
             if (f.BuffAtkPctTicks > 0 && --f.BuffAtkPctTicks == 0) f.BuffAtkPctQ = 0;
+            if (f.BuffDefPctTicks > 0 && --f.BuffDefPctTicks == 0) f.BuffDefPctQ = 0;
             TickHealChannel(f);
 
             // MP 回复（20/s 连续量——分数累积，ADR-0003 §1）
@@ -1205,7 +1207,7 @@ public sealed partial class SimWorld
                 {
                     long whole = f.MpFracNum / RuntimeConstants.MP_REGEN_PER_TICK_DEN;
                     f.MpFracNum -= whole * RuntimeConstants.MP_REGEN_PER_TICK_DEN;
-                    f.Mp = Math.Min(1000, f.Mp + whole);
+                    f.Mp = Math.Min(f.MpMax, f.Mp + whole);
                 }
             }
 

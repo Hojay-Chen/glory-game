@@ -125,44 +125,49 @@ public sealed partial class SimWorld
         _signatures = registry;
     }
 
-    /// 伤害修正查询（HitResolve 在对应乘区调用——无注册 = ONE 恒等）
+    /// 伤害修正查询（HitResolve 在对应乘区调用——绑定到实际攻击者 FighterId）
     internal long GetDamageModifier(DamageModStage stage, FighterStateData attacker, FighterStateData victim)
     {
         if (_signatures is null) return Fixed2.ONE;
         foreach (var sig in _signatures.All)
         {
             if (sig.ClassId != attacker.ClassId) continue;
-            int binderId = attacker.Id;
-            if (!_ctxCache.TryGetValue(binderId, out var ctx))
-                _ctxCache[binderId] = ctx = new SimContext(this, binderId);
+            if (!_ctxCache.TryGetValue(attacker.Id, out var ctx))
+                _ctxCache[attacker.Id] = ctx = new SimContext(this, attacker.Id);
             return sig.ModifyDamage(stage, ctx, attacker.Id, victim.Id);
         }
         return Fixed2.ONE;
     }
 
-    /// 派发（TickFighters 之后、死亡判定之前——ADR-0001 §3.2 ⑤；Step 调用）
+    /// 派发（TickFighters 之后、死亡判定之前——ADR-0001 §3.2 ⑤；Step 调用）。
+    /// 多人同职业: 每个 Fighter 独立绑定 ctx 独立派发——签名行为按 Fighter 完全隔离。
     private void DispatchSignatures()
     {
         if (_signatures is null) return;
+        List<SimEvent>? tickEvents = null;   // 本 Tick 事件物化一次（签名发射归下一 Tick——ADR-0003 §2.2）
         foreach (var sig in _signatures.All)   // ClassId 升序（注册序）
         {
-            int binderId = -1;
-            foreach (var f in Fighters)
+            for (int i = 0; i < Fighters.Count; i++)
             {
-                if (f.ClassId == sig.ClassId) { binderId = f.Id; break; }
+                var f = Fighters[i];
+                if (f.ClassId != sig.ClassId) continue;   // 该职业未参赛——钩子不执行
+                if (!_ctxCache.TryGetValue(f.Id, out var ctx))
+                    _ctxCache[f.Id] = ctx = new SimContext(this, f.Id);
+                sig.OnTick(ctx);
+                tickEvents ??= MaterializeTickEvents();
+                for (int k = 0; k < tickEvents.Count; k++) sig.OnEvent(ctx, tickEvents[k]);
             }
-            if (binderId < 0) continue;   // 该职业未参赛——钩子不执行
-            if (!_ctxCache.TryGetValue(binderId, out var ctx))
-                _ctxCache[binderId] = ctx = new SimContext(this, binderId);
-            sig.OnTick(ctx);
-            // 本 Tick 事件物化快照——签名经 ISimContext 发射的新事件归下一 Tick 派发（ADR-0003 §2.2 不可变语义）
-            var tickEvents = new List<SimEvent>();
-            foreach (var e in Events.All)
-            {
-                if (e.Tick != Tick) continue;
-                tickEvents.Add(e);
-            }
-            foreach (var e in tickEvents) sig.OnEvent(ctx, e);
         }
+    }
+
+    private List<SimEvent> MaterializeTickEvents()
+    {
+        var list = new List<SimEvent>();
+        foreach (var e in Events.All)
+        {
+            if (e.Tick != Tick) continue;
+            list.Add(e);
+        }
+        return list;
     }
 }

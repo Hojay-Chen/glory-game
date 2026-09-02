@@ -163,7 +163,9 @@ public sealed class FighterStateData
     public int StateTicksRemaining { get; set; }
 
     public long Hp { get; set; } = 10000;
+    public long HpMax { get; set; } = 10000;        // GDD §2.5.3 全职业统一（权威状态域）
     public long Mp { get; set; } = 1000;
+    public long MpMax { get; set; } = 1000;
     public long MpFracNum { get; set; }             // MP 回复分数累积（20/s，ADR-0003 §1 连续量）
     public long Atk { get; set; } = 1100;
     public long Def { get; set; } = 800;
@@ -200,9 +202,11 @@ public sealed class FighterStateData
     // 法术反射（KNI 法术反射/WRK 魔镜: 窗口内 magic 弹体反弹）
     public int ReflectTicks { get; set; }
 
-    // Buff（GDD 阵内增益类: ATK+5% 等——数据驱动百分比+时限）
+    // Buff（GDD 阵内增益类: ATK/DEF 百分比+时限——Review 项#1: 域化而非直接改写基准）
     public long BuffAtkPctQ { get; set; }
     public int BuffAtkPctTicks { get; set; }
+    public long BuffDefPctQ { get; set; }           // QIM 护体真气等 DEF 百分比增益（可负）
+    public int BuffDefPctTicks { get; set; }
 
     // Heal 通道（GDD PRI 系/GAN 恢复术: 直接量/HoT 脉冲）
     public long HealPulseAmountQ { get; set; }
@@ -238,7 +242,6 @@ public sealed class FighterStateData
 
     public bool IsAirborne => PosY.Raw > 0 || State == FighterState.Launch;
     public bool IsInvulnerable => InvulnTicks > 0;
-    public long HpMax() => 10000;   // GDD §2.5.3 全职业统一
 
     public FighterStateData Clone()
     {
@@ -262,6 +265,8 @@ public sealed class FighterStateData
             GrabbedBy = GrabbedBy, GrabThrowSkill = GrabThrowSkill,
             RollTicksRemaining = RollTicksRemaining, RollDirIndex = RollDirIndex,
             RollInvulnArmed = RollInvulnArmed, PeakY = PeakY,
+            HpMax = HpMax, MpMax = MpMax,
+            BuffDefPctQ = BuffDefPctQ, BuffDefPctTicks = BuffDefPctTicks,
             BuffAtkPctQ = BuffAtkPctQ, BuffAtkPctTicks = BuffAtkPctTicks,
             HealPulseAmountQ = HealPulseAmountQ, HealPulseRemaining = HealPulseRemaining,
             HealPulseTimer = HealPulseTimer, HealPulseInterval = HealPulseInterval, HealIsMana = HealIsMana,

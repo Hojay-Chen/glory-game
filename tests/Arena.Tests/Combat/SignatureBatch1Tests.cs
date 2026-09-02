@@ -61,16 +61,27 @@ public class SignatureBatch1Tests : IDisposable
         Run(w, 2, 30);
         Assert.True(w.Fighters[0].ResourceCounts[(int)SimWorld.ResourceSlotKind.Orb] >= 1,
             "天击命中后应获得炫纹");
-        // 龙牙（非 OrbSkill）命中 → 炫纹不增
-        long before = w.Fighters[0].ResourceCounts[(int)SimWorld.ResourceSlotKind.Orb];
+        // Review 项#4: 龙牙（炫纹:无属性）数据驱动也触发炫纹——原硬编码 HashSet 遗漏了它
+        long after1 = w.Fighters[0].ResourceCounts[(int)SimWorld.ResourceSlotKind.Orb];
+        w.Fighters[1].State = FighterState.Normal;
+        w.Fighters[1].Hp = 10000;
         w.Fighters[1].PosZ = Fixed.FromInt(2);
-        w.Fighters[1].HeadingQuantum = 32768;
-        w.Fighters[0].HeadingQuantum = 0;
         w.Fighters[0].Cooldowns.Clear();
         w.Fighters[0].Mp = 1000;
-        w.Step(50, new[] { Skill(0, "BMG_T1_002") });   // 龙牙
+        w.Step(50, new[] { Skill(0, "BMG_T1_002") });   // 龙牙（炫纹:无属性）
         Run(w, 51, 80);
-        Assert.Equal(before, w.Fighters[0].ResourceCounts[(int)SimWorld.ResourceSlotKind.Orb]);
+        Assert.True(w.Fighters[0].ResourceCounts[(int)SimWorld.ResourceSlotKind.Orb] > after1,
+            "龙牙（炫纹:无属性）也应获得炫纹（数据驱动）");
+        // 非 OrbSkill（豪龙破军 special 无炫纹:前缀）→ 炫纹不增
+        long before2 = w.Fighters[0].ResourceCounts[(int)SimWorld.ResourceSlotKind.Orb];
+        w.Fighters[1].State = FighterState.Normal;
+        w.Fighters[1].Hp = 10000;
+        w.Fighters[1].PosZ = Fixed.FromInt(2);
+        w.Fighters[0].Cooldowns.Clear();
+        w.Fighters[0].Mp = 1000;
+        w.Step(100, new[] { Skill(0, "BMG_T4_001") });
+        Run(w, 101, 200);
+        Assert.Equal(before2, w.Fighters[0].ResourceCounts[(int)SimWorld.ResourceSlotKind.Orb]);
     }
 
     [Fact]
@@ -167,19 +178,20 @@ public class SignatureBatch1Tests : IDisposable
     // ================= SG06: QIM 护体真气（OnTick DEF 阈值模式） =================
 
     [Fact]
-    public void SG06_QIM_MpThreshold_DefModifier()
+    public void SG06_QIM_MpThreshold_DefBuff_Domain()
     {
+        // Review 项#1: QIM 重设计为 BuffDefPct 域（不直接改写 Def 基准）
         var reg = DefaultRegistry();
         var w = CreateWorld(reg, (0, "QIM", 0), (1, "BLA", 1));
         var qim = w.Fighters[0];
+        Assert.Equal(800, qim.Def);   // 基准不变
         qim.Mp = 900;   // 90% > 70% → DEF+15%
-        long baseDef = qim.Def;
         Run(w, 1, 5);
-        Assert.True(qim.Def > baseDef, $"MP>70% → DEF+15%: def={qim.Def} base={baseDef}");
+        Assert.Equal(DeterministicMath.DivRoundHalfEven(15 * Fixed.ONE, 100), qim.BuffDefPctQ);
         // MP 降到 20% → DEF−10%
         qim.Mp = 200;
         Run(w, 6, 10);
-        Assert.True(qim.Def < baseDef, $"MP<30% → DEF−10%: def={qim.Def} base={baseDef}");
+        Assert.Equal(-DeterministicMath.DivRoundHalfEven(10 * Fixed.ONE, 100), qim.BuffDefPctQ);
     }
 
     // ================= SG07: 全签名确定性 + 快照恢复 =================

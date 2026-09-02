@@ -101,6 +101,7 @@ public sealed class SkillRuntimeData
     public bool SummonFlying { get; init; }
     public bool SummonTank { get; init; }
     public int RequireBehindDeg { get; init; }    // MF-1: 需背身 N°（NJA_T3_001 背身缚首术 120°）
+    public OrbTagKind OrbTag { get; init; }       // 炫纹触发标签（Compiler 从 special 炫纹:X 解析）
     // ---- Phase 7 Batch 2: Deploy / Heal 通道（统一实体载荷语义） ----
     public DeployKind DeployKind { get; init; }   // 部署变体（数据: 触发/悬浮/侦察/wall/zone）
     public long DeployHp { get; init; }           // 部署物 HP（HP300/600HP/HP200/HP150）
@@ -115,6 +116,9 @@ public sealed class SkillRuntimeData
 
 /// 部署变体（GDD §14 数据推导——全部由 hitbox/special 文本结构决定，无 skillId 分支）
 public enum DeployKind : byte { None = 0, Trap = 1, Aura = 2, Wall = 3, Scout = 4, Mirror = 5, Taunt = 6 }
+
+/// 炫纹属性（GDD §9.3: 光/冰/火/暗/无属性——BMG 签名资源触发标签）
+public enum OrbTagKind : byte { None = 0, Light = 1, Ice = 2, Fire = 3, Dark = 4, NonElemental = 5 }
 
 /// 格挡姿态定义（GDD §6.2/§6.3；盾值/减伤率来自技能 special 数据）
 public sealed record GuardDef(

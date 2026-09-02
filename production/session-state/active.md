@@ -62,7 +62,23 @@
 - **测试 134/134**（+Batch2 探针 18: Deploy 5 + Heal 3 + 交互 10）；事件协议 +BuffApplied/BuffExpired/Healed；Snapshot +BuffAtkPct/HealPulse 域
 - **数据歧义进 DDQ**: PRI_T3_005 回蓝比例（30%蓝 maxMP 基线=1000 待确认）/ GAN 恢复量 dmg=200 直接 HP 判读 / ally:单体 目标选择来源（无锁定系统 v1 自体）
 
+## Phase 7 Batch 3 签名第一批 + 边界复核收口（2026-09-03，本次）
+
+- **签名框架**: ISignature 新增 ModifyDamage 伤害修正乘区钩子（HitResolve 背击乘区后调用）+ ISimContext 新原语 GetSkillDef/GetResource/GetResourceCap/AddResource
+- **4 真实职业签名**（覆盖 3 模式族）: BMG 斗者意志（OnEvent Hit→Orb 资源槽上限 7）/ BER 血气唤醒（OnTick HP 三档→BuffAtkPct）/ ASN 暗杀艺术（ModifyDamage 背击 ×1.2）/ QIM 护体真气（OnTick MP 三档→BuffDefPct）
+- **边界复核 4 项收口**（用户 Review 裁定，2026-09-03）:
+  1. QIM `_lastDef` 私有字段违反 ADR-0008「签名无字段战斗状态」→ 重设计为 BuffDefPct 权威状态域（可负/Snapshot 携带/HitResolve effDef 消费）
+  2. 多人同职业隔离: DispatchSignatures 每 Fighter 独立 ctx + 独立派发（原实现只绑第一个同职业 Fighter）→ SG08 探针证明 BMG×2/BER×2 资源池与 buff 域完全隔离
+  3. BER/QIM 阈值基准硬编码 10000 HP/1000 MP → 权威 HpMax/MpMax 状态域字段（Clone/Snapshot 全携带；短周期槽刷新 ticks≤2 不踩外部长周期 buff）
+  4. BMG OrbSkills 硬编码 HashSet → OrbTag 数据驱动（Compiler 解析 special「炫纹:X」→ OrbTagKind）；当场修正保真度偏差：龙牙「炫纹:无属性」原被遗漏
+- **测试 144/144**（+SG08 隔离 / SG09 同职业多人快照恢复+指令流重放逐位一致 / SG10 BuffDefPct 伤害链消费+基准 Def 不被改写）
+- **踩坑**: 施法 aim 覆盖 heading——测试中 HeadingQuantum 预设无效，须 `Skill(f,id,aim:32768)` 朝 −Z
+- **仓库卫生**: .gitignore 补齐——bin/obj/.godot 共 238 文件退出跟踪（此前每次构建污染工作树 80+ 文件）
+- 双门禁 PASS（check_math_ban / check_deps）
+
 ## 待处理（下一阶段优先序）
+
+1. C 类签名按职业批次扩量（Batch 3 框架已验证：事件→资源/OnTick 条件 buff/伤害乘区三模式族）
 2. Partial 54 行随 UnitSystem(14)/Deploy(9)/签名可控语义(8)批次收口
-3. 数据裁定: GBL_T2_001 a200、冻结@P% 中文别名 2 行、OQ-2/OQ-13 既有 3 行、CC 审计 4 项 Design Decision、MF-5 heal 记法
+3. 数据裁定: GBL_T2_001 a200、冻结@P% 中文别名 2 行、OQ-2/OQ-13 既有 3 行、CC 审计 4 项 Design Decision、MF-5 heal 记法、DDQ 三项（PRI 回蓝基线/GAN 直量判读/ally 目标选择）
 4. 规格歧义请设计确认: 软推挤范围（已按 GDD 解释）；Hitstop 归属（按 ADR-0009 表现层）

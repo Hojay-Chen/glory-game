@@ -115,6 +115,7 @@ public static class RuntimeSkillFactory
             SummonFlying = d.Special.Contains("飞行"),
             SummonTank = d.Special.Contains("坦克"),
             RequireBehindDeg = ParseRequireBehind(d.Special),
+            OrbTag = ParseOrbTag(d.Special),
             DeployKind = ParseDeployKind(d, hbRawKind),
             DeployHp = ParseDeployHp(d.Special),
             TriggerRadius = hbRawKind == "deploy" && d.HitboxRaw.Contains("触发") ? ParseRadiusArg(d.HitboxRaw, 1) : 0,
@@ -490,6 +491,20 @@ public static class RuntimeSkillFactory
             || !double.TryParse(rest[..end], NumberStyles.Float, CultureInfo.InvariantCulture, out var sec))
             return 0;
         return (long)Math.Round(sec * RuntimeConstants.TICK_RATE, MidpointRounding.ToEven);
+    }
+
+    /// 炫纹标签（数据: 炫纹:光/冰/火/暗/无属性）——BMG 签名触发由数据描述（Review 项#4）
+    private static OrbTagKind ParseOrbTag(string special)
+    {
+        var idx = special.IndexOf("炫纹:");
+        if (idx < 0) return OrbTagKind.None;
+        var c = special[(idx + 3)..];
+        if (c.StartsWith("光")) return OrbTagKind.Light;
+        if (c.StartsWith("冰")) return OrbTagKind.Ice;
+        if (c.StartsWith("火")) return OrbTagKind.Fire;
+        if (c.StartsWith("暗")) return OrbTagKind.Dark;
+        if (c.StartsWith("无属性")) return OrbTagKind.NonElemental;
+        return OrbTagKind.None;
     }
 
     /// MF-1: 需背身 N°（数据: 需背身120°）

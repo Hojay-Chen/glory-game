@@ -93,9 +93,12 @@ public static class HitResolve
         if (atk.BuffAtkPctTicks > 0 && atk.BuffAtkPctQ > 0)
             effAtk += DeterministicMath.MulShift(atk.Atk, atk.BuffAtkPctQ);   // 阵内 ATK+5% 增益乘区
         dmg = DeterministicMath.MulShift(dmg, effAtk);                    // × ATK → 点数域
+        long effDef = vic.Def;
+        if (vic.BuffDefPctTicks > 0 && vic.BuffDefPctQ != 0)
+            effDef += DeterministicMath.MulShift(vic.Def, vic.BuffDefPctQ);   // QIM 护体真气等 DEF buff（可负）
         long defenseFactor = DeterministicMath.DivRoundHalfEven(
             RuntimeConstants.DEFENSE_CONST * Fixed.ONE,
-            RuntimeConstants.DEFENSE_CONST + vic.Def);                     // D = 1200/(1200+DEF) Q32.16
+            RuntimeConstants.DEFENSE_CONST + effDef);                         // D = 1200/(1200+effDef) Q32.16
         dmg = DeterministicMath.MulShift(dmg, defenseFactor);
         // 蓄力加成（GDD §4.1 蓄力技能; 数据: 蓄力:Ts:+P%——如 LAU_T3_001 +40%）
         if (def.ChargeBonusQ > 0) dmg = DeterministicMath.MulShift(dmg, def.ChargeBonusQ);
@@ -284,8 +287,11 @@ public static class HitResolve
 
         long dmg = def.DamageMultQ;
         dmg = DeterministicMath.MulShift(dmg, ctx.Attacker.Atk);
+        long effDef = vic.Def;
+        if (vic.BuffDefPctTicks > 0 && vic.BuffDefPctQ != 0)
+            effDef += DeterministicMath.MulShift(vic.Def, vic.BuffDefPctQ);
         long defenseFactor = DeterministicMath.DivRoundHalfEven(
-            RuntimeConstants.DEFENSE_CONST * Fixed.ONE, RuntimeConstants.DEFENSE_CONST + vic.Def);
+            RuntimeConstants.DEFENSE_CONST * Fixed.ONE, RuntimeConstants.DEFENSE_CONST + effDef);
         dmg = DeterministicMath.MulShift(dmg, defenseFactor);
         int hitNumber = vic.HitstunCount + 1;
         if (hitNumber >= 7)

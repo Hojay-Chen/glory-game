@@ -7,23 +7,17 @@ using Arena.Core.Calc;
 namespace Arena.Core.Sim.Signatures;
 
 /// BMG 斗者意志（GDD §14.1 passive）: 特定技能命中 → 获得炫纹（资源槽 Orb，上限 7）
-/// 炫纹技能映射（GDD 数据: 天击=光/连突=冰/落花掌=火/圆舞棍=暗——skillId 后缀路由）
+/// Review 项#4: 炫纹触发关系由 Compiler 从 CSV special「炫纹:X」解析为 OrbTag 数据——
+/// 签名只实现「获得资源」语义，不持有 skillId 集合（CSV 新增炫纹技无需改签名）
 public sealed class BmgFightingSpirit : ISignature
 {
     public string ClassId => "BMG";
-    private static readonly HashSet<string> OrbSkills = new(StringComparer.Ordinal)
-    {
-        "BMG_T1_001",   // 天击 → 光纹
-        "BMG_T1_003",   // 连突 → 冰纹
-        "BMG_T1_004",   // 落花掌 → 火纹
-        "BMG_T2_001",   // 圆舞棍 → 暗纹
-    };
 
     public void OnEvent(ISimContext ctx, in SimEvent e)
     {
         if (e.Kind != EventKind.Hit || e.AttackerId != ctx.FighterId) return;
         var def = ctx.GetSkillDef(e.SkillId);
-        if (def is null || !OrbSkills.Contains(def.SkillId)) return;
+        if (def is null || def.OrbTag == OrbTagKind.None) return;   // 数据驱动: OrbTag 由 Compiler 解析
         if (ctx.GetResource(SimWorld.ResourceSlotKind.Orb) >= ctx.GetResourceCap(SimWorld.ResourceSlotKind.Orb)) return;
         ctx.AddResource(SimWorld.ResourceSlotKind.Orb, 1);
     }
@@ -41,16 +35,19 @@ public sealed class BerBloodAwakening : ISignature
     {
         var f = ctx.GetFighter(ctx.FighterId);
         if (f is null) return;
-        long pct = f.Hp * 100 / Math.Max(1, 10000);
+        // Review 项#3: 阈值基准 = 权威 HpMax 状态域（非签名内硬编码 10000）
+        long pct = f.Hp * 100 / Math.Max(1, f.HpMax);
         long buff = pct < 15 ? 15 : pct < 30 ? 10 : pct < 50 ? 5 : 0;
         if (buff > 0)
         {
             f.BuffAtkPctQ = DeterministicMath.DivRoundHalfEven(buff * Fixed.ONE, 100);
-            f.BuffAtkPctTicks = 2;   // 下一 Tick 刷新（OnTick 每拍重写）
+            f.BuffAtkPctTicks = 2;   // 每 Tick 刷新（持久 while 阈值成立）
         }
-        else if (f.BuffAtkPctTicks > 0 && f.BuffAtkPctQ == DeterministicMath.DivRoundHalfEven(15 * Fixed.ONE, 100))
+        else if (f.BuffAtkPctTicks > 0 && f.BuffAtkPctTicks <= 2)
         {
-            f.BuffAtkPctQ = 0; f.BuffAtkPctTicks = 0;   // 血量回升 → 清除最高档
+            // 仅清除自身短周期槽（ticks ≤ 2 = 本签名刷新节奏）——不踩长周期外部 buff（如阵内 ATK）
+            f.BuffAtkPctQ = 0;
+            f.BuffAtkPctTicks = 0;
         }
     }
 }
@@ -71,11 +68,12 @@ public sealed class AsnAssassination : ISignature
 }
 
 /// QIM 护体真气（GDD §14.18 passive）: MP>70%:DEF+15%; <30%:DEF−10%
-/// OnTick 阈值 → Def 域直接修改（v1: Def 值直接调整，MP 自然回复驱动翻转）
+/// Review 项#1: 旧实现以签名私有 _lastDef 跨 Tick 承担恢复基准——违反 ADR-0008
+/// 「Signature 无字段战斗状态」。重设计: BuffDefPct 域（Fighter 权威状态域，可负、
+/// Snapshot 携带、伤害链消费）——签名每 Tick 刷新域值，无跨 Tick 私有状态。
 public sealed class QimBodyQi : ISignature
 {
     public string ClassId => "QIM";
-    private long _lastDef;   // 恢复基准（无字段状态例外：跨 Tick 恢复基准——登记为签名内可变）
 
     public void OnEvent(ISimContext ctx, in SimEvent e) { }
 
@@ -83,13 +81,22 @@ public sealed class QimBodyQi : ISignature
     {
         var f = ctx.GetFighter(ctx.FighterId);
         if (f is null) return;
-        long mpPct = f.Mp * 100 / Math.Max(1, 1000);
-        if (f.Def == _lastDef) { }   // 未被外部修改——继续调整
-        long baseDef = _lastDef > 0 ? _lastDef : f.Def;
-        long newDef = mpPct > 70 ? baseDef + DeterministicMath.MulShift(baseDef, DeterministicMath.DivRoundHalfEven(15 * Fixed.ONE, 100))
-                   : mpPct < 30 ? baseDef - DeterministicMath.MulShift(baseDef, DeterministicMath.DivRoundHalfEven(10 * Fixed.ONE, 100))
-                   : baseDef;
-        if (newDef != f.Def) f.Def = newDef;
-        _lastDef = baseDef;
+        // Review 项#3: 阈值基准 = 权威 MpMax 状态域
+        long mpPct = f.Mp * 100 / Math.Max(1, f.MpMax);
+        if (mpPct > 70)
+        {
+            f.BuffDefPctQ = DeterministicMath.DivRoundHalfEven(15 * Fixed.ONE, 100);
+            f.BuffDefPctTicks = 2;
+        }
+        else if (mpPct < 30)
+        {
+            f.BuffDefPctQ = -DeterministicMath.DivRoundHalfEven(10 * Fixed.ONE, 100);
+            f.BuffDefPctTicks = 2;
+        }
+        else if (f.BuffDefPctTicks > 0 && f.BuffDefPctTicks <= 2)
+        {
+            f.BuffDefPctQ = 0;
+            f.BuffDefPctTicks = 0;
+        }
     }
 }
