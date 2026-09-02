@@ -68,6 +68,7 @@ public enum EventKind : byte
     Parry = 22, GuardHit = 23, GuardBroken = 24,
     GrabStarted = 25, GrabReleased = 26, Countered = 27,
     Interrupted = 28, FallLanded = 29,
+    UnitSpawned = 30, UnitDied = 31, StealthBroken = 32, Reflected = 33,
 }
 
 /// Whiff 原因（ADR-0003 §3.2）
@@ -193,6 +194,18 @@ public sealed class FighterStateData
 
     public long PeakY { get; set; }                 // 空中峰值（坠落伤害: 高差 = 峰值 − 落点）
 
+    // Visibility（GDD THF 潜行: 完全隐身、攻击/被击解除）
+    public bool Hidden { get; set; }
+    // 法术反射（KNI 法术反射/WRK 魔镜: 窗口内 magic 弹体反弹）
+    public int ReflectTicks { get; set; }
+
+    // 职业资源槽（GDD §9.3: 炫纹/弹匣/召唤位/部署位/舍命HP——定长槽位确定性纪律）
+    public readonly long[] ResourceCounts = new long[8];
+    public readonly long[] ResourceCaps = new long[8];
+
+    // 武器（GDD §16: 赛前选择 1 把；atk_mod 面板加成 + 规则级 trait 由 overlay 消费）
+    public ushort WeaponId { get; set; }
+
     // 翻滚（GDD §10.1: 30f/3m/无敌 4-18f）
     public int RollTicksRemaining { get; set; }
     public byte RollDirIndex { get; set; }
@@ -276,4 +289,12 @@ public static class FacingRules
         // dot/len > cosθ（Q32.16 恒等变形: dot×cosDen > len×cosNum, cosDen=65536）
         return dot > DeterministicMath.MulShift(len, c);
     }
+}
+
+/// Visibility 投影（pre-adr §3-2 Sim.Visibility v1: 潜行=完全隐身，攻击/被击/显形解除）
+public static class Visibility
+{
+    /// 该 Fighter 对 observer 是否可见（v1: Hidden 全局不可见——队友可见性语义登记待扩展）
+    public static bool IsVisible(FighterStateData target, int observerId) =>
+        !(target.Hidden && target.Id != observerId);
 }

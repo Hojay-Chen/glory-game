@@ -36,9 +36,17 @@
 - **事件协议 v3**: +Parry/GuardHit/GuardBroken/GrabStarted/GrabReleased/Countered/Interrupted/FallLanded；FighterState +Roll
 - **待用户裁定（Design Decision，不代裁）**: ①格挡锥 dmg=0 判定体意图 ②盾值 GDD 60% vs 数据 70% ③counter 行触发式建模 ④按住蓄力需 ADR-0010 release 指令协议扩展
 
+## Phase 6 原语收口 + Pilot 迁移验证（2026-09-02，本次）
+
+- **Phase 6 原语落地**（全部数据驱动、零 per-skill 分支）: UnitSystem（召唤位 4 消费+追击+投掷攻击+存在期回收+位满 Cap 回收最旧+面板挂主人）/ ResourceSlots 定长槽位（class-base resource 列）/ Visibility（潜行 hold→sweep 过滤→施法破隐）/ 法术反射（magic 弹体反弹 OwnerId 转移+反向）/ 可控弹跟随（念龙波 Steer→弹体方向实时跟随）/ Weapon overlay（weapons.csv 73 行解析 + atk_mod 面板 + 结构化 trait 规则）
+- **Pilot 三层验证**: PF01 全表 483 行 Compiler 保真度门禁（独立双路径重解析逐字段比对，1 行 heal 记法豁免）/ PF02 全表分类 routed=429 (89%) partial=54 (11%) / PF03–PF09 代表技执行（部位×1.5/freeze/DoT/lob/抓取/受身无效/可控弹/蓄力/反射） / PF10 全原语混合 800T 双跑逐位一致
+- **审计结论**: migration-fidelity-audit-v1.md——**Verdict A（有条件）**: 批量迁移可启动；Routed 429 行 A→B→C/D 分批；Partial 54 随 UnitSystem/Deploy/签名批次；MF-1 背身抓取角度门控随首批落地
+- **测试 113/113**（+Phase6 探针 7 + Pilot 10）；事件协议 +UnitSpawned/UnitDied/StealthBroken/Reflected；Snapshot +Hidden/ReflectTicks/ResourceSlots/WeaponId
+- **Fidelity Gap 登记**: MF-1 背身抓取角度门控 / MF-2 deploy 放置+耐久 / MF-3 可控弹特殊形态(签名) / MF-4 ally 弹道 / MF-5 heal 记法 / MF-6 时序敏感测试编排
+
 ## 待处理（下一阶段优先序）
 
-1. **原语收口阶段**: UnitSystem → 职业资源槽 → Weapon overlay → Visibility → 反射+可控弹（完成后 Verdict A）
-2. **487 技大规模迁移**（Verdict A 后）: A/B/C/D 类按序，C 类签名插件体随迁
-3. 数据裁定: GBL_T2_001 a200、冻结@P% 中文别名 2 行、OQ-2/OQ-13 既有 3 行、CC 审计 4 项 Design Decision
+1. **487 技批量迁移启动**（Verdict A 有条件）: Routed 429 行 A→B→C/D 分批 + MF-1 角度门控随首批
+2. Partial 54 行随 UnitSystem(14)/Deploy(9)/签名可控语义(8)批次收口
+3. 数据裁定: GBL_T2_001 a200、冻结@P% 中文别名 2 行、OQ-2/OQ-13 既有 3 行、CC 审计 4 项 Design Decision、MF-5 heal 记法
 4. 规格歧义请设计确认: 软推挤范围（已按 GDD 解释）；Hitstop 归属（按 ADR-0009 表现层）

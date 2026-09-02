@@ -99,6 +99,19 @@ public static class ProjectileSystem
     {
         if (p.Expired) return;
 
+        // 可控弹跟随（念龙波类: 弹体方向 = 施法者当前朝向）
+        if (p.Def is { } pd && pd.FollowHeading)
+        {
+            var caster = w.GetFighter(p.OwnerId);
+            if (caster is not null && !caster.State.Equals(FighterState.Dead))
+            {
+                long speed = DeterministicMath.DivRoundHalfEven(p.Def.ProjSpeedQ, RuntimeConstants.TICK_RATE);
+                DeterministicMath.CordicCosSin(caster.HeadingQuantum, out var fhx, out var fhz);
+                p.DispX = DeterministicMath.MulShift(fhx, speed);
+                p.DispZ = DeterministicMath.MulShift(fhz, speed);
+            }
+        }
+
         // lob 重力（Tick 边界量化增量——SPEC-0005 §3 公理）
         // DispY 为位移域（m/Tick raw）：重力引起每 Tick 位移增量 = g·ONE/3600
         if (p.IsLob)
@@ -139,6 +152,7 @@ public static class ProjectileSystem
             if (f.Id == p.OwnerId || f.State == FighterState.Dead) continue;
             if (w.SameTeam(p.OwnerId, f.Id)) continue;
             if (f.GrabbedBy >= 0) continue;   // 被抓取目标不再被其他来源命中（GDD §2.4.4）
+            if (f.Hidden && f.Id != p.OwnerId) continue;   // Visibility: 潜行对敌方弹体不可见
             long relX = p.DispX - DeterministicMath.DivRoundHalfEven(f.VelX.Raw, RuntimeConstants.TICK_RATE);
             long relZ = p.DispZ - DeterministicMath.DivRoundHalfEven(f.VelZ.Raw, RuntimeConstants.TICK_RATE);
             long relY = p.DispY;
@@ -167,6 +181,18 @@ public static class ProjectileSystem
 
             if (!headHit && !torsoHit) continue;
             if (p.HitVictims.Contains(f.Id)) continue;
+
+            // 法术反射（KNI/WRK: 窗口内 magic 弹体反弹向施法者——OwnerId 转移+反向）
+            if (f.ReflectTicks > 0 && p.Def is { } rdef && rdef.DamageType != "phys")
+            {
+                p.OwnerId = f.Id;
+                p.DispX = -p.DispX;
+                p.DispZ = -p.DispZ;
+                p.HitVictims.Clear();
+                p.HitVictims.Add(f.Id);   // 反射者不被自己的反弹立即命中
+                w.Events.Emit(new SimEvent { Kind = EventKind.Reflected, AttackerId = f.Id, VictimId = p.OwnerId, SkillId = p.SkillRuntimeId, ValueRaw = p.Uid });
+                return;   // 本 Tick 弹体折返——剩余交互归下一 Tick（确定性: 每 Tick 至多一次反射）
+            }
 
             // PA-H2: 区域选取 = priority 最大（Head=20 > Torso=10）；HitPoint/Normal 取所选区域接触
             bool useHead = headHit;
@@ -229,4 +255,5 @@ public struct PendingContact
     public long HitPointX, HitPointY, HitPointZ;
     public long NormalX, NormalZ;
     public int FromProjectileUid;   // 0 = 非投射物
+    public int FromUnitUid;         // 0 = 非单位攻击
 }

@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Arena.Core")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+73d83963d9842ea74bbcf37cc6441d2c090fbd25")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+a3dfd55fd4fddc1cc69e2f6313dccb4fc6daf1c5")]
 [assembly: System.Reflection.AssemblyProductAttribute("Arena.Core")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Arena.Core")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

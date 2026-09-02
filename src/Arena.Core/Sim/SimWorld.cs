@@ -31,15 +31,21 @@ public sealed partial class SimWorld
     public List<SkillExecution> Executions { get; } = new();
     public List<ActiveHitbox> Hitboxes { get; } = new();
     public List<ProjectileState> Projectiles { get; } = new();
+    public List<UnitState> Units { get; } = new();
     public readonly List<PendingContact> PendingContacts = new();
 
+    public enum ResourceSlotKind : ushort { Summon = 1, Deploy = 2, Orb = 3, Magazine = 4, SacrificeHp = 5 }
+
     private readonly Dictionary<ushort, SkillRuntimeData> _skills = new();
+    private readonly Dictionary<string, (ResourceSlotKind kind, long cap)> _classResources = new();
     private readonly Dictionary<int, List<Command>> _cmdBuf = new();
     private readonly Dictionary<int, List<(Command cmd, int expiry)>> _inputBuffers = new();
     private readonly Dictionary<int, byte> _teams = new();
     private int _nextExecUid = 1;
     private int _nextHitboxUid = 1;
     private int _nextProjUid = 1;
+    private int _nextUnitUid = 1;
+    public int NextUnitUid() => _nextUnitUid++;
 
     public SimWorld(long matchSeed, string dataVersionHash)
     {
@@ -64,14 +70,33 @@ public sealed partial class SimWorld
 
     public void AddFighter(int id, string classId, Fixed x, Fixed z, byte team = 0, long atk = 1100, long def = 800)
     {
-        Fighters.Add(new FighterStateData
+        var f = new FighterStateData
         {
             Id = id, ClassId = classId, Team = team,
             PosX = x, PosY = Fixed.Zero, PosZ = z,
             HeadingQuantum = z.Raw > 0 ? 32768 : 0,   // 朝向对方半场（0=+Z；z<0 面向 +Z）
             Atk = atk, Def = def,
-        });
+        };
+        if (_classResources.TryGetValue(classId, out var cap))
+        {
+            f.ResourceCaps[(int)cap.kind] = cap.cap;
+            f.ResourceCounts[(int)cap.kind] = 0;
+        }
+        Fighters.Add(f);
         _teams[id] = team;   // 阵营注册随装配即时生效（SealWorld 前后均可 AddFighter）
+    }
+
+    /// 职业资源容量表（装配期注入——class-base.csv resource 列解析产物）
+    public void SetClassResource(string classId, ResourceSlotKind kind, long cap) =>
+        _classResources[classId] = (kind, cap);
+
+    /// 装备武器（GDD §16: atk_mod 面板加成——规则级 trait 由 WeaponOverlay 消费）
+    public void EquipWeapon(int fighterId, ushort weaponId, long atkModQ, long baseAtk)
+    {
+        var f = GetFighter(fighterId);
+        if (f is null) return;
+        f.WeaponId = weaponId;
+        f.Atk = baseAtk + DeterministicMath.MulShift(baseAtk, atkModQ);
     }
 
     // ---- Step（唯一入口） ----
@@ -90,6 +115,11 @@ public sealed partial class SimWorld
         DrainBuffers();
         for (int i = 0; i < Projectiles.Count; i++)
             ProjectileSystem.Advance(this, Projectiles[i], tick, Fighters);
+        // 单位 AI（ADR-0001 §3.2 ②: 投射物/单位 AI——Uid 升序）
+        for (int i = 0; i < Units.Count; i++)
+            UnitSystem.Advance(this, Units[i], tick, Fighters);
+        for (int i = Units.Count - 1; i >= 0; i--)
+            if (Units[i].Expired) Units.RemoveAt(i);
 
         // ③ 命中结算（ContactList 总序 → HitResolve）
         SweepCombat();
@@ -185,6 +215,8 @@ public sealed partial class SimWorld
         }
     }
 
+    private static long FixedM2(decimal m) => (long)Math.Round(m * Fixed.ONE, MidpointRounding.ToEven);
+
     /// Steer（SPEC-0001: controlled 生效窗内朝向饱和步进，≤120°/s）
     private void TrySteer(FighterStateData f, Command cmd)
     {
@@ -274,6 +306,13 @@ public sealed partial class SimWorld
         if (!StatusSystem.CanAct(f) || !StatusSystem.CanCastSkill(f)) return false;
         if (f.State == FighterState.Dead) return false;
 
+        // 潜行破除（GDD THF_T1_001: 攻击解除——任何施法即破隐）
+        if (f.Hidden)
+        {
+            f.Hidden = false;
+            Events.Emit(new SimEvent { Kind = EventKind.StealthBroken, VictimId = f.Id });
+        }
+
         // Act 中: 取消窗判定（GDD §8.2）——资源/CD 预检在终止当前技能之前（原子切换）
         if (f.State == FighterState.Act && f.ActiveSkillUid != 0)
         {
@@ -312,6 +351,13 @@ public sealed partial class SimWorld
             var exec = GetExecution(f.ActiveSkillUid);
             if (exec is null) return false;
             if (exec.Def is { } gdef && gdef.Guard is not null) return false;   // 格挡姿态无法普攻（§6.2）
+            if (exec.Def is { } hdef && hdef.IsHold)
+            {
+                // hold 姿态（潜行等）可被普攻释放（姿态=可取消动作；格挡除外——§6.2）
+                if (exec.CurrentOffset < hdef.StartupTicks) return false;
+                TerminateExecution(exec, cancelled: false);
+                return StartExecution(f, GetFirstBasic(f.ClassId) ?? throw new InvalidOperationException("no basic"), cmd);
+            }
             if (!exec.IsBasic)
             {
                 // 技能执行中不可普攻取消——缓冲
@@ -544,11 +590,54 @@ public sealed partial class SimWorld
                 ProjectileSystem.Spawn(this, owner, def, owner.HeadingQuantum, (int)Tick);
             }
 
+            // 召唤（summon 技: 召唤位资源槽消费 + UnitSpec 数据化出生）
+            if (def.IsSummon && exec.CurrentOffset == def.StartupTicks && !def.IsProjectile)
+            {
+                var kind = SimWorld.ResourceSlotKind.Summon;
+                int slot = (int)kind;
+                if (owner.ResourceCaps[slot] > 0 && owner.ResourceCounts[slot] >= owner.ResourceCaps[slot])
+                {
+                    // 召唤位满 → 回收最旧单位（GDD §9.3: 兽死亡/回收）
+                    UnitState? oldest = null;
+                    foreach (var u in Units)
+                    {
+                        if (u.Expired || u.OwnerFighterId != owner.Id) continue;
+                        if (oldest is null || u.Uid < oldest.Uid) oldest = u;
+                    }
+                    if (oldest is not null)
+                    {
+                        UnitSystem.Destroy(this, oldest, UnitSystem.UnitEndReason.Cap);
+                        owner.ResourceCounts[slot]--;
+                    }
+                }
+                if (owner.ResourceCounts[slot] < owner.ResourceCaps[slot] || owner.ResourceCaps[slot] == 0)
+                {
+                    UnitSystem.Spawn(this, owner, new UnitSpec
+                    {
+                        Label = def.SkillId,
+                        Hp = def.SummonHp,
+                        MoveSpeedMps = FixedM2(4.5m),
+                        AttackRange = FixedM2(8m),      // 投掷基线（哥布林扔石头）
+                        AttackCdTicks = 2 * (int)RuntimeConstants.TICK_RATE,
+                        LifetimeTicks = def.SummonLifetimeTicks,
+                        Flying = def.SummonFlying,
+                        Decoy = false,
+                        Stationary = def.SkillId.Contains("魔界之花"),
+                        AttackDef = def,
+                    }, (int)Tick);
+                    owner.ResourceCounts[slot]++;
+                }
+            }
+
             // 抓取投技结算（GDD §7.2: 抓取后有专属投技演出——执行结束帧投出）
             if (def.IsGrab && !exec.Terminated && exec.CurrentOffset >= def.StartupTicks + def.ActiveTicks)
             {
                 ResolveGrabThrow(exec, def, owner);
             }
+
+            // 潜行/反射姿态的 Fighter 状态域投影（每 Tick 刷新——快照携带）
+            if (def.IsStealth && exec.InActive) owner.Hidden = true;
+            if (def.IsReflect && exec.InActive) owner.ReflectTicks = def.StartupTicks + def.ActiveTicks - exec.CurrentOffset;
 
             // 结束（hold 姿态不自然结束——由取消/切换释放；其余恢复完毕即结束）
             if (!def.IsHold && exec.CurrentOffset >= exec.TotalTicks)
@@ -610,6 +699,19 @@ public sealed partial class SimWorld
         {
             if (owner.State == FighterState.Act) owner.State = FighterState.Normal;   // 打断路径: 状态已属受击
             owner.ActiveSkillUid = 0;
+        }
+        if (exec.Def is { } def2 && (def2.IsStealth || def2.IsReflect))
+        {
+            var stOwner = GetFighter(exec.OwnerId);
+            if (stOwner is not null)
+            {
+                if (def2.IsStealth && stOwner.Hidden)
+                {
+                    stOwner.Hidden = false;
+                    Events.Emit(new SimEvent { Kind = EventKind.StealthBroken, VictimId = stOwner.Id });
+                }
+                stOwner.ReflectTicks = 0;
+            }
         }
         if (exec.Def is { } def && def.IsGrab)
         {
@@ -674,6 +776,7 @@ public sealed partial class SimWorld
                 if (SameTeam(hb.OwnerId, vic.Id)) continue;
                 if (hb.HitVictims.Contains(vic.Id)) continue;
                 if (vic.State == FighterState.Break) continue;   // 免控≠免伤，但 Break 源自挣脱保护窗
+                if (vic.Hidden) continue;                         // Visibility: 潜行不可被敌方判定体命中
 
                 // PA-7 相对扫掠: mover = victim 体圆，位移 = victim 位移 − owner 位移
                 long dispX = DeterministicMath.DivRoundHalfEven(vic.VelX.Raw, RuntimeConstants.TICK_RATE) - DeterministicMath.DivRoundHalfEven(relBaseX, RuntimeConstants.TICK_RATE);
@@ -1042,6 +1145,7 @@ public sealed partial class SimWorld
             }
             if (f.ParryCdTicks > 0) f.ParryCdTicks--;
             if (f.CounterWindowTicks > 0) f.CounterWindowTicks--;
+            if (f.ReflectTicks > 0) f.ReflectTicks--;
 
             // MP 回复（20/s 连续量——分数累积，ADR-0003 §1）
             if (f.Mp < 1000)

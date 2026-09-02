@@ -90,6 +90,16 @@ public sealed class SkillRuntimeData
     public int SteerRateDegPerSec { get; init; }  // controlled/可转向 → SPEC-0001 饱和步进
     public int ChargeTicks { get; init; }         // 蓄力 Ts → startup 追加
     public long ChargeBonusQ { get; init; }       // 蓄力 +P% → 伤害乘区（LAU_T3_001）
+    public bool IsStealth { get; init; }          // 潜行（THF_T1_001 完全隐身）
+    public long StealthSpeedPct { get; init; }    // 潜行移速百分比（数据: 移速60%）
+    public bool IsReflect { get; init; }          // 法术反射（KNI_T3_003/WRK_T3_003）
+    public int ReflectWindowTicks { get; init; }  // 反射窗（数据: 2s窗口）
+    public bool FollowHeading { get; init; }      // 可控弹: 弹体跟随施法者朝向（念龙波）
+    public bool IsSummon { get; init; }           // 召唤技（type=summon/unit hitbox/召唤位）
+    public long SummonHp { get; init; }           // 单位 HP（数据 HP900/HP1200 或 600 基线）
+    public int SummonLifetimeTicks { get; init; } // 存在期（存在90s/60s）
+    public bool SummonFlying { get; init; }
+    public bool SummonTank { get; init; }
 }
 
 /// 格挡姿态定义（GDD §6.2/§6.3；盾值/减伤率来自技能 special 数据）

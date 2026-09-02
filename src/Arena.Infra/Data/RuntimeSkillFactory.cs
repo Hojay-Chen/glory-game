@@ -17,6 +17,9 @@ public sealed class RuntimeCatalog
     public required List<string> UnroutedStatuses { get; init; }       // 状态语法未路由清单（报告用）
     public required List<string> UnroutedHitboxes { get; init; }       // hitbox 语法未路由清单（报告用）
     public required string DataVersionHash { get; init; }
+    public required List<WeaponDef> Weapons { get; init; }
+    public required Dictionary<string, List<WeaponDef>> WeaponsByClass { get; init; }
+    public required Dictionary<string, ushort> WeaponIds { get; init; }   // weapon_id → 稳定 u16（1..N 列表序）
 
     public SkillRuntimeData? Get(string skillId) =>
         IdMap.TryGetValue(skillId, out var id) ? Skills[id - 1] : null;
@@ -41,6 +44,7 @@ public static class RuntimeSkillFactory
         if (!TierMap.TryGetValue(d.Tier, out var tier)) tier = 0;
 
         var geo = ParseHitbox(d, unroutedHitbox);
+        var hbRawKind = d.HitboxRaw.Split(':')[0];
         var statuses = ParseStatuses(d, unroutedStatus);
         var armor = ParseArmor(d);
         var invuln = ParseInvuln(d);
@@ -105,6 +109,18 @@ public static class RuntimeSkillFactory
                 ? RuntimeConstants.STEER_DEG_PER_SEC_DEFAULT : 0,
             ChargeTicks = charge?.Item1 ?? 0,
             ChargeBonusQ = charge?.Item2 ?? 0,
+            IsSummon = d.Type == "summon" || d.Special.Contains("召唤位") || hbRawKind == "unit",
+            SummonHp = ParseSummonHp(d.Special),
+            SummonLifetimeTicks = ParseSummonLifetime(d.Special),
+            SummonFlying = d.Special.Contains("飞行"),
+            SummonTank = d.Special.Contains("坦克"),
+            IsStealth = d.Special.Contains("完全隐身"),
+            StealthSpeedPct = ParseStealthSpeed(d.Special),
+            IsReflect = d.Special.Contains("反射") || d.Special.Contains("反弹")
+                || d.SkillName.Contains("反射") || d.SkillName.Contains("魔镜"),
+            ReflectWindowTicks = ParseReflectWindow(d.Special),
+            FollowHeading = (d.ActiveRaw == "controlled" || d.Special.Contains("可转向") || d.Special.Contains("自由转向"))
+                && geo.IsProjectile,
         };
         return (def, unroutedStatus, unroutedHitbox);
     }
@@ -392,6 +408,56 @@ public static class RuntimeSkillFactory
                 bonus = Quantify(1.0 + pct / 100.0);
         }
         return (chargeTicks, bonus);
+    }
+
+    /// 召唤单位 HP（数据: HP900/HP1200；缺省 600 基线）
+    private static long ParseSummonHp(string special)
+    {
+        var idx = special.IndexOf("HP");
+        if (idx < 0) return 600;
+        var rest = special[(idx + 2)..];
+        int end = 0;
+        while (end < rest.Length && char.IsDigit(rest[end])) end++;
+        return end > 0 && long.TryParse(rest[..end], out var v) ? v : 600;
+    }
+
+    /// 召唤存在期（数据: 存在90s/60s）→ Tick；缺省 60s
+    private static int ParseSummonLifetime(string special)
+    {
+        var idx = special.IndexOf("存在");
+        if (idx < 0) return 60 * (int)RuntimeConstants.TICK_RATE;
+        var rest = special[(idx + 2)..];
+        int end = 0;
+        while (end < rest.Length && (char.IsDigit(rest[end]) || rest[end] == '.')) end++;
+        if (end == 0 || !double.TryParse(rest[..end], NumberStyles.Float, CultureInfo.InvariantCulture, out var sec))
+            return 60 * (int)RuntimeConstants.TICK_RATE;
+        return (int)Math.Round(sec * RuntimeConstants.TICK_RATE, MidpointRounding.ToEven);
+    }
+
+    /// 潜行移速（数据: 移速60%）→ 60（百分比整数）
+    private static long ParseStealthSpeed(string special)
+    {
+        var idx = special.IndexOf("移速");
+        if (idx < 0) return 60;
+        var rest = special[(idx + 2)..];
+        int end = 0;
+        while (end < rest.Length && (char.IsDigit(rest[end]) || rest[end] == '.')) end++;
+        if (end == 0 || !double.TryParse(rest[..end], NumberStyles.Float, CultureInfo.InvariantCulture, out var pct))
+            return 60;
+        return (long)Math.Round(pct, MidpointRounding.ToEven);
+    }
+
+    /// 反射窗（数据: 2s窗口）→ Tick；缺省 2s
+    private static int ParseReflectWindow(string special)
+    {
+        if (!special.Contains("反射")) return 0;
+        var idx = special.IndexOf("s窗");
+        if (idx < 0) return 2 * (int)RuntimeConstants.TICK_RATE;
+        int start = idx;
+        while (start > 0 && (char.IsDigit(special[start - 1]) || special[start - 1] == '.')) start--;
+        if (!double.TryParse(special[start..idx], NumberStyles.Float, CultureInfo.InvariantCulture, out var sec))
+            return 2 * (int)RuntimeConstants.TICK_RATE;
+        return (int)Math.Round(sec * RuntimeConstants.TICK_RATE, MidpointRounding.ToEven);
     }
 
     // ---- armor / invincible / cancel ----

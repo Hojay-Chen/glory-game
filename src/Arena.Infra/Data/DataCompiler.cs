@@ -105,6 +105,8 @@ public sealed class DataCompiler
 
         bool success = blockers.Count == 0;
         var result = new CompilerResult(success, skills.Count, blockers, warnings, dataVersionHash);
+        var unroutedTraits = new List<string>();
+        var weapons = WeaponParser.Parse(weaponsCsvPath, unroutedTraits);
         var catalog = new RuntimeCatalog
         {
             Skills = skills,
@@ -114,7 +116,11 @@ public sealed class DataCompiler
             UnroutedStatuses = unroutedStatuses,
             UnroutedHitboxes = unroutedHitboxes,
             DataVersionHash = dataVersionHash,
+            Weapons = weapons,
+            WeaponsByClass = weapons.GroupBy(w => w.ClassId).ToDictionary(g => g.Key, g => g.ToList()),
+            WeaponIds = weapons.Select((w, i) => (w.WeaponId, idx: (ushort)(i + 1))).ToDictionary(x => x.WeaponId, x => x.idx),
         };
+        foreach (var u in unroutedTraits) warnings.Add(new ValidationIssue("L2", "WEAPON_TRAIL_UNROUTED", u));
         return (result, catalog);
     }
 

@@ -98,6 +98,32 @@ public static class Program
             if (t <= 3) Console.WriteLine("[gs01] t" + t + " state=" + wg.Fighters[0].State + " velZ=" + wg.Fighters[0].VelZ.Raw + " z=" + wg.Fighters[0].PosZ.Raw + " grabbedBy=" + wg.Fighters[0].GrabbedBy + " staminamax=" + wg.Fighters[0].Stamina);
         }
 
+Console.WriteLine("[wep] classes=" + string.Join(",", catalog.WeaponsByClass.Keys.OrderBy(x => x).Take(6)) + " bmg=" + catalog.WeaponsByClass["BMG"].Count + " ids=" + string.Join(",", catalog.WeaponsByClass["BMG"].Select(x => x.WeaponId + "/" + x.AtkMod)));
+        foreach (var u in catalog.UnroutedStatuses.Where(x => x.Contains("trait"))) Console.WriteLine("  [wt] " + u);
+
+Console.WriteLine("[pilot] coverage compute");
+        {
+            var routed = new List<string>(); var partial = new List<string>();
+            foreach (var d in catalog.Skills)
+            {
+                var raw = System.IO.File.ReadAllLines(System.IO.Path.Combine(root, "docs/skill-spec/skills.csv")).Skip(1)
+                    .Select(l => l.Split(',')).FirstOrDefault(c => c.Length > 0 && c[0] == d.SkillId);
+                var sp = raw?[29] ?? ""; var st = raw?[21] ?? ""; var hb = (raw?[12] ?? "").Split(':')[0];
+                bool isPartial = false;
+                foreach (var kw in new[] { "分身", "假身", "操纵", "附身", "携带", "形态三选", "变弹", "随机", "干扰", "删除", "召唤物", "镜像", "替换", "伪装" })
+                    if (sp.Contains(kw)) isPartial = true;
+                if (st.Contains("全异常") || st.Contains("冻结值") || st.Contains("震地") || st.Contains("拖拽")
+                    || st.Contains("拉拽") || st.Contains("对敌") || st.Contains("截脉") || st.Contains("封印")
+                    || st.Contains("嘲讽") || st.Contains("束缚") || st.Contains("藤蔓") || st.Contains("感电")) isPartial = true;
+                if (hb is "unit" or "deploy" or "ally" or "wall" or "portal") isPartial = true;
+                if (sp.Contains("陷阱") || sp.Contains("炮台") || sp.Contains("部署")) isPartial = true;
+                if (isPartial) partial.Add(d.SkillId + "|" + hb + "|" + sp); else routed.Add(d.SkillId);
+            }
+            Console.WriteLine($"[pilot] routed={routed.Count} partial={partial.Count} total={routed.Count + partial.Count}");
+            foreach (var g in partial.Select(x => x.Split('|')[1]).GroupBy(x => x).OrderByDescending(g => g.Count()))
+                Console.WriteLine($"  [pilot-partial] {g.Key}: {g.Count()}");
+        }
+
         Console.WriteLine($"catalog={catalog!.Count} blockers={result.Blockers.Count} unroutedStatus={catalog.UnroutedStatuses.Count} unroutedHitbox={catalog.UnroutedHitboxes.Count}");
         foreach (var g in catalog.UnroutedStatuses.GroupBy(x => x.Split(':')[^1].Split(':').LastOrDefault() ?? x).OrderBy(g => -g.Count()).Take(18))
             Console.WriteLine($"  [us] {g.Count()}× {g.First()}");
