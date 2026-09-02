@@ -102,6 +102,11 @@ public sealed class SkillRuntimeData
     public bool SummonTank { get; init; }
     public int RequireBehindDeg { get; init; }    // MF-1: 需背身 N°（NJA_T3_001 背身缚首术 120°）
     public OrbTagKind OrbTag { get; init; }       // 炫纹触发标签（Compiler 从 special 炫纹:X 解析）
+    // ---- Batch 4: 自增益通道（通用 B 类语义——数值全部来自 special 解析，零签名依赖） ----
+    public string Name { get; init; } = "";       // CSV skill_name（家族分类数据源——SBL 波动剑系）
+    public long SelfBuffAtkPctQ { get; init; }    // 施法自增益 ATK+P%（嗜血 20%/嗜血奋战 8%）
+    public long SelfDrainPctQ { get; init; }      // 自伤脉率 P%/s ×HpMax（嗜血系 1.5%/s）
+    public long LifestealPctQ { get; init; }      // 正嗜血: 造成伤害 P% 转回复（嗜血奋战 10%）
     // ---- Phase 7 Batch 2: Deploy / Heal 通道（统一实体载荷语义） ----
     public DeployKind DeployKind { get; init; }   // 部署变体（数据: 触发/悬浮/侦察/wall/zone）
     public long DeployHp { get; init; }           // 部署物 HP（HP300/600HP/HP200/HP150）
@@ -158,17 +163,19 @@ public sealed class SkillExecution
     public bool IsBasic => SkillRuntimeId != 0 && Def?.Type == "basic";
     public byte SpawnedSegments;                 // 已 spawn 的段数（hitSchedule 推进指针）
     public HashSet<int>[]? SegmentVictims;       // per-segment 去重（Snapshot 序列化）
+    public int StartupDeltaTicks;                // 签名前摇修正（SBL 波动共鸣 −1f/层——每 cast 独立）
     [System.Text.Json.Serialization.JsonIgnore]
     public SkillRuntimeData? Def;                // 运行时引用（由 Catalog 恢复，不入快照）
 
-    public int TotalTicks => Def is null ? 0 : Def.StartupTicks + Def.ActiveTicks + Def.RecoveryTicks;
-    public bool InStartup => Def is not null && CurrentOffset < Def.StartupTicks;
+    public int EffectiveStartup => (Def?.StartupTicks ?? 0) + StartupDeltaTicks;
+    public int TotalTicks => Def is null ? 0 : EffectiveStartup + Def.ActiveTicks + Def.RecoveryTicks;
+    public bool InStartup => Def is not null && CurrentOffset < EffectiveStartup;
     /// hold 姿态: 生效窗开放至释放（取消/切换/打断）——无自然上界（GDD §6.2 格挡姿态）
-    public bool InActive => Def is not null && CurrentOffset >= Def.StartupTicks
-        && (Def.IsHold || CurrentOffset < Def.StartupTicks + Def.ActiveTicks);
+    public bool InActive => Def is not null && CurrentOffset >= EffectiveStartup
+        && (Def.IsHold || CurrentOffset < EffectiveStartup + Def.ActiveTicks);
     public bool InRecovery => Def is not null && !Def.IsHold
-        && CurrentOffset >= Def.StartupTicks + Def.ActiveTicks && CurrentOffset < TotalTicks;
-    public int ActiveEndOffset => Def is null ? 0 : Def.StartupTicks + Def.ActiveTicks;
+        && CurrentOffset >= EffectiveStartup + Def.ActiveTicks && CurrentOffset < TotalTicks;
+    public int ActiveEndOffset => Def is null ? 0 : EffectiveStartup + Def.ActiveTicks;
     public int RecoveryStartOffset => ActiveEndOffset;
 }
 
@@ -176,10 +183,12 @@ public sealed class SkillExecution
 public static class SkillTimeline
 {
     /// 段 k 的 hitbox 存活窗（绝对偏移 [start, end)——至下一段激活或 active 结束）
-    public static (int start, int end) SegmentWindow(SkillRuntimeData def, int segment)
+    /// startupTicks: 生效前摇（exec.EffectiveStartup——签名前摇修正时传入覆盖 def 值）
+    public static (int start, int end) SegmentWindow(SkillRuntimeData def, int segment, int? startupTicks = null)
     {
-        int activeStart = def.StartupTicks;
-        int activeEnd = def.StartupTicks + def.ActiveTicks;
+        int startup = startupTicks ?? def.StartupTicks;
+        int activeStart = startup;
+        int activeEnd = startup + def.ActiveTicks;
         int start = activeStart + (segment < def.HitSchedule.Length ? def.HitSchedule[segment] : 0);
         int end = segment + 1 < def.HitSchedule.Length
             ? Math.Min(activeStart + def.HitSchedule[segment + 1], activeEnd)

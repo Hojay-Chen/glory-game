@@ -6,8 +6,9 @@ using Arena.Core.Calc;
 namespace Arena.Core.Sim;
 
 // ---- ADR-0001 §3/ADR-0003: 稳定 ID 与状态枚举 ----
-// EVENT_PROTOCOL_VERSION = 3（v2: Hit 空间载荷；v3: +Parry/GuardHit/GuardBroken/GrabStarted/
-// GrabReleased/Countered/Interrupted/FallLanded——Phase 5 格挡/抓取/反击/坠落体系）
+// EVENT_PROTOCOL_VERSION = 4（v2: Hit 空间载荷；v3: +Parry/GuardHit/GuardBroken/GrabStarted/
+// GrabReleased/Countered/Interrupted/FallLanded——Phase 5 格挡/抓取/反击/坠落体系；
+// v4: +DrainPulse——Batch 4 自增益通道自伤脉冲）
 
 public enum FighterState : byte
 {
@@ -69,7 +70,7 @@ public enum EventKind : byte
     GrabStarted = 25, GrabReleased = 26, Countered = 27,
     Interrupted = 28, FallLanded = 29,
     UnitSpawned = 30, UnitDied = 31, StealthBroken = 32, Reflected = 33,
-    BuffApplied = 34, BuffExpired = 35, Healed = 36,
+    BuffApplied = 34, BuffExpired = 35, Healed = 36, DrainPulse = 37,
 }
 
 /// Whiff 原因（ADR-0003 §3.2）
@@ -208,6 +209,15 @@ public sealed class FighterStateData
     public long BuffDefPctQ { get; set; }           // QIM 护体真气等 DEF 百分比增益（可负）
     public int BuffDefPctTicks { get; set; }
 
+    // 自增益通道（通用 B 类: 嗜血 ATK+20% 等由施法数据驱动，Batch 4）
+    public long BuffDrainHpPctQ { get; set; }       // 自伤脉率（Q32.16 每秒 ×HpMax——嗜血 1.5%/s）
+    public int BuffDrainHpPctTicks { get; set; }
+    public long LifestealPctQ { get; set; }         // 正嗜血: 命中造成伤害的 P% 转为自身回复
+    public int LifestealTicks { get; set; }
+
+    // 最近一次完成（结束/取消）施放的技能——SBL 波动共鸣「不同波动剑连放」判定域
+    public ushort LastCastSkillUid { get; set; }
+
     // Heal 通道（GDD PRI 系/GAN 恢复术: 直接量/HoT 脉冲）
     public long HealPulseAmountQ { get; set; }
     public int HealPulseRemaining { get; set; }
@@ -267,6 +277,9 @@ public sealed class FighterStateData
             RollInvulnArmed = RollInvulnArmed, PeakY = PeakY,
             HpMax = HpMax, MpMax = MpMax,
             BuffDefPctQ = BuffDefPctQ, BuffDefPctTicks = BuffDefPctTicks,
+            BuffDrainHpPctQ = BuffDrainHpPctQ, BuffDrainHpPctTicks = BuffDrainHpPctTicks,
+            LifestealPctQ = LifestealPctQ, LifestealTicks = LifestealTicks,
+            LastCastSkillUid = LastCastSkillUid,
             BuffAtkPctQ = BuffAtkPctQ, BuffAtkPctTicks = BuffAtkPctTicks,
             HealPulseAmountQ = HealPulseAmountQ, HealPulseRemaining = HealPulseRemaining,
             HealPulseTimer = HealPulseTimer, HealPulseInterval = HealPulseInterval, HealIsMana = HealIsMana,

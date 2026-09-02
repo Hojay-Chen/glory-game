@@ -2,7 +2,7 @@
 
 | 项 | 值 |
 |---|---|
-| 日期 | 2026-09-01 |
+| 日期 | 2026-09-03 |
 | 数据源 | skills.csv（487 行）+ class-base.csv（25 行） |
 | 结论 | **PASS**（单发/连段超线 0 条；倍率越带档位 5/5） |
 
@@ -142,4 +142,4 @@ MP 实测下探（功能技/指挥技低 MP）与 CD 短尾（步法/取消类 2
 - 精工特性全部规则级（D12），不进 DPS 乘区——武器不改变本表伤害标定
 
 ---
-*由 tools/balance_audit.py 于 2026-09-01 生成；改 skills.csv / class-base.csv 后必须重跑。*
+*由 tools/balance_audit.py 于 2026-09-03 生成；改 skills.csv / class-base.csv 后必须重跑。*

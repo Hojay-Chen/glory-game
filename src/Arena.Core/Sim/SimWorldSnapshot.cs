@@ -46,6 +46,9 @@ public partial class SimWorld
             snap.Set(c++, f.HpMax); snap.Set(c++, f.MpMax);
             snap.Set(c++, f.BuffAtkPctQ); snap.Set(c++, f.BuffAtkPctTicks);
             snap.Set(c++, f.BuffDefPctQ); snap.Set(c++, f.BuffDefPctTicks);
+            snap.Set(c++, f.BuffDrainHpPctQ); snap.Set(c++, f.BuffDrainHpPctTicks);
+            snap.Set(c++, f.LifestealPctQ); snap.Set(c++, f.LifestealTicks);
+            snap.Set(c++, f.LastCastSkillUid);
             snap.Set(c++, f.HealPulseAmountQ); snap.Set(c++, f.HealPulseRemaining);
             snap.Set(c++, f.HealPulseTimer); snap.Set(c++, f.HealPulseInterval); snap.Set(c++, f.HealIsMana ? 1 : 0);
             snap.Set(c++, f.ActiveSkillUid); snap.Set(c++, f.PendingChainSkill);
@@ -158,6 +161,9 @@ public partial class SimWorld
             f.HpMax = snap.Get(c++); f.MpMax = snap.Get(c++);
             f.BuffAtkPctQ = snap.Get(c++); f.BuffAtkPctTicks = (int)snap.Get(c++);
             f.BuffDefPctQ = snap.Get(c++); f.BuffDefPctTicks = (int)snap.Get(c++);
+            f.BuffDrainHpPctQ = snap.Get(c++); f.BuffDrainHpPctTicks = (int)snap.Get(c++);
+            f.LifestealPctQ = snap.Get(c++); f.LifestealTicks = (int)snap.Get(c++);
+            f.LastCastSkillUid = (ushort)snap.Get(c++);
             f.HealPulseAmountQ = snap.Get(c++); f.HealPulseRemaining = (int)snap.Get(c++);
             f.HealPulseTimer = (int)snap.Get(c++); f.HealPulseInterval = (int)snap.Get(c++); f.HealIsMana = snap.Get(c++) != 0;
             f.ActiveSkillUid = (int)snap.Get(c++); f.PendingChainSkill = (ushort)snap.Get(c++);

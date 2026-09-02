@@ -194,8 +194,11 @@ public static class ProjectileSystem
                 return;   // 本 Tick 弹体折返——剩余交互归下一 Tick（确定性: 每 Tick 至多一次反射）
             }
 
-            // PA-H2: 区域选取 = priority 最大（Head=20 > Torso=10）；HitPoint/Normal 取所选区域接触
-            bool useHead = headHit;
+            // PA-H2: 区域选取 = priority 最大（Head=20 > Torso 10）；HitPoint/Normal 取所选区域接触。
+            // 弱点门控（与 SelectHitRegion 同律）: HeadMultQ<=0 = 非弱点技——头部区域不参与选取
+            //（否则头部命中 ×0 会使伤害归零——SG14 探针暴露）。
+            bool headEligible = p.Def is { } pdef && pdef.HeadMultQ > 0;
+            bool useHead = headHit && headEligible;
             long toiSel = useHead ? headToi : torsoToi;
             long nxSel = useHead ? hnx : tnx, nzSel = useHead ? hnz : tnz;
             long px = p.PosX + DeterministicMath.MulShift(relX, toiSel);

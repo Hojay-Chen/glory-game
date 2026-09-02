@@ -11,7 +11,7 @@ using Arena.Core.Rng;
 // ResetCooldown/RouteDamage/GetFighter；SpawnUnit/SpawnDecoy 归 UnitSystem 阶段（登记）。
 namespace Arena.Core.Sim;
 
-public enum DamageModStage : byte { BackstabBonus = 0 }   // 修正乘区（v1: 背击追加）
+public enum DamageModStage : byte { BackstabBonus = 0, SignaturePassive = 1 }   // 修正乘区（背击追加/职业被动）
 
 /// 签名插件（每职业至多一个；装配期按 ClassId 注册）
 public interface ISignature
@@ -21,8 +21,12 @@ public interface ISignature
     void OnEvent(ISimContext ctx, in SimEvent e);
     /// 每 Tick 结算钩子（资源回复/持续时间等）
     void OnTick(ISimContext ctx) { }
-    /// 伤害修正乘区（v1: BackstabBonus——返回 Q32.16 乘数，ONE = 无修正）
-    long ModifyDamage(DamageModStage stage, ISimContext ctx, int attackerId, int victimId) => Fixed2.ONE;
+    /// 伤害修正乘区（返回 Q32.16 乘数，ONE = 无修正；skillId = 本次命中技能，供家族过滤）
+    long ModifyDamage(DamageModStage stage, ISimContext ctx, int attackerId, int victimId, ushort skillId) => Fixed2.ONE;
+    /// 施放前摇修正（返回 Tick 增量，可负——SBL 波动共鸣 −1f/层；结果钳 ≥0）
+    int ModifyStartupTicks(ISimContext ctx, ushort skillId) => 0;
+    /// 施法是否破除潜行（THF 陷阱精通: 设陷阱不解除——默认破除）
+    bool ShouldBreakStealth(ISimContext ctx, ushort skillId) => true;
 }
 internal static class Fixed2 { public const long ONE = 65536; }
 
@@ -43,6 +47,8 @@ public interface ISimContext
     long GetResource(SimWorld.ResourceSlotKind kind);
     long GetResourceCap(SimWorld.ResourceSlotKind kind);
     void AddResource(SimWorld.ResourceSlotKind kind, long n);
+    /// 重置本 Fighter 全部 CD（exceptSkillId 除外——KNI 骑士精神）
+    void ResetAllCooldowns(ushort exceptSkillId);
 }
 
 /// 注册表（装配期冻结；ClassId 升序 = ADR-0001 §3.4 注册序）
@@ -85,6 +91,16 @@ internal sealed class SimContext : ISimContext
     }
     public void SetHeading(long quantum) { var f = _world.GetFighter(FighterId); if (f is not null) f.HeadingQuantum = quantum; }
     public void ResetCooldown(ushort skillId) { var f = _world.GetFighter(FighterId); f?.Cooldowns.Remove(skillId); }
+    public void ResetAllCooldowns(ushort exceptSkillId)
+    {
+        var f = _world.GetFighter(FighterId);
+        if (f is null) return;
+        // 除指定技能外全部清零（KNI_U_001 骑士精神: 重置除本技外全部 CD）
+        ushort[] keys = new ushort[f.Cooldowns.Count];
+        f.Cooldowns.Keys.CopyTo(keys, 0);
+        foreach (var k in keys)
+            if (k != exceptSkillId) f.Cooldowns.Remove(k);
+    }
     public void RouteDamage(int targetId, long delta, EventKind reason)
     {
         var f = _world.GetFighter(targetId);
@@ -108,7 +124,7 @@ internal sealed class SimContext : ISimContext
         var f = _world.GetFighter(FighterId);
         if (f is null) return;
         var cap = f.ResourceCaps[(int)kind];
-        f.ResourceCounts[(int)kind] = Math.Min(cap, f.ResourceCounts[(int)kind] + n);
+        f.ResourceCounts[(int)kind] = Math.Max(0, Math.Min(cap, f.ResourceCounts[(int)kind] + n));
     }
 }
 
@@ -126,17 +142,40 @@ public sealed partial class SimWorld
     }
 
     /// 伤害修正查询（HitResolve 在对应乘区调用——绑定到实际攻击者 FighterId）
-    internal long GetDamageModifier(DamageModStage stage, FighterStateData attacker, FighterStateData victim)
+    internal long GetDamageModifier(DamageModStage stage, FighterStateData attacker, FighterStateData victim, ushort skillId)
     {
-        if (_signatures is null) return Fixed2.ONE;
-        foreach (var sig in _signatures.All)
+        if (!TryBind(attacker, out var sig, out var ctx)) return Fixed2.ONE;
+        return sig.ModifyDamage(stage, ctx, attacker.Id, victim.Id, skillId);
+    }
+
+    /// 施放前摇修正查询（StartExecution——每 cast 一次）
+    internal int QueryStartupDelta(FighterStateData f, SkillRuntimeData def)
+    {
+        if (!TryBind(f, out var sig, out var ctx)) return 0;
+        int delta = sig.ModifyStartupTicks(ctx, def.RuntimeId);
+        return delta < 0 && def.StartupTicks + delta < 0 ? -def.StartupTicks : delta;   // 前摇钳 ≥0
+    }
+
+    /// 施法破隐门控（TryCastSkill——THF 陷阱精通: 设陷阱不解除）
+    internal bool ShouldBreakStealth(FighterStateData f, SkillRuntimeData def)
+    {
+        if (!TryBind(f, out var sig, out var ctx)) return true;
+        return sig.ShouldBreakStealth(ctx, def.RuntimeId);
+    }
+
+    /// 按职业绑定签名 + 身份化 ctx（无注册/职业未参赛 → false）
+    private bool TryBind(FighterStateData f, out ISignature sig, out ISimContext ctx)
+    {
+        sig = null!; ctx = null!;
+        if (_signatures is null) return false;
+        foreach (var s in _signatures.All)
         {
-            if (sig.ClassId != attacker.ClassId) continue;
-            if (!_ctxCache.TryGetValue(attacker.Id, out var ctx))
-                _ctxCache[attacker.Id] = ctx = new SimContext(this, attacker.Id);
-            return sig.ModifyDamage(stage, ctx, attacker.Id, victim.Id);
+            if (s.ClassId != f.ClassId) continue;
+            if (!_ctxCache.TryGetValue(f.Id, out var c)) _ctxCache[f.Id] = c = new SimContext(this, f.Id);
+            sig = s; ctx = c;
+            return true;
         }
-        return Fixed2.ONE;
+        return false;
     }
 
     /// 派发（TickFighters 之后、死亡判定之前——ADR-0001 §3.2 ⑤；Step 调用）。

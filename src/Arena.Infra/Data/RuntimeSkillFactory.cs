@@ -116,6 +116,10 @@ public static class RuntimeSkillFactory
             SummonTank = d.Special.Contains("坦克"),
             RequireBehindDeg = ParseRequireBehind(d.Special),
             OrbTag = ParseOrbTag(d.Special),
+            Name = d.SkillName,
+            SelfBuffAtkPctQ = ParseSelfBuffAtkPct(d.Special),
+            SelfDrainPctQ = ParseSelfDrainPct(d.Special),
+            LifestealPctQ = ParseLifestealPct(d.Special),
             DeployKind = ParseDeployKind(d, hbRawKind),
             DeployHp = ParseDeployHp(d.Special),
             TriggerRadius = hbRawKind == "deploy" && d.HitboxRaw.Contains("触发") ? ParseRadiusArg(d.HitboxRaw, 1) : 0,
@@ -507,6 +511,27 @@ public static class RuntimeSkillFactory
         return OrbTagKind.None;
     }
 
+    /// 施法自增益 ATK+P%（数据: ATK+20%——嗜血/嗜血奋战；通用自增益通道，Batch 4）
+    private static long ParseSelfBuffAtkPct(string special)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(special, @"ATK\+(\d+(?:\.\d+)?)%");
+        return m.Success ? Quantify(decimal.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture) / 100m) : 0;
+    }
+
+    /// 自伤脉率 P%/s（数据: 自身-1.5%/s / 反嗜血:ATK+8%:-1.5%/s——嗜血系；×HpMax 每 60T 脉冲）
+    private static long ParseSelfDrainPct(string special)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(special, @"-(\d+(?:\.\d+)?)%/s");
+        return m.Success ? Quantify(decimal.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture) / 100m) : 0;
+    }
+
+    /// 正嗜血 P%（数据: 正嗜血10%——嗜血奋战；造成伤害的 P% 转回复）
+    private static long ParseLifestealPct(string special)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(special, @"正嗜血(\d+(?:\.\d+)?)%");
+        return m.Success ? Quantify(decimal.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture) / 100m) : 0;
+    }
+
     /// MF-1: 需背身 N°（数据: 需背身120°）
     private static int ParseRequireBehind(string special)
     {
@@ -621,6 +646,7 @@ public static class RuntimeSkillFactory
     /// 部位结算倍率（special 含「头部×N」）：豪龙破军 ×1.5 / 巴雷特 ×2（SPEC-0006 §1.4）
     private static long ParseHeadMult(string special)
     {
+        // 0 = 非弱点技哨兵（SelectHitRegion/ProjectileSystem 据此禁用头部区域——GDD §4.6 弱点判定数据化）
         var idx = special.IndexOf("头部×");
         if (idx < 0) return 0;
         var rest = special[(idx + 3)..];

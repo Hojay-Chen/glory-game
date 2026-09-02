@@ -76,9 +76,33 @@
 - **仓库卫生**: .gitignore 补齐——bin/obj/.godot 共 238 文件退出跟踪（此前每次构建污染工作树 80+ 文件）
 - 双门禁 PASS（check_math_ban / check_deps）
 
+## Phase 7 Batch 4 自增益通道 + 小签名插件批次（2026-09-03，本次）
+
+- **通用自增益通道（B 类扩容，零签名）**: Compiler 解析 special「ATK+P%」/「-P%/s」/「正嗜血P%」→ 施法路径通用施加 BuffAtkPct/BuffDrainHpPct（60T 脉冲 ×HpMax，HoT 脉冲同律）/Lifesteal（HitResolve 伤害结算后回复）三域；passive/deploy/basic 门控排除。**嗜血/嗜血奋战完全数据驱动表达——C→B 重分类**（BER.BloodQi 插件仅剩血气唤醒=Batch 3 已做 → 插件收口）
+- **3 新签名**: THF 陷阱精通（ShouldBreakStealth 门控——潜行设陷阱不解除，TerminateExecution keepStealth 参数）/ SBL 杀意波动（共鸣层 ResourceSlots.Resonance=6 + ModifyDamage SignaturePassive ×(1+4%×层) + ModifyStartupTicks 每层前摇 −1f）/ KNI 骑士精神（ResetAllCooldowns 除本技）
+- **StartupDeltaTicks 管线**: SkillExecution 每 cast 前摇修正（EffectiveStartup 贯穿 TotalTicks/InStartup/段窗/发射点/取消窗/格挡窗 10 处——Def 共享引用不可变，cast 级 delta 独立）
+- **2 个真实 bug 修复**:
+  1. **霸体命中仍中断技能**——违反 GDD §4.3「（无霸体）→ 技能中断」；HitResolve 技能中断加 !armored 门控
+  2. **投射物头部命中伤害归零**——ProjectileSystem useHead 不看 HeadMultQ 门控（近战 SelectHitRegion 有），非弱点技弹体擦过头球 → 乘 HeadMultQ=0 → dmg=0；补 headEligible 门控（SG14 探针暴露）
+- **BER 血气唤醒写守卫**: BuffAtkPctTicks≤2 才写入——不踩嗜血 1200T 长周期槽
+- **事件协议 v4**: +DrainPulse；Fighter 域 +BuffDrainHpPctQ/Ticks+LifestealPctQ/Ticks+LastCastSkillUid（SBL 连放判定，EndExecution/TerminateExecution 双路径更新）；Snapshot 全携带
+- **class-base.csv**: SBL resource '共鸣:3'（balance_audit 重跑 PASS: nominal 399/observed 396）
+- **测试 152/152**（+SG11/11b/12/13/13b/14/15/16 八探针；SG16 快照恢复+重放逐位一致）
+- **踩坑**: 测试跳 Tick 会使 exec.CurrentOffset 与墙钟错位（armor/前摇窗口判定失真）——Batch 4 测试全部逐 Tick 步进+指令表；施法 aim 覆盖 heading（SG08 既有结论）
+
+## DDQ-B4（数据歧义队列——Batch 4 登记，待用户裁定）
+
+1. 嗜血奋战 armor `SSA:24-244f` vs GDD「全程霸体」（20s=1200f → 应为 24-1224f）——CSV 修正待裁定
+2. 狂暴（BER_T3_004）Sim 域数值缺失（力量/攻速/异抗无 Sim 映射）+ 技能变异（招式变形）——CSV 补数据后实现
+3. KNI 八美德强化幅度 CSV 未给出——强化乘区待数据（CD 重置已实现）
+4. SBL 连放语义 v1: 施法读上一手累计层（本次 +1 归后效）；同把重放回 1 档；非波动插入不清层；无衰减——设计可复核
+5. 自伤不可致死（钳 1 HP）——设计待确认
+6. **buff 类技能 act=持续时长 → 施法锁死整个持续期**（41 个 buff 技共性；嗜血奋战锁 20s）——是否改短 active + 状态承载持续
+7. 后续批次技能池: SRP 枪术精通（「射击类」分类歧义+「级」语义）、ROG 以牙还牙（动态施放）、WIT 扫把掌握（Flight 原语）、SPF 弹匣系、BMG 炫纹发射
+
 ## 待处理（下一阶段优先序）
 
-1. C 类签名按职业批次扩量（Batch 3 框架已验证：事件→资源/OnTick 条件 buff/伤害乘区三模式族）
+1. Batch 5 签名: SPF.Ammo（弹匣资源已预留）+ BMG.Orbs 收尾（炫纹发射弹）+ WIT.Broom（Flight 原语）+ ROG.Mirror（事件回溯+动态施放）
 2. Partial 54 行随 UnitSystem(14)/Deploy(9)/签名可控语义(8)批次收口
-3. 数据裁定: GBL_T2_001 a200、冻结@P% 中文别名 2 行、OQ-2/OQ-13 既有 3 行、CC 审计 4 项 Design Decision、MF-5 heal 记法、DDQ 三项（PRI 回蓝基线/GAN 直量判读/ally 目标选择）
+3. 数据裁定: DDQ-B4 七项 + GBL_T2_001 a200、冻结@P% 中文别名 2 行、OQ-2/OQ-13 既有 3 行、CC 审计 4 项 Design Decision、MF-5 heal 记法、DDQ 三项（PRI 回蓝基线/GAN 直量判读/ally 目标选择）
 4. 规格歧义请设计确认: 软推挤范围（已按 GDD 解释）；Hitstop 归属（按 ADR-0009 表现层）

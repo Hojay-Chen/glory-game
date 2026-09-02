@@ -247,6 +247,9 @@ public static class Batch3Shared
         reg.Register(new Arena.Core.Sim.Signatures.BerBloodAwakening());
         reg.Register(new Arena.Core.Sim.Signatures.AsnAssassination());
         reg.Register(new Arena.Core.Sim.Signatures.QimBodyQi());
+        reg.Register(new Arena.Core.Sim.Signatures.ThfTrapMastery());
+        reg.Register(new Arena.Core.Sim.Signatures.SblWaveResonance());
+        reg.Register(new Arena.Core.Sim.Signatures.KniKnightSpirit());
         return reg;
     }
 }

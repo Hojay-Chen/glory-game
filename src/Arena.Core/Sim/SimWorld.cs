@@ -34,7 +34,7 @@ public sealed partial class SimWorld
     public List<UnitState> Units { get; } = new();
     public readonly List<PendingContact> PendingContacts = new();
 
-    public enum ResourceSlotKind : ushort { Summon = 1, Deploy = 2, Orb = 3, Magazine = 4, SacrificeHp = 5 }
+    public enum ResourceSlotKind : ushort { Summon = 1, Deploy = 2, Orb = 3, Magazine = 4, SacrificeHp = 5, Resonance = 6 }
 
     private readonly Dictionary<ushort, SkillRuntimeData> _skills = new();
     private readonly Dictionary<string, (ResourceSlotKind kind, long cap)> _classResources = new();
@@ -223,13 +223,21 @@ public sealed partial class SimWorld
     {
         if (isMana)
         {
-            var mp = DeterministicMath.MulShift(amountQ, 1000);   // 比例 × maxMP
-            f.Mp = Math.Min(1000, f.Mp + mp);
+            var mp = DeterministicMath.MulShift(amountQ, f.MpMax);   // 比例 × maxMP
+            f.Mp = Math.Min(f.MpMax, f.Mp + mp);
         }
         else
         {
             f.Hp = Math.Min(f.HpMax, f.Hp + amountQ);
         }
+        Events.Emit(new SimEvent { Kind = EventKind.Healed, VictimId = f.Id, DamageRaw = amountQ });
+    }
+
+    /// HP 回复（HitResolve 正嗜血入口——上限钳 HpMax，Healed 事件）
+    internal void ApplyHealSelf(FighterStateData f, long amountQ)
+    {
+        if (f.State == FighterState.Dead) return;
+        f.Hp = Math.Min(f.HpMax, f.Hp + amountQ);
         Events.Emit(new SimEvent { Kind = EventKind.Healed, VictimId = f.Id, DamageRaw = amountQ });
     }
 
@@ -332,8 +340,9 @@ public sealed partial class SimWorld
         if (!StatusSystem.CanAct(f) || !StatusSystem.CanCastSkill(f)) return false;
         if (f.State == FighterState.Dead) return false;
 
-        // 潜行破除（GDD THF_T1_001: 攻击解除——任何施法即破隐）
-        if (f.Hidden)
+        // 潜行破除（GDD THF_T1_001: 攻击解除——任何施法即破隐；
+        // 例外经签名门控: THF 陷阱精通——设陷阱不解除潜行 GDD §14.17）
+        if (f.Hidden && ShouldBreakStealth(f, def))
         {
             f.Hidden = false;
             Events.Emit(new SimEvent { Kind = EventKind.StealthBroken, VictimId = f.Id });
@@ -349,7 +358,9 @@ public sealed partial class SimWorld
                 return false;
             }
             if (!CanStartExecution(f, def)) return false;   // CD/MP 不足 → 取消不成立，当前技能不受影响
-            if (exec is not null) TerminateExecution(exec, cancelled: true);
+            // 陷阱精通: 潜行 hold 被陷阱施放替换时隐身存活（GDD §14.17）
+            bool stealthSurvives = f.Hidden && !ShouldBreakStealth(f, def);
+            if (exec is not null) TerminateExecution(exec, cancelled: true, keepStealth: stealthSurvives);
         }
         else if (f.State != FighterState.Normal)
         {
@@ -380,7 +391,7 @@ public sealed partial class SimWorld
             if (exec.Def is { } hdef && hdef.IsHold)
             {
                 // hold 姿态（潜行等）可被普攻释放（姿态=可取消动作；格挡除外——§6.2）
-                if (exec.CurrentOffset < hdef.StartupTicks) return false;
+                if (exec.CurrentOffset < exec.EffectiveStartup) return false;
                 TerminateExecution(exec, cancelled: false);
                 return StartExecution(f, GetFirstBasic(f.ClassId) ?? throw new InvalidOperationException("no basic"), cmd);
             }
@@ -391,7 +402,7 @@ public sealed partial class SimWorld
                 return false;
             }
             // 普攻段间: 生效帧后可衔接下一段（缓冲 18f 由缓冲机制承载）
-            if (exec.Def is null || exec.CurrentOffset < exec.Def.StartupTicks || exec.Def.ChainNext == 0)
+            if (exec.Def is null || exec.CurrentOffset < exec.EffectiveStartup || exec.Def.ChainNext == 0)
             {
                 if (!fromBuffer) BufferInput(f, cmd);
                 return false;
@@ -427,11 +438,11 @@ public sealed partial class SimWorld
         // 完美格挡/反击免费取消窗（GDD §6.3/§6.6: 可取消任意技能）
         if (f.CounterWindowTicks > 0) return true;
         // hold 姿态（格挡等）: 姿态建立后即可切换释放（GDD §6.2 格挡姿态衔接）
-        if (exec.Def.IsHold) return exec.CurrentOffset >= exec.Def.StartupTicks;
+        if (exec.Def.IsHold) return exec.CurrentOffset >= exec.EffectiveStartup;
         if (exec.IsBasic)
         {
             // 普攻→技能: 自生效帧后 4f 起（GDD §4.2）
-            return exec.CurrentOffset >= exec.Def.StartupTicks + RuntimeConstants.BASIC_CANCEL_TO_SKILL_TICKS;
+            return exec.CurrentOffset >= exec.EffectiveStartup + RuntimeConstants.BASIC_CANCEL_TO_SKILL_TICKS;
         }
         // 技能→技能: 命中确认 + 后摇取消窗 + 档位递进（GDD §8.2）
         if (!exec.HitConfirmed) return false;
@@ -459,6 +470,8 @@ public sealed partial class SimWorld
             SegmentVictims = def.HitSchedule.Length > 0 ? new HashSet<int>[def.HitSchedule.Length] : Array.Empty<HashSet<int>>(),
         };
         for (int i = 0; i < exec.SegmentVictims.Length; i++) exec.SegmentVictims[i] = new HashSet<int>();
+        // 签名前摇修正（SBL 波动共鸣: 每层 −1f）——确定施法期的 EffectiveStartup 基线
+        exec.StartupDeltaTicks = QueryStartupDelta(f, def);
         Executions.Add(exec);
         f.State = FighterState.Act;
         f.ActiveSkillUid = exec.Uid;
@@ -469,6 +482,27 @@ public sealed partial class SimWorld
             f.Shield = g.ShieldMax;
             f.ShieldRegenTicks = 0;
         }
+        // 自增益通道（Batch 4 通用 B 类语义——数值全部来自 def 解析，零签名依赖）:
+        // 被动技不经施放路径；deploy/aura 由 UnitSystem 自行施加——均跳过。
+        if (def.Type != "passive" && def.DeployKind == DeployKind.None && !def.Type.StartsWith("basic"))
+        {
+            if (def.SelfBuffAtkPctQ != 0)
+            {
+                f.BuffAtkPctQ = def.SelfBuffAtkPctQ;
+                f.BuffAtkPctTicks = def.ActiveTicks;
+                Events.Emit(new SimEvent { Kind = EventKind.BuffApplied, VictimId = f.Id, SkillId = def.RuntimeId, ValueRaw = def.SelfBuffAtkPctQ });
+            }
+            if (def.SelfDrainPctQ > 0)
+            {
+                f.BuffDrainHpPctQ = def.SelfDrainPctQ;
+                f.BuffDrainHpPctTicks = def.ActiveTicks;
+            }
+            if (def.LifestealPctQ > 0)
+            {
+                f.LifestealPctQ = def.LifestealPctQ;
+                f.LifestealTicks = def.ActiveTicks;
+            }
+        }
         f.VelX = Fixed.Zero; f.VelZ = Fixed.Zero;   // 攻击制动（GDD §3.2）
         // 施放朝向: Steer/Aim 量化（SPEC-0001）——Skill 指令的 AimQuantum 直接锁定朝向
         if (cmd.AimQuantum != 0 || cmd.Kind == CmdKind.Skill) f.HeadingQuantum = cmd.AimQuantum;
@@ -476,7 +510,7 @@ public sealed partial class SimWorld
         // 投射物技: active 起点发射（hitSchedule[0] 偏移）
         if (def.IsProjectile)
         {
-            _pendingProjectileSpawns.Add((exec, def.StartupTicks));
+            _pendingProjectileSpawns.Add((exec, exec.EffectiveStartup));
         }
 
         Events.Emit(new SimEvent
@@ -604,20 +638,20 @@ public sealed partial class SimWorld
 
             // hitSchedule → hitbox spawn（P-2 编译期预计算偏移）
             while (exec.SpawnedSegments < def.HitSchedule.Length &&
-                   exec.CurrentOffset >= SkillTimeline.SegmentWindow(def, exec.SpawnedSegments).start)
+                   exec.CurrentOffset >= SkillTimeline.SegmentWindow(def, exec.SpawnedSegments, exec.EffectiveStartup).start)
             {
                 SpawnSegmentHitbox(exec, def, owner, exec.SpawnedSegments);
                 exec.SpawnedSegments++;
             }
 
             // 投射物发射点
-            if (def.IsProjectile && exec.CurrentOffset == def.StartupTicks)
+            if (def.IsProjectile && exec.CurrentOffset == exec.EffectiveStartup)
             {
                 ProjectileSystem.Spawn(this, owner, def, owner.HeadingQuantum, (int)Tick);
             }
 
             // heal 通道: 瞬发（ac≤2）直回；HoT（每Ns脉冲）挂通道
-            if (def.HealAmountQ > 0 && exec.CurrentOffset == def.StartupTicks)
+            if (def.HealAmountQ > 0 && exec.CurrentOffset == exec.EffectiveStartup)
             {
                 if (def.HealPulseIntervalTicks > 0)
                 {
@@ -634,7 +668,7 @@ public sealed partial class SimWorld
             }
 
             // 召唤（summon 技: 召唤位资源槽消费 + UnitSpec 数据化出生）
-            if ((def.IsSummon || def.DeployKind != DeployKind.None) && exec.CurrentOffset == def.StartupTicks && !def.IsProjectile)
+            if ((def.IsSummon || def.DeployKind != DeployKind.None) && exec.CurrentOffset == exec.EffectiveStartup && !def.IsProjectile)
             {
                 var kind = SimWorld.ResourceSlotKind.Summon;
                 int slot = (int)kind;
@@ -679,14 +713,14 @@ public sealed partial class SimWorld
             }
 
             // 抓取投技结算（GDD §7.2: 抓取后有专属投技演出——执行结束帧投出）
-            if (def.IsGrab && !exec.Terminated && exec.CurrentOffset >= def.StartupTicks + def.ActiveTicks)
+            if (def.IsGrab && !exec.Terminated && exec.CurrentOffset >= exec.EffectiveStartup + def.ActiveTicks)
             {
                 ResolveGrabThrow(exec, def, owner);
             }
 
             // 潜行/反射姿态的 Fighter 状态域投影（每 Tick 刷新——快照携带）
             if (def.IsStealth && exec.InActive) owner.Hidden = true;
-            if (def.IsReflect && exec.InActive) owner.ReflectTicks = def.StartupTicks + def.ActiveTicks - exec.CurrentOffset;
+            if (def.IsReflect && exec.InActive) owner.ReflectTicks = exec.EffectiveStartup + def.ActiveTicks - exec.CurrentOffset;
 
             // 结束（hold 姿态不自然结束——由取消/切换释放；其余恢复完毕即结束）
             if (!def.IsHold && exec.CurrentOffset >= exec.TotalTicks)
@@ -703,7 +737,7 @@ public sealed partial class SimWorld
     private void SpawnSegmentHitbox(SkillExecution exec, SkillRuntimeData def, FighterStateData owner, int segment)
     {
         if (def.Geo.Kind == GeoKind.None) return;
-        var (start, end) = SkillTimeline.SegmentWindow(def, segment);
+        var (start, end) = SkillTimeline.SegmentWindow(def, segment, exec.EffectiveStartup);
         var hb = new ActiveHitbox
         {
             Uid = _nextHitboxUid++,
@@ -729,21 +763,27 @@ public sealed partial class SimWorld
             // 空技能 = 暴露破绽（GDD §4.4）——Whiff 事件（取消资格缺失的可观测形式）
             Events.Emit(new SimEvent { Kind = EventKind.Whiff, AttackerId = owner.Id, SkillId = exec.SkillRuntimeId, ReasonByte = (byte)WhiffReason.Range });
         }
+        // 最近一次完成施放——SBL 波动共鸣「不同波动剑连放」判定域（与 TerminateExecutionById 同律）
+        if (exec.Def is { } doneDef && !doneDef.Type.StartsWith("basic"))
+            owner.LastCastSkillUid = doneDef.RuntimeId;
         owner.State = FighterState.Normal;
         owner.ActiveSkillUid = 0;
         Events.Emit(new SimEvent { Kind = EventKind.ActEnded, AttackerId = owner.Id, SkillId = exec.SkillRuntimeId });
     }
 
-    private void TerminateExecution(SkillExecution exec, bool cancelled) =>
-        TerminateExecutionById(exec.Uid, cancelled);
+    private void TerminateExecution(SkillExecution exec, bool cancelled, bool keepStealth = false) =>
+        TerminateExecutionById(exec.Uid, cancelled, keepStealth: keepStealth);
 
     /// 终止执行（取消/打断/破盾）。抓取执行终止 → 释放被擒者（无投技结算）。
-    internal void TerminateExecutionById(int uid, bool cancelled, bool interrupted = false)
+    internal void TerminateExecutionById(int uid, bool cancelled, bool interrupted = false, bool keepStealth = false)
     {
         var exec = GetExecution(uid);
         if (exec is null) return;
         var owner = GetFighter(exec.OwnerId);
         exec.Terminated = true;
+        // 最近一次完成施放（自然结束/取消/打断统一在此）——SBL 波动共鸣「不同波动剑连放」判定域
+        if (owner is not null && exec.Def is { } doneDef && !doneDef.Type.StartsWith("basic"))
+            owner.LastCastSkillUid = doneDef.RuntimeId;
         if (owner is not null && owner.ActiveSkillUid == exec.Uid)
         {
             if (owner.State == FighterState.Act) owner.State = FighterState.Normal;   // 打断路径: 状态已属受击
@@ -754,7 +794,8 @@ public sealed partial class SimWorld
             var stOwner = GetFighter(exec.OwnerId);
             if (stOwner is not null)
             {
-                if (def2.IsStealth && stOwner.Hidden)
+                // keepStealth: 陷阱精通——潜行被陷阱施放替换时隐身不解除（GDD §14.17）
+                if (def2.IsStealth && stOwner.Hidden && !keepStealth)
                 {
                     stOwner.Hidden = false;
                     Events.Emit(new SimEvent { Kind = EventKind.StealthBroken, VictimId = stOwner.Id });
@@ -1197,6 +1238,23 @@ public sealed partial class SimWorld
             if (f.ReflectTicks > 0) f.ReflectTicks--;
             if (f.BuffAtkPctTicks > 0 && --f.BuffAtkPctTicks == 0) f.BuffAtkPctQ = 0;
             if (f.BuffDefPctTicks > 0 && --f.BuffDefPctTicks == 0) f.BuffDefPctQ = 0;
+            // 自伤脉冲（嗜血系: −P%/s ×HpMax，每 60T 一脉冲——HoT 脉冲同律；自伤不可致死钳 1 HP，DDQ-B4-5）
+            if (f.BuffDrainHpPctTicks > 0)
+            {
+                int t = --f.BuffDrainHpPctTicks;
+                if (t % 60 == 0)
+                {
+                    long drain = DeterministicMath.MulShift(f.HpMax, f.BuffDrainHpPctQ);
+                    long real = Math.Min(f.Hp - 1, drain);
+                    if (real > 0)
+                    {
+                        f.Hp -= real;
+                        Events.Emit(new SimEvent { Kind = EventKind.DrainPulse, AttackerId = f.Id, VictimId = f.Id, DamageRaw = real });
+                    }
+                    if (t == 0) f.BuffDrainHpPctQ = 0;
+                }
+            }
+            if (f.LifestealTicks > 0 && --f.LifestealTicks == 0) f.LifestealPctQ = 0;
             TickHealChannel(f);
 
             // MP 回复（20/s 连续量——分数累积，ADR-0003 §1）

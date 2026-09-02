@@ -38,7 +38,7 @@ public sealed class BerBloodAwakening : ISignature
         // Review 项#3: 阈值基准 = 权威 HpMax 状态域（非签名内硬编码 10000）
         long pct = f.Hp * 100 / Math.Max(1, f.HpMax);
         long buff = pct < 15 ? 15 : pct < 30 ? 10 : pct < 50 ? 5 : 0;
-        if (buff > 0)
+        if (buff > 0 && f.BuffAtkPctTicks <= 2)   // 短周期槽空出时才写入——不踩长周期自增益（如嗜血 ATK+20%）
         {
             f.BuffAtkPctQ = DeterministicMath.DivRoundHalfEven(buff * Fixed.ONE, 100);
             f.BuffAtkPctTicks = 2;   // 每 Tick 刷新（持久 while 阈值成立）
@@ -59,7 +59,7 @@ public sealed class AsnAssassination : ISignature
 
     public void OnEvent(ISimContext ctx, in SimEvent e) { }
 
-    public long ModifyDamage(DamageModStage stage, ISimContext ctx, int attackerId, int victimId)
+    public long ModifyDamage(DamageModStage stage, ISimContext ctx, int attackerId, int victimId, ushort skillId)
     {
         return stage == DamageModStage.BackstabBonus
             ? DeterministicMath.DivRoundHalfEven(120 * Fixed.ONE, 100)   // 追加 ×1.2

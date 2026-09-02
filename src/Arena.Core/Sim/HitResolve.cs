@@ -122,9 +122,13 @@ public static class HitResolve
         {
             dmg = DeterministicMath.MulShift(dmg, Calc.DeterministicTables.Modifiers.BackstabX120);
             // 签名修正乘区（ASN_PAS_001 暗杀艺术: 背击追加 ×1.2 → 合计 ×1.44）
-            var sigMod = w.GetDamageModifier(DamageModStage.BackstabBonus, atk, vic);
+            var sigMod = w.GetDamageModifier(DamageModStage.BackstabBonus, atk, vic, def.RuntimeId);
             if (sigMod != Fixed.ONE) dmg = DeterministicMath.MulShift(dmg, sigMod);
         }
+
+        // ---- 职业被动乘区（签名 SignaturePassive——SBL 杀意波动: 波动系伤害 +4%/档） ----
+        var passiveMod = w.GetDamageModifier(DamageModStage.SignaturePassive, atk, vic, def.RuntimeId);
+        if (passiveMod != Fixed.ONE) dmg = DeterministicMath.MulShift(dmg, passiveMod);
 
         // ---- 沉睡觉醒（GDD §7.3: 受击即醒，醒来那一击 +30%） ----
         bool sleepWakeup = vic.Statuses[(int)StatusKind.Sleep].Active;
@@ -164,7 +168,7 @@ public static class HitResolve
             {
                 // 完美格挡（§6.3: 姿态生效后 6f 内被近战命中 + 0.5s 间隔）
                 bool melee = !def.IsProjectile;
-                if (melee && guardExec.CurrentOffset - guardExec.Def.StartupTicks <= RuntimeConstants.PARRY_WINDOW_TICKS
+                if (melee && guardExec.CurrentOffset - guardExec.EffectiveStartup <= RuntimeConstants.PARRY_WINDOW_TICKS
                     && vic.ParryCdTicks == 0)
                 {
                     vic.ParryCdTicks = RuntimeConstants.PARRY_INTERVAL_TICKS;
@@ -206,6 +210,13 @@ public static class HitResolve
 
         // ---- HP 结算 ----
         vic.Hp -= dmg;
+
+        // ---- 正嗜血（GDD §14.6: 嗜血奋战——吸取对手损失生命的 P% 转为自身回复） ----
+        if (atk.LifestealTicks > 0 && atk.LifestealPctQ > 0 && dmg > 0)
+        {
+            long heal = DeterministicMath.MulShift(dmg, atk.LifestealPctQ);
+            if (heal > 0) w.ApplyHealSelf(atk, heal);
+        }
 
         // ---- 霸体判定（GDD §6.4） ----
         bool armored = false;
@@ -251,8 +262,8 @@ public static class HitResolve
             ApplyReaction(ctx, hitNumber, airMod);
         }
 
-        // ---- 技能中断（GDD §4.3: 前摇/生效被命中（无霸体）→ 技能中断，MP 不退） ----
-        if (vic.ActiveSkillUid != 0)
+        // ---- 技能中断（GDD §4.3: 前摇/生效被命中（无霸体）→ 技能中断，MP 不退；霸体不中断） ----
+        if (!armored && vic.ActiveSkillUid != 0)
             w.TerminateExecutionById(vic.ActiveSkillUid, cancelled: false, interrupted: true);
 
         // ---- 沉睡受击即醒 ----
@@ -347,7 +358,7 @@ public static class HitResolve
     {
         var def = exec.Def!;
         if (def.Invuln is { } inv && inv.Covers(exec.CurrentOffset)) return true;
-        return def.Invuln is null && exec.CurrentOffset >= def.StartupTicks && exec.CurrentOffset < def.StartupTicks + def.ActiveTicks;
+        return def.Invuln is null && exec.CurrentOffset >= exec.EffectiveStartup && exec.CurrentOffset < exec.EffectiveStartup + def.ActiveTicks;
     }
 
     /// 反击成功（GDD §6.6: 攻击者强硬直 20f + 反击者免费行动；奖励封顶不含直接伤害）
