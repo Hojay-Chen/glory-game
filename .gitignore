@@ -1,0 +1,11 @@
+# .NET build outputs
+bin/
+obj/
+
+# Godot generated cache
+.godot/
+
+# IDE
+.idea/
+.vs/
+*.user
