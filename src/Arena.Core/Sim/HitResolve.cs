@@ -69,6 +69,13 @@ public static class HitResolve
         if (def.IsGrab)
         {
             if (vic.GrabbedBy >= 0) return;   // 已被擒——不可重复抓取（§2.4.4）
+            // MF-1: 背身角度门控（数据: 需背身120°——命中来源须在目标背面 cone 内）
+            if (def.RequireBehindDeg > 0 &&
+                FacingRules.IsFromFront(vic, atk.PosX.Raw, atk.PosZ.Raw, 180 - def.RequireBehindDeg))
+            {
+                EmitWhiff(w, atk.Id, def.RuntimeId, WhiffReason.Angle);
+                return;
+            }
             vic.GrabbedBy = atk.Id;
             vic.GrabThrowSkill = def.RuntimeId;
             vic.State = FighterState.Grabbed;

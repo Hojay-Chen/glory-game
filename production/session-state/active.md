@@ -44,9 +44,18 @@
 - **测试 113/113**（+Phase6 探针 7 + Pilot 10）；事件协议 +UnitSpawned/UnitDied/StealthBroken/Reflected；Snapshot +Hidden/ReflectTicks/ResourceSlots/WeaponId
 - **Fidelity Gap 登记**: MF-1 背身抓取角度门控 / MF-2 deploy 放置+耐久 / MF-3 可控弹特殊形态(签名) / MF-4 ally 弹道 / MF-5 heal 记法 / MF-6 时序敏感测试编排
 
+## Phase 7 第一批迁移 + Combat Fidelity Review v2（2026-09-02，本次）
+
+- **MF-1 修复**: RequireBehindDeg 数据化（NJA_T3_001 需背身120°）+ Whiff(Angle) 回归
+- **执行矩阵**（B1 测试）: 469 可施法技逐技独立世界执行——hit 354 / whiff 81（几何合法）/ projectile 17 / non-damaging 16 / **EXCEPTION 0 / NO_CAST 0 / silent 2→0**
+- **数量→复杂度转化**: 24 职业全部 ≥60% 连接率（中位 79%；GRP/QIM/SBL 100%）；职业特征机制在矩阵可见（SUM UnitSystem/THF 潜行/KNI 反射/QIM 可控弹/LAU 蓄力）
+- **当场修复**: WRK_T1_001 蓄力「13枚」误读 13s（ParseCharge s 后缀强制）/ GAN_T1_002 heal 通道缺失 → MF-7 登记
+- **Combat Fidelity Review v2**: combat-fidelity-review-v2.md——第一批稳定裁决，批次 2 可扩量（MF-2/4/5+7 小原语先行）
+- **测试 116/116**（+Batch1 矩阵 3: 全量执行/伤害近战专项/1500T 40+技循环双跑确定性）
+
 ## 待处理（下一阶段优先序）
 
-1. **487 技批量迁移启动**（Verdict A 有条件）: Routed 429 行 A→B→C/D 分批 + MF-1 角度门控随首批
+1. **批次 2 扩量**: MF-2 deploy / MF-4 ally / MF-5+7 heal 通道三个小原语先行 → Partial 54 行 + 剩余 Routed 行并行；C 类 60 技签名插件体按职业批次
 2. Partial 54 行随 UnitSystem(14)/Deploy(9)/签名可控语义(8)批次收口
 3. 数据裁定: GBL_T2_001 a200、冻结@P% 中文别名 2 行、OQ-2/OQ-13 既有 3 行、CC 审计 4 项 Design Decision、MF-5 heal 记法
 4. 规格歧义请设计确认: 软推挤范围（已按 GDD 解释）；Hitstop 归属（按 ADR-0009 表现层）

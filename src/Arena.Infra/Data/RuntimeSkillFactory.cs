@@ -114,6 +114,7 @@ public static class RuntimeSkillFactory
             SummonLifetimeTicks = ParseSummonLifetime(d.Special),
             SummonFlying = d.Special.Contains("飞行"),
             SummonTank = d.Special.Contains("坦克"),
+            RequireBehindDeg = ParseRequireBehind(d.Special),
             IsStealth = d.Special.Contains("完全隐身"),
             StealthSpeedPct = ParseStealthSpeed(d.Special),
             IsReflect = d.Special.Contains("反射") || d.Special.Contains("反弹")
@@ -394,7 +395,9 @@ public static class RuntimeSkillFactory
         var rest = special[(idx + 3)..];
         int end = 0;
         while (end < rest.Length && (char.IsDigit(rest[end]) || rest[end] == '.')) end++;
-        if (end == 0 || !double.TryParse(rest[..end], NumberStyles.Float, CultureInfo.InvariantCulture, out var sec))
+        // 必须显式 s 后缀: "蓄力:13枚" 是箭矢数量（WRK_T1_001），非 13 秒——无 s 即非时长蓄力
+        if (end == 0 || end >= rest.Length || rest[end] != 's'
+            || !double.TryParse(rest[..end], NumberStyles.Float, CultureInfo.InvariantCulture, out var sec))
             return null;
         int chargeTicks = (int)Math.Round(sec * RuntimeConstants.TICK_RATE, MidpointRounding.ToEven);
         long bonus = 0;
@@ -408,6 +411,17 @@ public static class RuntimeSkillFactory
                 bonus = Quantify(1.0 + pct / 100.0);
         }
         return (chargeTicks, bonus);
+    }
+
+    /// MF-1: 需背身 N°（数据: 需背身120°）
+    private static int ParseRequireBehind(string special)
+    {
+        var idx = special.IndexOf("需背身");
+        if (idx < 0) return 0;
+        var rest = special[(idx + 3)..];
+        int end = 0;
+        while (end < rest.Length && char.IsDigit(rest[end])) end++;
+        return end > 0 && int.TryParse(rest[..end], out var v) ? v : 0;
     }
 
     /// 召唤单位 HP（数据: HP900/HP1200；缺省 600 基线）

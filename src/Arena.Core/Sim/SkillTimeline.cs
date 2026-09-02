@@ -100,6 +100,7 @@ public sealed class SkillRuntimeData
     public int SummonLifetimeTicks { get; init; } // 存在期（存在90s/60s）
     public bool SummonFlying { get; init; }
     public bool SummonTank { get; init; }
+    public int RequireBehindDeg { get; init; }    // MF-1: 需背身 N°（NJA_T3_001 背身缚首术 120°）
 }
 
 /// 格挡姿态定义（GDD §6.2/§6.3；盾值/减伤率来自技能 special 数据）
