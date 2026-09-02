@@ -89,7 +89,10 @@ public static class HitResolve
 
         // ---- 伤害公式（GDD §2.5.1） ----
         long dmg = def.DamageMultQ;                                        // Q32.16 倍率
-        dmg = DeterministicMath.MulShift(dmg, atk.Atk);                    // × ATK → 点数域
+        long effAtk = atk.Atk;
+        if (atk.BuffAtkPctTicks > 0 && atk.BuffAtkPctQ > 0)
+            effAtk += DeterministicMath.MulShift(atk.Atk, atk.BuffAtkPctQ);   // 阵内 ATK+5% 增益乘区
+        dmg = DeterministicMath.MulShift(dmg, effAtk);                    // × ATK → 点数域
         long defenseFactor = DeterministicMath.DivRoundHalfEven(
             RuntimeConstants.DEFENSE_CONST * Fixed.ONE,
             RuntimeConstants.DEFENSE_CONST + vic.Def);                     // D = 1200/(1200+DEF) Q32.16

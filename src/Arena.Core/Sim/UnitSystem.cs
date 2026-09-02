@@ -3,25 +3,29 @@ using System.Collections.Generic;
 using Arena.Core.Calc;
 using Arena.Core.Collision;
 // PRODUCTION - Arena.Core
-// Sim.Units——召唤兽/机械单位/分身实体（pre-adr §3-1 UnitSystem；GDD §14.12/§14.16）。
+// Sim.Units——召唤兽/机械单位/分身/部署物实体（pre-adr §3-1 UnitSystem）。
 // 确定性纪律: UnitId 创建序递增（随 Snapshot）；同 Tick 处理按 Uid 升序；AI 目标选择
-// 效用相同 → 按 FighterId 升序破平（pre-adr §3-1「效用分相同→按 UnitId 序」）。
-// 单位攻击走 HitResolve（与技能命中同一裁决链）；移动走 IntegrateMove 统一路径。
+// 效用相同 → 按 FighterId 升序破平。单位攻击走 HitResolve（同一裁决链）；移动走 IntegrateMove。
 namespace Arena.Core.Sim;
 
-/// 单位出生规格（召唤技 RuntimeDef 派生——禁止按 skillId 分支：字段全部来自数据）
+/// 单位出生规格（召唤/部署技 RuntimeDef 派生——禁止按 skillId 分支：字段全部来自数据）
 public sealed class UnitSpec
 {
-    public required string Label { get; init; }          // 诊断名（哥布林/雷精灵…）
-    public required long Hp { get; init; }               // 特殊文本 HP900/HP1200 或基线
-    public required long MoveSpeedMps { get; init; }     // 移速（WB 基线 4.5，飞行 5.5）
-    public required long AttackRange { get; init; }      // 攻击距离（近战 1.2 / 投掷 8）
-    public required int AttackCdTicks { get; init; }     // 攻击间隔（WB: 2s 基线）
-    public required int LifetimeTicks { get; init; }     // 存在期（存在90s/60s 数据化）
-    public required bool Flying { get; init; }           // 飞行（unit:飞行）
-    public required bool Decoy { get; init; }            // 嘲讽/假身单位（不攻击）
-    public required bool Stationary { get; init; }       // 不可移动（魔界之花）
-    public required SkillRuntimeData AttackDef { get; init; }  // 攻击 = 召唤技自身 def（伤害/硬直/状态）
+    public required string Label { get; init; }
+    public required long Hp { get; init; }
+    public required long MoveSpeedMps { get; init; }
+    public required long AttackRange { get; init; }
+    public required int AttackCdTicks { get; init; }
+    public required int LifetimeTicks { get; init; }
+    public required bool Flying { get; init; }
+    public required bool Decoy { get; init; }
+    public required bool Stationary { get; init; }
+    public required SkillRuntimeData AttackDef { get; init; }
+    // ---- Deploy 载荷（Phase 7 Batch 2——统一实体语义） ----
+    public DeployKind DeployKind { get; init; }
+    public long TriggerRadius { get; init; }
+    public long AuraRadius { get; init; }
+    public int AuraPulseIntervalTicks { get; init; }
 }
 
 public sealed class UnitState
@@ -37,12 +41,13 @@ public sealed class UnitState
     public int AttackCdRemaining { get; set; }
     public int LifetimeRemaining { get; set; }
     public bool Expired { get; set; }
+    public int AuraPulseTimer { get; set; }
+    public bool Triggered { get; set; }
     public UnitSpec Spec { get; set; } = null!;
 }
 
 public static class UnitSystem
 {
-    /// 召唤（owner 前方 1.5m；召唤位容量由 ResourceSlots 消费）
     public static int Spawn(SimWorld w, FighterStateData owner, UnitSpec spec, int tick)
     {
         DeterministicMath.CordicCosSin(owner.HeadingQuantum, out var fx, out var fz);
@@ -80,12 +85,11 @@ public static class UnitSystem
 
     private static long FixedM(decimal m) => (long)Math.Round(m * 65536m, MidpointRounding.ToEven);
 
-    /// 每 Tick 推进（ADR-0001 §3.2 ② 单位 AI，Uid 升序）：寿命 → 攻击冷却 → 目标选择 → 移动/攻击
+    /// 每 Tick 推进（ADR-0001 §3.2 ② 单位 AI，Uid 升序）
     public static void Advance(SimWorld w, UnitState u, int tick, IReadOnlyList<FighterStateData> fighters)
     {
         if (u.Expired) return;
 
-        // 寿命（存在期数据化）
         if (--u.LifetimeRemaining <= 0)
         {
             Destroy(w, u, UnitEndReason.Lifetime);
@@ -93,16 +97,24 @@ public static class UnitSystem
         }
 
         var spec = u.Spec;
-        if (spec.Decoy) return;   // 嘲讽/假身单位: 存在即语义，无 AI
 
-        // 目标选择: 最近可见敌方 Fighter（效用=距离；相同距离按 FighterId 升序破平——确定性）
+        // Deploy 载荷推进（陷阱触发 / 光环脉冲 / 静置存在）
+        if (spec.DeployKind != DeployKind.None)
+        {
+            AdvanceDeploy(w, u, spec, fighters);
+            return;
+        }
+
+        if (spec.Decoy) return;
+
+        // 目标选择: 最近可见敌方 Fighter（效用=距离；同距按 FighterId 升序破平）
         FighterStateData? target = null;
         long bestDistSq = long.MaxValue; int bestId = int.MaxValue;
         foreach (var f in fighters)
         {
             if (f.State == FighterState.Dead || f.GrabbedBy >= 0) continue;
             if (w.SameTeam(u.Team, f.Id)) continue;
-            if (f.Hidden) continue;   // Visibility: 潜行不可被单位锁定
+            if (f.Hidden) continue;
             long dx = f.PosX.Raw - u.PosX.Raw, dz = f.PosZ.Raw - u.PosZ.Raw;
             long d2 = dx * dx + dz * dz;
             if (d2 < bestDistSq || (d2 == bestDistSq && f.Id < bestId))
@@ -113,26 +125,23 @@ public static class UnitSystem
         if (target is null) return;
 
         long dist = DeterministicMath.ISqrt(bestDistSq);
-        // 攻击（冷却就绪 + 射程内）: 走 HitResolve 同一裁决链
         if (u.AttackCdRemaining <= 0 && dist <= spec.AttackRange)
         {
             u.AttackCdRemaining = spec.AttackCdTicks;
             w.PendingContacts.Add(new PendingContact
             {
                 ToiRaw = 0, LayerRank = 2,
-                AttackerId = u.OwnerFighterId,       // 伤害归属召唤者面板（GDD 召唤兽面板挂主人）
+                AttackerId = u.OwnerFighterId,
                 DefenderId = target.Id,
                 HitboxUid = u.Uid, Region = (byte)HitRegion.Torso, Kind = (byte)ContactKind.CombatHit,
                 SkillRuntimeId = spec.AttackDef.RuntimeId, SegmentIndex = 0,
                 HitPointX = target.PosX.Raw, HitPointY = target.PosY.Raw + RuntimeConstants.TORSO_TOP / 2,
                 HitPointZ = target.PosZ.Raw,
-                NormalX = 0, NormalZ = 0,
-                FromUnitUid = u.Uid,
+                NormalX = 0, NormalZ = 0, FromUnitUid = u.Uid,
             });
             return;
         }
 
-        // 移动（Stationary 单位不动；IntegrateMove 统一路径——地形/边界一致）
         if (u.AttackCdRemaining > 0) u.AttackCdRemaining--;
         if (spec.Stationary || dist <= spec.AttackRange) return;
         DeterministicMath.Normalize(target.PosX.Raw - u.PosX.Raw, target.PosZ.Raw - u.PosZ.Raw, out var nx, out var nz);
@@ -145,10 +154,75 @@ public static class UnitSystem
         u.HeadingQuantum = HeadingFromDirection(nx, nz);
     }
 
-    /// 单位朝向 = 移动方向（DirIndex 量化——受身判定同源粒度）
+    /// Deploy 载荷推进（陷阱单次触发 / 光环周期脉冲 / 静置存在语义）
+    private static void AdvanceDeploy(SimWorld w, UnitState u, UnitSpec spec, IReadOnlyList<FighterStateData> fighters)
+    {
+        // 陷阱: 敌方进入触发半径 → 单次爆发 → 自毁
+        if (spec.DeployKind == DeployKind.Trap)
+        {
+            if (u.Triggered) return;
+            foreach (var f in fighters)
+            {
+                if (f.State == FighterState.Dead || f.Hidden || w.SameTeam(u.Team, f.Id) || f.GrabbedBy >= 0) continue;
+                long dx = f.PosX.Raw - u.PosX.Raw, dz = f.PosZ.Raw - u.PosZ.Raw;
+                long rr = spec.TriggerRadius + RuntimeConstants.FIGHTER_RADIUS;
+                if (dx * dx + dz * dz > rr * rr) continue;
+                u.Triggered = true;
+                w.PendingContacts.Add(new PendingContact
+                {
+                    ToiRaw = 0, LayerRank = 2, AttackerId = u.OwnerFighterId, DefenderId = f.Id,
+                    HitboxUid = u.Uid, Region = (byte)HitRegion.Torso, Kind = (byte)ContactKind.CombatHit,
+                    SkillRuntimeId = spec.AttackDef.RuntimeId, SegmentIndex = 0,
+                    HitPointX = f.PosX.Raw, HitPointY = f.PosY.Raw + RuntimeConstants.TORSO_TOP / 2, HitPointZ = f.PosZ.Raw,
+                    NormalX = 0, NormalZ = 0, FromUnitUid = u.Uid,
+                });
+                Destroy(w, u, UnitEndReason.Recall);
+                return;
+            }
+            return;
+        }
+
+        // 光环: 周期脉冲（敌伤/己益由 def 数据域决定: 无伤害无状态 = 己方增益阵）
+        if (spec.DeployKind == DeployKind.Aura)
+        {
+            if (--u.AuraPulseTimer > 0) return;
+            u.AuraPulseTimer = spec.AuraPulseIntervalTicks;
+            bool buffAura = spec.AttackDef.DamageMultQ == 0 && spec.AttackDef.Statuses.Length == 0;
+            foreach (var f in fighters)
+            {
+                if (f.State == FighterState.Dead || f.Hidden || f.GrabbedBy >= 0) continue;
+                bool ally = w.SameTeam(u.Team, f.Id);
+                if (buffAura != ally) continue;
+                long dx = f.PosX.Raw - u.PosX.Raw, dz = f.PosZ.Raw - u.PosZ.Raw;
+                long rr = spec.AuraRadius + RuntimeConstants.FIGHTER_RADIUS;
+                if (dx * dx + dz * dz > rr * rr) continue;
+                if (buffAura)
+                {
+                    f.BuffAtkPctTicks = u.LifetimeRemaining;
+                    f.BuffAtkPctQ = FixedM(0.05m);   // 数据: 刀魂守护阵内 ATK+5%
+                    w.Events.Emit(new SimEvent { Kind = EventKind.BuffApplied, VictimId = f.Id, SkillId = spec.AttackDef.RuntimeId, ValueRaw = f.BuffAtkPctQ });
+                }
+                else if (spec.AttackDef.DamageMultQ > 0 || spec.AttackDef.Statuses.Length > 0)
+                {
+                    w.PendingContacts.Add(new PendingContact
+                    {
+                        ToiRaw = 0, LayerRank = 2, AttackerId = u.OwnerFighterId, DefenderId = f.Id,
+                        HitboxUid = u.Uid, Region = (byte)HitRegion.Torso, Kind = (byte)ContactKind.CombatHit,
+                        SkillRuntimeId = spec.AttackDef.RuntimeId, SegmentIndex = 0,
+                        HitPointX = f.PosX.Raw, HitPointY = f.PosY.Raw + RuntimeConstants.TORSO_TOP / 2, HitPointZ = f.PosZ.Raw,
+                        NormalX = 0, NormalZ = 0, FromUnitUid = u.Uid,
+                    });
+                }
+            }
+            return;
+        }
+
+        // Wall/Scout/Mirror/Taunt: 静置存在语义（镜面反射由弹体 ReflectTicks 路径消费——登记）
+    }
+
+    /// 单位朝向 = 移动方向（8 向 DirIndex 量化）
     public static long HeadingFromDirection(long nx, long nz)
     {
-        // 归一化向量的方向量子（SPEC-0001: 0=+Z 顺时针）——纯整数 atan2 量化（64 向，1.4° 粒度）
         long h = HitResolve.DirIndexFromVel(nx, nz);
         return h * (65536 / 8);
     }

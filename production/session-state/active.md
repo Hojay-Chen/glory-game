@@ -53,9 +53,16 @@
 - **Combat Fidelity Review v2**: combat-fidelity-review-v2.md——第一批稳定裁决，批次 2 可扩量（MF-2/4/5+7 小原语先行）
 - **测试 116/116**（+Batch1 矩阵 3: 全量执行/伤害近战专项/1500T 40+技循环双跑确定性）
 
-## 待处理（下一阶段优先序）
+## Phase 7 Batch 2 Deploy/Heal/交互矩阵（2026-09-02，本次）
 
-1. **批次 2 扩量**: MF-2 deploy / MF-4 ally / MF-5+7 heal 通道三个小原语先行 → Partial 54 行 + 剩余 Routed 行并行；C 类 60 技签名插件体按职业批次
+- **Deploy 原语**（统一实体载荷语义，UnitSpec 扩展）: 陷阱（触发半径+单次爆发+自毁）/ 光环（周期脉冲——敌伤/己益由 def 数据域决定）/ Wall/Scout/Mirror/Taunt 静置语义；deploy/wall/zone hitbox 全部路由
+- **Heal 通道**: PRI 瞬发（直量 800/900/1400/1600/2400）+ GAN HoT（每3s脉冲×6=1200）+ 回蓝（30%蓝→maxMP 比例）+ HP 上限钳制
+- **交互矩阵 10 项（D01–D08/IX01–IX10）**: 陷阱触发/主人豁免/光环脉冲/半径退出/增益阵（ATK+5% 阵内己方+敌方豁免+到期清零）/HoT 上限/瞬发直量/burn 穿透格挡(DotApplied 证明)/冰冻增伤+1.1/击退撞墙+poison 并存/反击先手打断抓取/光环不命中潜行/召唤不锁定潜行/冰冻灼烧互斥/破防→后续全额/全交互混合 1000T 双跑逐位一致
+- **DoT 双量化修复**: StatusSystem per-Tick = RHE(PotencyQ/60)（PotencyQ 已是 Q32.16 每秒伤害——原 ×ONE 双量化使 DoT 瞬间致死）
+- **测试 134/134**（+Batch2 探针 18: Deploy 5 + Heal 3 + 交互 10）；事件协议 +BuffApplied/BuffExpired/Healed；Snapshot +BuffAtkPct/HealPulse 域
+- **数据歧义进 DDQ**: PRI_T3_005 回蓝比例（30%蓝 maxMP 基线=1000 待确认）/ GAN 恢复量 dmg=200 直接 HP 判读 / ally:单体 目标选择来源（无锁定系统 v1 自体）
+
+## 待处理（下一阶段优先序）
 2. Partial 54 行随 UnitSystem(14)/Deploy(9)/签名可控语义(8)批次收口
 3. 数据裁定: GBL_T2_001 a200、冻结@P% 中文别名 2 行、OQ-2/OQ-13 既有 3 行、CC 审计 4 项 Design Decision、MF-5 heal 记法
 4. 规格歧义请设计确认: 软推挤范围（已按 GDD 解释）；Hitstop 归属（按 ADR-0009 表现层）

@@ -217,6 +217,31 @@ public sealed partial class SimWorld
 
     private static long FixedM2(decimal m) => (long)Math.Round(m * Fixed.ONE, MidpointRounding.ToEven);
 
+    /// heal 通道结算（直接量/HoT 脉冲；HP/MP 双目标域）
+    private void ApplyHeal(FighterStateData f, long amountQ, bool isMana)
+    {
+        if (isMana)
+        {
+            var mp = DeterministicMath.MulShift(amountQ, 1000);   // 比例 × maxMP
+            f.Mp = Math.Min(1000, f.Mp + mp);
+        }
+        else
+        {
+            f.Hp = Math.Min(10000, f.Hp + amountQ);
+        }
+        Events.Emit(new SimEvent { Kind = EventKind.Healed, VictimId = f.Id, DamageRaw = amountQ });
+    }
+
+    private void TickHealChannel(FighterStateData f)
+    {
+        if (f.HealPulseRemaining <= 0 || f.HealPulseTimer <= 0) return;
+        if (--f.HealPulseTimer > 0) return;
+        ApplyHeal(f, f.HealPulseAmountQ, f.HealIsMana);
+        f.HealPulseRemaining--;
+        f.HealPulseTimer = f.HealPulseInterval;
+        if (f.HealPulseRemaining <= 0) f.HealPulseAmountQ = 0;
+    }
+
     /// Steer（SPEC-0001: controlled 生效窗内朝向饱和步进，≤120°/s）
     private void TrySteer(FighterStateData f, Command cmd)
     {
@@ -590,8 +615,25 @@ public sealed partial class SimWorld
                 ProjectileSystem.Spawn(this, owner, def, owner.HeadingQuantum, (int)Tick);
             }
 
+            // heal 通道: 瞬发（ac≤2）直回；HoT（每Ns脉冲）挂通道
+            if (def.HealAmountQ > 0 && exec.CurrentOffset == def.StartupTicks)
+            {
+                if (def.HealPulseIntervalTicks > 0)
+                {
+                    owner.HealPulseAmountQ = def.HealAmountQ;
+                    owner.HealPulseRemaining = def.HealPulseCount;
+                    owner.HealPulseTimer = (int)def.HealPulseIntervalTicks;
+                    owner.HealPulseInterval = (int)def.HealPulseIntervalTicks;
+                    owner.HealIsMana = def.HealIsMana;
+                }
+                else
+                {
+                    ApplyHeal(owner, def.HealAmountQ, def.HealIsMana);
+                }
+            }
+
             // 召唤（summon 技: 召唤位资源槽消费 + UnitSpec 数据化出生）
-            if (def.IsSummon && exec.CurrentOffset == def.StartupTicks && !def.IsProjectile)
+            if ((def.IsSummon || def.DeployKind != DeployKind.None) && exec.CurrentOffset == def.StartupTicks && !def.IsProjectile)
             {
                 var kind = SimWorld.ResourceSlotKind.Summon;
                 int slot = (int)kind;
@@ -612,18 +654,24 @@ public sealed partial class SimWorld
                 }
                 if (owner.ResourceCounts[slot] < owner.ResourceCaps[slot] || owner.ResourceCaps[slot] == 0)
                 {
+                    // Deploy 变体（deploy/wall/zone hitbox → 载荷实体; unit → 召唤兽）
+                    bool isDeploy = def.DeployKind != DeployKind.None;
                     UnitSystem.Spawn(this, owner, new UnitSpec
                     {
                         Label = def.SkillId,
-                        Hp = def.SummonHp,
+                        Hp = isDeploy && def.DeployHp > 0 ? def.DeployHp : def.SummonHp,
                         MoveSpeedMps = FixedM2(4.5m),
                         AttackRange = FixedM2(8m),      // 投掷基线（哥布林扔石头）
                         AttackCdTicks = 2 * (int)RuntimeConstants.TICK_RATE,
                         LifetimeTicks = def.SummonLifetimeTicks,
                         Flying = def.SummonFlying,
                         Decoy = false,
-                        Stationary = def.SkillId.Contains("魔界之花"),
+                        Stationary = isDeploy || def.SkillId.Contains("魔界之花"),
                         AttackDef = def,
+                        DeployKind = def.DeployKind,
+                        TriggerRadius = def.TriggerRadius,
+                        AuraRadius = def.AuraRadius > 0 ? def.AuraRadius : FixedM2(4m),
+                        AuraPulseIntervalTicks = def.AuraPulseIntervalTicks,
                     }, (int)Tick);
                     owner.ResourceCounts[slot]++;
                 }
@@ -1146,6 +1194,8 @@ public sealed partial class SimWorld
             if (f.ParryCdTicks > 0) f.ParryCdTicks--;
             if (f.CounterWindowTicks > 0) f.CounterWindowTicks--;
             if (f.ReflectTicks > 0) f.ReflectTicks--;
+            if (f.BuffAtkPctTicks > 0 && --f.BuffAtkPctTicks == 0) f.BuffAtkPctQ = 0;
+            TickHealChannel(f);
 
             // MP 回复（20/s 连续量——分数累积，ADR-0003 §1）
             if (f.Mp < 1000)

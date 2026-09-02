@@ -69,6 +69,7 @@ public enum EventKind : byte
     GrabStarted = 25, GrabReleased = 26, Countered = 27,
     Interrupted = 28, FallLanded = 29,
     UnitSpawned = 30, UnitDied = 31, StealthBroken = 32, Reflected = 33,
+    BuffApplied = 34, BuffExpired = 35, Healed = 36,
 }
 
 /// Whiff 原因（ADR-0003 §3.2）
@@ -199,6 +200,17 @@ public sealed class FighterStateData
     // 法术反射（KNI 法术反射/WRK 魔镜: 窗口内 magic 弹体反弹）
     public int ReflectTicks { get; set; }
 
+    // Buff（GDD 阵内增益类: ATK+5% 等——数据驱动百分比+时限）
+    public long BuffAtkPctQ { get; set; }
+    public int BuffAtkPctTicks { get; set; }
+
+    // Heal 通道（GDD PRI 系/GAN 恢复术: 直接量/HoT 脉冲）
+    public long HealPulseAmountQ { get; set; }
+    public int HealPulseRemaining { get; set; }
+    public int HealPulseTimer { get; set; }
+    public int HealPulseInterval { get; set; }
+    public bool HealIsMana { get; set; }
+
     // 职业资源槽（GDD §9.3: 炫纹/弹匣/召唤位/部署位/舍命HP——定长槽位确定性纪律）
     public readonly long[] ResourceCounts = new long[8];
     public readonly long[] ResourceCaps = new long[8];
@@ -249,6 +261,9 @@ public sealed class FighterStateData
             GrabbedBy = GrabbedBy, GrabThrowSkill = GrabThrowSkill,
             RollTicksRemaining = RollTicksRemaining, RollDirIndex = RollDirIndex,
             RollInvulnArmed = RollInvulnArmed, PeakY = PeakY,
+            BuffAtkPctQ = BuffAtkPctQ, BuffAtkPctTicks = BuffAtkPctTicks,
+            HealPulseAmountQ = HealPulseAmountQ, HealPulseRemaining = HealPulseRemaining,
+            HealPulseTimer = HealPulseTimer, HealPulseInterval = HealPulseInterval, HealIsMana = HealIsMana,
             Stamina = Stamina, StaminaFrac = StaminaFrac,
         };
         foreach (var kv in Cooldowns) c.Cooldowns[kv.Key] = kv.Value;

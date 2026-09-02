@@ -101,7 +101,20 @@ public sealed class SkillRuntimeData
     public bool SummonFlying { get; init; }
     public bool SummonTank { get; init; }
     public int RequireBehindDeg { get; init; }    // MF-1: 需背身 N°（NJA_T3_001 背身缚首术 120°）
+    // ---- Phase 7 Batch 2: Deploy / Heal 通道（统一实体载荷语义） ----
+    public DeployKind DeployKind { get; init; }   // 部署变体（数据: 触发/悬浮/侦察/wall/zone）
+    public long DeployHp { get; init; }           // 部署物 HP（HP300/600HP/HP200/HP150）
+    public long TriggerRadius { get; init; }      // 陷阱触发半径（deploy:r1.5:触发）
+    public long AuraRadius { get; init; }         // 光环半径（zone:r4.0）
+    public int AuraPulseIntervalTicks { get; init; }  // 光环脉冲间隔（WB 基线 1s）
+    public long HealAmountQ { get; init; }        // heal 数值（PRI 系 damage_mult 列=直接 HP 量）
+    public bool HealIsMana { get; init; }         // 回蓝（PRI_T3_005 30%蓝）
+    public long HealPulseIntervalTicks { get; init; } // HoT 脉冲间隔（GAN 每3s → 180T）
+    public int HealPulseCount { get; init; }      // HoT 脉冲次数（18s/3s = 6）
 }
+
+/// 部署变体（GDD §14 数据推导——全部由 hitbox/special 文本结构决定，无 skillId 分支）
+public enum DeployKind : byte { None = 0, Trap = 1, Aura = 2, Wall = 3, Scout = 4, Mirror = 5, Taunt = 6 }
 
 /// 格挡姿态定义（GDD §6.2/§6.3；盾值/减伤率来自技能 special 数据）
 public sealed record GuardDef(

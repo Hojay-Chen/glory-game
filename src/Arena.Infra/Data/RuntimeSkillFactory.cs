@@ -115,6 +115,17 @@ public static class RuntimeSkillFactory
             SummonFlying = d.Special.Contains("飞行"),
             SummonTank = d.Special.Contains("坦克"),
             RequireBehindDeg = ParseRequireBehind(d.Special),
+            DeployKind = ParseDeployKind(d, hbRawKind),
+            DeployHp = ParseDeployHp(d.Special),
+            TriggerRadius = hbRawKind == "deploy" && d.HitboxRaw.Contains("触发") ? ParseRadiusArg(d.HitboxRaw, 1) : 0,
+            AuraRadius = hbRawKind == "zone" ? ParseRadiusArg(d.HitboxRaw, 1)
+                       : hbRawKind == "deploy" ? ParseRadiusArg(d.HitboxRaw, 1) : 0,
+            AuraPulseIntervalTicks = (int)RuntimeConstants.TICK_RATE,
+            HealAmountQ = ParseHealAmount(d),
+            HealIsMana = d.DamageMultRaw.Contains("蓝"),
+            HealPulseIntervalTicks = ParseHealPulse(d.Special),
+            HealPulseCount = ParseHealPulse(d.Special) > 0
+                ? (int)((Dec2(d.AcRaw) * RuntimeConstants.TICK_RATE) / Math.Max(1, ParseHealPulse(d.Special))) : 0,
             IsStealth = d.Special.Contains("完全隐身"),
             StealthSpeedPct = ParseStealthSpeed(d.Special),
             IsReflect = d.Special.Contains("反射") || d.Special.Contains("反弹")
@@ -411,6 +422,74 @@ public static class RuntimeSkillFactory
                 bonus = Quantify(1.0 + pct / 100.0);
         }
         return (chargeTicks, bonus);
+    }
+
+    private static decimal Dec2(string s) =>
+        decimal.TryParse(s.TrimEnd('s'), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : 0;
+
+    /// deploy/zone 半径参数（hb 第 k 段 rN）
+    private static long ParseRadiusArg(string hitbox, int seg)
+    {
+        var parts = hitbox.Split(':');
+        for (int i = 1; i < parts.Length; i++)
+            if (parts[i].StartsWith("r") && parts[i].Length > 1 && char.IsDigit(parts[i][1]))
+                return Quantify(decimal.Parse(parts[i][1..].TrimEnd('m'), NumberStyles.Float, CultureInfo.InvariantCulture));
+        return 0;
+    }
+
+    /// 部署变体（hitbox/special 文本结构决定——无 skillId 分支）
+    private static DeployKind ParseDeployKind(SkillDef d, string hbKind)
+    {
+        if (hbKind == "wall") return DeployKind.Wall;
+        if (d.SkillName.Contains("魔镜") || d.Special.Contains("悬浮")) return DeployKind.Mirror;
+        if (d.Special.Contains("侦察")) return DeployKind.Scout;
+        if (d.Special.Contains("嘲讽")) return DeployKind.Taunt;
+        if (hbKind == "deploy" && d.HitboxRaw.Contains("触发")) return DeployKind.Trap;
+        if (hbKind == "deploy" || hbKind == "zone" && d.Type == "deploy") return DeployKind.Aura;
+        if (hbKind == "zone") return DeployKind.Aura;
+        return DeployKind.None;
+    }
+
+    /// 部署物 HP（数据: HP300/600HP/HP200/HP150；缺省 300）
+    private static long ParseDeployHp(string special)
+    {
+        foreach (var tok in special.Split(':'))
+        {
+            var t = tok.Replace("HP", "").Trim();
+            if (tok.Contains("HP") && int.TryParse(t, out var v)) return v;
+        }
+        return 300;
+    }
+
+    /// heal 数值（PRI 系: damage_mult 列 = 直接回复量；30%蓝 = 回蓝 30% maxMP）
+    private static long ParseHealAmount(SkillDef d)
+    {
+        if (d.Type != "heal" && d.Type != "active" || !IsHealRow(d)) return 0;
+        var raw = d.DamageMultRaw;
+        if (raw.Contains("蓝"))
+        {
+            var pct = raw.Replace("%蓝", "").Replace("%", "");
+            return double.TryParse(pct, NumberStyles.Float, CultureInfo.InvariantCulture, out var p)
+                ? Quantify(p / 100.0) : 0;   // Q32.16 比例（×maxMP 由 Runtime 乘）
+        }
+        return double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? (long)v : 0;
+    }
+
+    private static bool IsHealRow(SkillDef d) =>
+        d.Type == "heal" || d.HitboxRaw.StartsWith("ally") || d.SkillName.Contains("回复") || d.SkillName.Contains("治愈");
+
+    /// HoT 脉冲间隔（数据: 每3s回复一次）→ Tick；无 = 0
+    private static long ParseHealPulse(string special)
+    {
+        var idx = special.IndexOf("每");
+        if (idx < 0 || idx + 1 >= special.Length) return 0;
+        var rest = special[(idx + 1)..];
+        int end = 0;
+        while (end < rest.Length && (char.IsDigit(rest[end]) || rest[end] == '.')) end++;
+        if (end == 0 || end >= rest.Length || rest[end] != 's'
+            || !double.TryParse(rest[..end], NumberStyles.Float, CultureInfo.InvariantCulture, out var sec))
+            return 0;
+        return (long)Math.Round(sec * RuntimeConstants.TICK_RATE, MidpointRounding.ToEven);
     }
 
     /// MF-1: 需背身 N°（数据: 需背身120°）

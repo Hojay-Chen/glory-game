@@ -75,9 +75,10 @@ public static class StatusSystem
             controlled = true;
 
             // DoT（灼烧/出血/毒: 每秒 Potency 点——分数伤害累积 RHE，确定性）
+            // PotencyQ 已是 Q32.16 的每秒伤害（如灼烧 60 → 3932160）；per-Tick = RHE(PotencyQ / 60)
             if ((StatusKind)k is StatusKind.Burn or StatusKind.Bleed or StatusKind.Poison)
             {
-                long perTick = DeterministicMath.DivRoundHalfEven(slot.PotencyQ * Fixed.ONE, RuntimeConstants.TICK_RATE);
+                long perTick = DeterministicMath.DivRoundHalfEven(slot.PotencyQ, RuntimeConstants.TICK_RATE);
                 slot.DotCarryQ += perTick;
                 long whole = slot.DotCarryQ / Fixed.ONE;
                 if (whole > 0)
