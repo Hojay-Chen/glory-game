@@ -115,7 +115,13 @@ public static class HitResolve
         if (victimDown && def.Sweep) dmg = DeterministicMath.MulShift(dmg, Calc.DeterministicTables.Modifiers.SweepX070);
 
         // ---- 背击（GDD §2.5.2: 命中来源与目标面朝夹角 >120°） ----
-        if (IsBackstab(atk, vic)) dmg = DeterministicMath.MulShift(dmg, Calc.DeterministicTables.Modifiers.BackstabX120);
+        if (IsBackstab(atk, vic))
+        {
+            dmg = DeterministicMath.MulShift(dmg, Calc.DeterministicTables.Modifiers.BackstabX120);
+            // 签名修正乘区（ASN_PAS_001 暗杀艺术: 背击追加 ×1.2 → 合计 ×1.44）
+            var sigMod = w.GetDamageModifier(DamageModStage.BackstabBonus, atk, vic);
+            if (sigMod != Fixed.ONE) dmg = DeterministicMath.MulShift(dmg, sigMod);
+        }
 
         // ---- 沉睡觉醒（GDD §7.3: 受击即醒，醒来那一击 +30%） ----
         bool sleepWakeup = vic.Statuses[(int)StatusKind.Sleep].Active;

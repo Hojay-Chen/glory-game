@@ -11,6 +11,8 @@ using Arena.Core.Rng;
 // ResetCooldown/RouteDamage/GetFighter；SpawnUnit/SpawnDecoy 归 UnitSystem 阶段（登记）。
 namespace Arena.Core.Sim;
 
+public enum DamageModStage : byte { BackstabBonus = 0 }   // 修正乘区（v1: 背击追加）
+
 /// 签名插件（每职业至多一个；装配期按 ClassId 注册）
 public interface ISignature
 {
@@ -19,7 +21,10 @@ public interface ISignature
     void OnEvent(ISimContext ctx, in SimEvent e);
     /// 每 Tick 结算钩子（资源回复/持续时间等）
     void OnTick(ISimContext ctx) { }
+    /// 伤害修正乘区（v1: BackstabBonus——返回 Q32.16 乘数，ONE = 无修正）
+    long ModifyDamage(DamageModStage stage, ISimContext ctx, int attackerId, int victimId) => Fixed2.ONE;
 }
+internal static class Fixed2 { public const long ONE = 65536; }
 
 /// 签名上下文（身份绑定: FighterId = 签名所属职业的 Fighter；RNG 流键强制绑定）
 public interface ISimContext
@@ -34,6 +39,10 @@ public interface ISimContext
     void SetHeading(long quantum);
     void ResetCooldown(ushort skillId);
     void RouteDamage(int targetId, long delta, EventKind reason);
+    SkillRuntimeData? GetSkillDef(ushort runtimeId);
+    long GetResource(SimWorld.ResourceSlotKind kind);
+    long GetResourceCap(SimWorld.ResourceSlotKind kind);
+    void AddResource(SimWorld.ResourceSlotKind kind, long n);
 }
 
 /// 注册表（装配期冻结；ClassId 升序 = ADR-0001 §3.4 注册序）
@@ -83,6 +92,24 @@ internal sealed class SimContext : ISimContext
         f.Hp -= delta;
         _world.Events.Emit(new SimEvent { Kind = reason, AttackerId = FighterId, VictimId = targetId, DamageRaw = delta });
     }
+    public SkillRuntimeData? GetSkillDef(ushort runtimeId) => _world.GetSkill(runtimeId);
+    public long GetResource(SimWorld.ResourceSlotKind kind)
+    {
+        var f = _world.GetFighter(FighterId);
+        return f is null ? 0 : f.ResourceCounts[(int)kind];
+    }
+    public long GetResourceCap(SimWorld.ResourceSlotKind kind)
+    {
+        var f = _world.GetFighter(FighterId);
+        return f is null ? 0 : f.ResourceCaps[(int)kind];
+    }
+    public void AddResource(SimWorld.ResourceSlotKind kind, long n)
+    {
+        var f = _world.GetFighter(FighterId);
+        if (f is null) return;
+        var cap = f.ResourceCaps[(int)kind];
+        f.ResourceCounts[(int)kind] = Math.Min(cap, f.ResourceCounts[(int)kind] + n);
+    }
 }
 
 /// SimWorld 签名派发（⑤ 钩子之后；每个签名绑定其职业的首个 Fighter——多人同职业=同一机制域）
@@ -96,6 +123,21 @@ public sealed partial class SimWorld
         if (_signatures is not null) throw new InvalidOperationException("signatures already installed");
         registry.Seal();
         _signatures = registry;
+    }
+
+    /// 伤害修正查询（HitResolve 在对应乘区调用——无注册 = ONE 恒等）
+    internal long GetDamageModifier(DamageModStage stage, FighterStateData attacker, FighterStateData victim)
+    {
+        if (_signatures is null) return Fixed2.ONE;
+        foreach (var sig in _signatures.All)
+        {
+            if (sig.ClassId != attacker.ClassId) continue;
+            int binderId = attacker.Id;
+            if (!_ctxCache.TryGetValue(binderId, out var ctx))
+                _ctxCache[binderId] = ctx = new SimContext(this, binderId);
+            return sig.ModifyDamage(stage, ctx, attacker.Id, victim.Id);
+        }
+        return Fixed2.ONE;
     }
 
     /// 派发（TickFighters 之后、死亡判定之前——ADR-0001 §3.2 ⑤；Step 调用）

@@ -238,6 +238,7 @@ public sealed class FighterStateData
 
     public bool IsAirborne => PosY.Raw > 0 || State == FighterState.Launch;
     public bool IsInvulnerable => InvulnTicks > 0;
+    public long HpMax() => 10000;   // GDD §2.5.3 全职业统一
 
     public FighterStateData Clone()
     {
