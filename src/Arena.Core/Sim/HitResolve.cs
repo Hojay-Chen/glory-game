@@ -218,21 +218,22 @@ public static class HitResolve
             if (heal > 0) w.ApplyHealSelf(atk, heal);
         }
 
-        // ---- 霸体判定（GDD §6.4） ----
+        // ---- 霸体判定（GDD §6.4；Batch 5: BuffArmor 效果域与 exec 窗口双源——DDQ-B4-①解耦） ----
         bool armored = false;
         bool superArmored = false;
         var exec = w.GetExecution(vic.ActiveSkillUid);
-        if (exec is not null && exec.Def is not null && exec.Def.Armor is { } armor &&
-            armor.Covers(exec.CurrentOffset))
+        if (!def.ArmorBreak)
         {
-            if (def.ArmorBreak)
-            {
-                // 【破霸体】: 直接击破霸体（GDD §6.4）——霸体失效，正常受击反应
-            }
-            else
+            if (exec is not null && exec.Def is not null && exec.Def.Armor is { } armor &&
+                armor.Covers(exec.CurrentOffset))
             {
                 armored = true;
                 superArmored = armor.SuperArmor;
+            }
+            else if (vic.BuffArmorDelayTicks == 0 && vic.BuffArmorTicks > 0)
+            {
+                armored = true;   // 纯 buff 技动作窗结束后的霸体效果域（窗口数据化）
+                superArmored = vic.BuffArmorKind == 2;
             }
         }
 

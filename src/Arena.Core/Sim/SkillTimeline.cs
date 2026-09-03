@@ -104,6 +104,12 @@ public sealed class SkillRuntimeData
     public OrbTagKind OrbTag { get; init; }       // 炫纹触发标签（Compiler 从 special 炫纹:X 解析）
     // ---- Batch 4: 自增益通道（通用 B 类语义——数值全部来自 special 解析，零签名依赖） ----
     public string Name { get; init; } = "";       // CSV skill_name（家族分类数据源——SBL 波动剑系）
+    // ---- Batch 5: 动作窗/效果生命周期解耦（DDQ-B4-①裁定）+ 资源闭环 + 追踪原语 ----
+    public int EffectDurationTicks { get; init; } // buff/stance act=Ns 的效果持续（动作窗已解耦为名义 2T）
+    public bool IsPureBuff { get; init; }         // 纯增益技（无 hitbox 无伤害）——动作窗判定即收
+    public bool ReloadMagazine { get; init; }     // 换弹匣（装填系: 施法动作即换弹——GDD §14.5）
+    public int ProjHomingDegPerSec { get; init; } // 追踪:X°/s——弹体朝锁定目标饱和转向（可复用运动原语）
+    public int OrbBuffDurationTicks { get; init; }// 炫纹增益20s → Tick（BMG 签名消费）
     public long SelfBuffAtkPctQ { get; init; }    // 施法自增益 ATK+P%（嗜血 20%/嗜血奋战 8%）
     public long SelfDrainPctQ { get; init; }      // 自伤脉率 P%/s ×HpMax（嗜血系 1.5%/s）
     public long LifestealPctQ { get; init; }      // 正嗜血: 造成伤害 P% 转回复（嗜血奋战 10%）

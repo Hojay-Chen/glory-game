@@ -26,6 +26,9 @@ public sealed class ProjectileState
     public int PierceRemaining { get; set; }
     public bool IsLob { get; set; }
     public bool Expired { get; set; }
+    // 追踪（Batch 5 可复用运动原语: 追踪:X°/s——饱和转向锁定目标）
+    public int TargetId { get; set; } = -1;         // 锁定目标（spawn 时确定性选取；−1 = 无追踪）
+    public long HeadingQuantum { get; set; }        // 追踪弹自持朝向（0=+Z 顺时针，SPEC-0001 约定）
     public readonly HashSet<int> HitVictims = new();   // 每 victim 一次（多段投技语义除外）
 
     public SkillRuntimeData? Def;       // 运行时引用（Catalog 恢复）
@@ -34,7 +37,8 @@ public sealed class ProjectileState
 public static class ProjectileSystem
 {
     /// 发射（cast 时调用）。aim: SPEC-0001 heading quantum；返回 Uid（0 = 超上限被拒）。
-    public static int Spawn(SimWorld w, FighterStateData owner, SkillRuntimeData def, long headingQuantum, int tick)
+    /// targetId: 追踪弹锁定目标（−1 = 自动锁定最近可见敌人——确定性 (距离, Id) 序）。
+    public static int Spawn(SimWorld w, FighterStateData owner, SkillRuntimeData def, long headingQuantum, int tick, int targetId = -1)
     {
         // 同屏上限（GDD §4.5: 每玩家 8 个，超出移除最旧）
         int count = 0; ProjectileState? oldest = null;
@@ -70,6 +74,10 @@ public static class ProjectileSystem
             ExpireTick = tick + def.ProjRangeTicks,
             PierceRemaining = def.Sweep ? 99 : 0,   // 【穿透】标签复用 sweep 列（Compiler 登记）
             IsLob = def.IsLob,
+            HeadingQuantum = ((headingQuantum % 65536) + 65536) % 65536,
+            TargetId = def.ProjHomingDegPerSec > 0
+                ? (targetId >= 0 ? targetId : SelectNearestEnemy(w, owner))
+                : -1,
         };
         w.Projectiles.Add(proj);
         w.Events.Emit(new SimEvent
@@ -81,6 +89,21 @@ public static class ProjectileSystem
     }
 
     public enum ProjectileEndReason : byte { Terrain = 0, Lifetime = 1, Cap = 2, Hit = 3 }
+
+    /// 追踪目标自动锁定: 最近敌方（确定性总序 (距离 raw, Id 升序)）；潜行者不可见（Visibility 同律）。
+    private static int SelectNearestEnemy(SimWorld w, FighterStateData owner)
+    {
+        int best = -1; long bestDist = long.MaxValue;
+        foreach (var f in w.Fighters)
+        {
+            if (f.Id == owner.Id || w.SameTeam(f.Id, owner.Id)) continue;
+            if (f.State == FighterState.Dead || f.Hidden) continue;
+            long dx = f.PosX.Raw - owner.PosX.Raw, dz = f.PosZ.Raw - owner.PosZ.Raw;
+            long dist = dx * dx + dz * dz;
+            if (dist < bestDist || (dist == bestDist && f.Id < best)) { bestDist = dist; best = f.Id; }
+        }
+        return best;
+    }
 
     public static void Destroy(SimWorld w, ProjectileState p, ProjectileEndReason reason)
     {
@@ -98,6 +121,28 @@ public static class ProjectileSystem
     public static void Advance(SimWorld w, ProjectileState p, int tick, IReadOnlyList<FighterStateData> fighters)
     {
         if (p.Expired) return;
+
+        // 追踪（Batch 5 可复用运动原语: 追踪:X°/s——锁定目标饱和转向，SPEC-0001 同律）
+        if (p.Def is { } hd && hd.ProjHomingDegPerSec > 0 && p.TargetId >= 0)
+        {
+            var target = w.GetFighter(p.TargetId);
+            if (target is not null && target.State != FighterState.Dead)
+            {
+                long maxStep = DeterministicMath.DivRoundHalfEven(
+                    (long)hd.ProjHomingDegPerSec * Fixed.ONE, 360 * RuntimeConstants.TICK_RATE);
+                long targetHeading = DeterministicMath.CordicAtan2(
+                    target.PosX.Raw - p.PosX, target.PosZ.Raw - p.PosZ);
+                int diff = (int)(((targetHeading - p.HeadingQuantum) % 65536 + 65536) % 65536);
+                if (diff > 32768) diff -= 65536;   // 最短弧带符号差（SPEC-0001 §2）
+                long step = Math.Clamp(diff, -maxStep, maxStep);
+                p.HeadingQuantum = ((p.HeadingQuantum + step) % 65536 + 65536) % 65536;
+                // 速率恒定: 位移由自持朝向重导（追踪只改变方向）
+                long speed = DeterministicMath.DivRoundHalfEven(hd.ProjSpeedQ, RuntimeConstants.TICK_RATE);
+                DeterministicMath.CordicCosSin(p.HeadingQuantum, out var hx, out var hz);
+                p.DispX = DeterministicMath.MulShift(hx, speed);
+                p.DispZ = DeterministicMath.MulShift(hz, speed);
+            }
+        }
 
         // 可控弹跟随（念龙波类: 弹体方向 = 施法者当前朝向）
         if (p.Def is { } pd && pd.FollowHeading)

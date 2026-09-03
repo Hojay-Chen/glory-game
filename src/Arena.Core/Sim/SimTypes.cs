@@ -215,6 +215,18 @@ public sealed class FighterStateData
     public long LifestealPctQ { get; set; }         // 正嗜血: 命中造成伤害的 P% 转为自身回复
     public int LifestealTicks { get; set; }
 
+    // Buff 霸体域（DDQ-B4-①解耦: 纯 buff 技动作窗 2T 后霸体由效果域承载——SSA 窗口数据化）
+    public byte BuffArmorKind { get; set; }         // 0=无 1=SA 2=SSA（ArmorWindowDef.SuperArmor）
+    public int BuffArmorDelayTicks { get; set; }    // 窗口起点延迟（armor start）
+    public int BuffArmorTicks { get; set; }         // 霸体剩余（armor end−start）
+
+    // 炫纹类型计数（BMG 资源闭环: Orb 槽计总数，类型分布供炫纹发射按型发射/增益；Σ==Orb 不变式）
+    public readonly long[] OrbTypeCounts = new long[6];   // 下标 = OrbTagKind 枚举值（None/Light/Ice/Fire/Dark/NonElemental）
+
+    // 复制技槽（ROG 以牙还牙: 最近命中自己的技能记录，每局 3 槽——动态施放判定域）
+    public readonly ushort[] CopiedSkillUids = new ushort[3];
+    public int CopiedSkillNext;                     // 环形写入指针（0..2）
+
     // 最近一次完成（结束/取消）施放的技能——SBL 波动共鸣「不同波动剑连放」判定域
     public ushort LastCastSkillUid { get; set; }
 
@@ -280,6 +292,8 @@ public sealed class FighterStateData
             BuffDrainHpPctQ = BuffDrainHpPctQ, BuffDrainHpPctTicks = BuffDrainHpPctTicks,
             LifestealPctQ = LifestealPctQ, LifestealTicks = LifestealTicks,
             LastCastSkillUid = LastCastSkillUid,
+            BuffArmorKind = BuffArmorKind, BuffArmorDelayTicks = BuffArmorDelayTicks, BuffArmorTicks = BuffArmorTicks,
+            CopiedSkillNext = CopiedSkillNext,
             BuffAtkPctQ = BuffAtkPctQ, BuffAtkPctTicks = BuffAtkPctTicks,
             HealPulseAmountQ = HealPulseAmountQ, HealPulseRemaining = HealPulseRemaining,
             HealPulseTimer = HealPulseTimer, HealPulseInterval = HealPulseInterval, HealIsMana = HealIsMana,
@@ -287,6 +301,8 @@ public sealed class FighterStateData
         };
         foreach (var kv in Cooldowns) c.Cooldowns[kv.Key] = kv.Value;
         Array.Copy(Statuses, c.Statuses, Statuses.Length);
+        Array.Copy(OrbTypeCounts, c.OrbTypeCounts, OrbTypeCounts.Length);
+        Array.Copy(CopiedSkillUids, c.CopiedSkillUids, CopiedSkillUids.Length);
         return c;
     }
 }

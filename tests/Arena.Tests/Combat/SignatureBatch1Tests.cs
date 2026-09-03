@@ -250,6 +250,7 @@ public static class Batch3Shared
         reg.Register(new Arena.Core.Sim.Signatures.ThfTrapMastery());
         reg.Register(new Arena.Core.Sim.Signatures.SblWaveResonance());
         reg.Register(new Arena.Core.Sim.Signatures.KniKnightSpirit());
+        reg.Register(new Arena.Core.Sim.Signatures.RogPayback());
         return reg;
     }
 }

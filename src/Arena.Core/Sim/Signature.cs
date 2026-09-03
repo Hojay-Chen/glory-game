@@ -27,6 +27,8 @@ public interface ISignature
     int ModifyStartupTicks(ISimContext ctx, ushort skillId) => 0;
     /// 施法是否破除潜行（THF 陷阱精通: 设陷阱不解除——默认破除）
     bool ShouldBreakStealth(ISimContext ctx, ushort skillId) => true;
+    /// 动态施放解析（ROG 以牙还牙——返回实际执行的 RuntimeId；0 = 不重定向；mpCostMult 输出 MP 倍数）
+    ushort ResolveDynamicCast(ISimContext ctx, ushort requestedSkillId, out long mpCostMult) { mpCostMult = 1; return 0; }
 }
 internal static class Fixed2 { public const long ONE = 65536; }
 
@@ -49,6 +51,8 @@ public interface ISimContext
     void AddResource(SimWorld.ResourceSlotKind kind, long n);
     /// 重置本 Fighter 全部 CD（exceptSkillId 除外——KNI 骑士精神）
     void ResetAllCooldowns(ushort exceptSkillId);
+    /// 发射投射物（签名资源闭环: BMG 炫纹发射按 Orb 数弹幕——ProjectileSystem.Spawn 同律）
+    int SpawnProjectile(ushort skillId, int targetId);
 }
 
 /// 注册表（装配期冻结；ClassId 升序 = ADR-0001 §3.4 注册序）
@@ -100,6 +104,13 @@ internal sealed class SimContext : ISimContext
         f.Cooldowns.Keys.CopyTo(keys, 0);
         foreach (var k in keys)
             if (k != exceptSkillId) f.Cooldowns.Remove(k);
+    }
+    public int SpawnProjectile(ushort skillId, int targetId)
+    {
+        var f = _world.GetFighter(FighterId);
+        var def = _world.GetSkill(skillId);
+        if (f is null || def is null || !def.IsProjectile) return 0;
+        return ProjectileSystem.Spawn(_world, f, def, f.HeadingQuantum, (int)_world.Tick, targetId);
     }
     public void RouteDamage(int targetId, long delta, EventKind reason)
     {
@@ -161,6 +172,20 @@ public sealed partial class SimWorld
     {
         if (!TryBind(f, out var sig, out var ctx)) return true;
         return sig.ShouldBreakStealth(ctx, def.RuntimeId);
+    }
+
+    /// 动态施放解析（TryCastSkill——ROG 以牙还牙: 按键技 → 运行时复制技重定向）
+    internal bool TryResolveDynamicSkill(FighterStateData f, SkillRuntimeData requested, out SkillRuntimeData resolved, out long mpMult)
+    {
+        resolved = requested;
+        mpMult = 1;
+        if (!TryBind(f, out var sig, out var ctx)) return false;
+        ushort uid = sig.ResolveDynamicCast(ctx, requested.RuntimeId, out mpMult);
+        if (uid == 0 || uid == requested.RuntimeId) { mpMult = 1; return false; }
+        var r = GetSkill(uid);
+        if (r is null) { mpMult = 1; return false; }
+        resolved = r;
+        return true;
     }
 
     /// 按职业绑定签名 + 身份化 ctx（无注册/职业未参赛 → false）

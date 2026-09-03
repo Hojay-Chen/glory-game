@@ -90,7 +90,31 @@
 - **测试 152/152**（+SG11/11b/12/13/13b/14/15/16 八探针；SG16 快照恢复+重放逐位一致）
 - **踩坑**: 测试跳 Tick 会使 exec.CurrentOffset 与墙钟错位（armor/前摇窗口判定失真）——Batch 4 测试全部逐 Tick 步进+指令表；施法 aim 覆盖 heading（SG08 既有结论）
 
-## DDQ-B4（数据歧义队列——Batch 4 登记，待用户裁定）
+## Phase 7 Batch 5 解耦落地 + 资源闭环 + 动态施放（2026-09-03，本次）
+
+- **DDQ-B4-①②裁定落地（动作窗/效果生命周期解耦）**: Compiler 新增 EffectDurationTicks（buff/stance act=Ns=效果持续借位事实）+ IsPureBuff 判定；纯 buff（无 hitbox 无伤害）动作窗收为名义 2T（parser 既有「判定即收」惯例）——嗜血从锁身 1200T → ~28T 恢复自由，效果持续 1200T 独立承载
+- **BuffArmor 效果域**: 纯 buff 的 SSA/SA 窗口（24-244f 等）转 Fighter 域（Kind/Delay/Ticks，Snapshot 携带）——动作窗 2T 后霸体由域承载，HitResolve 双源消费（exec 窗口 ∪ 域）；**armor CSV 数据（24-1224f 之疑）仍待裁定不代填**
+- **SPF 弹匣资源闭环**: class-base resource 格式归一 `弹匣+手雷库存`→`弹匣:20`（PATCH-002，GDD 1845 弹药扩充被动常驻有效值；手雷库存不接入）；普攻每击 −1、空匣干火失败、装填技（换弹匣解析）回满 cap；AddFighter 弹匣装满入场语义
+- **BMG 炫纹发射资源闭环**: OrbTypeCounts[6] 类型分布域（Σ==Orb 槽不变式）→ 发射消耗全部炫纹 → 全弹幕（弹数=纹数）→ 按型增益 20s（冰=BuffDefPct+4%/枚、火=BuffAtkPct+5%/枚，GDD §14.1.3 表源签名常量）；BMG.Orbs 一插件合并获纹+发射（一职业一签名）
+- **追踪弹运动原语**: ProjectileSystem 追踪:X°/s（数据化）——锁定目标饱和转向（SPEC-0001 同律）+ DeterministicMath.CordicAtan2（E-6 同族向量模式 CORDIC，heading 量子互逆）
+- **ROG 以牙还牙动态施放**: CopiedSkillUids[3] 环形记录域（受击记录，排除普攻/U 档/自身）+ ResolveDynamicCast 签名钩子（按键技→运行时重定向执行体，MP=原技×2，CD 记按键技）——验证「技能运行时决定执行体」能力
+- **ISignature/ISimContext 扩展**: ResolveDynamicCast 钩子 + SpawnProjectile 原语；StartExecution cdKey/mpCostMult 参数（动态施放 CD 记按键技）；Normal 路径补 CD/MP 预检（原缺——重试闸）
+- **迁移构成报告（SG21，启发式 v1）**: **Data-driven=360 / Primitive-assisted=97 / Signature=26 / total=483**
+- **测试 157/157**（+SG17 解耦 / SG18 弹匣 / SG19 炫纹发射+追踪 / SG20 动态施放 / SG21 构成）；双门禁 PASS；balance_audit PASS
+- **踩坑**: ①一职业一签名强制——BMG 获纹/发射合并进 BmgFightingSpirit ②受击不可出招铁则让倒地期施法静默拒绝（测试须等 Normal）③资源计数 AddFighter 默认置 0 vs 弹匣装满入场 ④动态施放 CD 键≠解析后 def.RuntimeId——预检必须查按键技
+
+## DDQ-B5（Batch 5 新登记，待用户裁定）
+
+1. BMG 炫纹三档（大中小——连击数定档）系统未实现
+2. 炫纹增益: 无属性(移速)/光(攻速)/暗(暗伤)域 Sim v1 缺失——消耗但不施加；同型多枚=本次发射重置 N×枚（不跨发射叠加）
+3. 0 炫纹时炫纹发射基线弹照常（增益语义待设计）；炫纹 30s 存在期（衰减）未实现
+4. ROG 复制技「效果/次数随等阶」未实现；重复记录=刷新位置（环形覆盖最旧）；无记录时按键技按数据执行（counter 架势）
+5. SPF 属性弹切换的弹种附着效果（冰弹射击冰冻减速等）未接入射击链；空匣干火=静默失败
+6. WIT 飞行触发入口 GDD 未明（扫把掌握只写「飞行4s」无进入机制）——留 Batch 6，不猜
+7. zone/stance 生命周期与 act 耦合（念气罩 30s 等带 hitbox buff）——本轮仅解耦纯 buff，带 hitbox 的待专项
+
+## DDQ-B4 遗留（Batch 4 登记，①②已裁定落地，余项待裁定）
+
 
 1. 嗜血奋战 armor `SSA:24-244f` vs GDD「全程霸体」（20s=1200f → 应为 24-1224f）——CSV 修正待裁定
 2. 狂暴（BER_T3_004）Sim 域数值缺失（力量/攻速/异抗无 Sim 映射）+ 技能变异（招式变形）——CSV 补数据后实现

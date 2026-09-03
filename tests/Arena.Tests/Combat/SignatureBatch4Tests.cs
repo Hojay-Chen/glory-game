@@ -110,8 +110,11 @@ public class SignatureBatch4Tests : IDisposable
 
         // 霸体: 敌天击 t30 施法（su14）→ 命中 ≈t45，落在 armor 窗 [24,244) → 不硬直不中断
         Run(w, 6, 60, t => t == 30 ? new[] { Skill(1, "BMG_T1_001", 32768) } : Array.Empty<Command>());
-        Assert.Equal(FighterState.Act, ber.State);   // 全程霸体: 无硬直/浮空
-        Assert.NotEqual(0, ber.ActiveSkillUid);      // GDD §4.3: 霸体不被打断——技能继续
+        // DDQ-B4-①解耦: 纯 buff 动作窗 2T——施法后（24 su+2 act+26 rec ≈ t53）即恢复自由，不再锁身 20s
+        Assert.Equal(FighterState.Normal, ber.State);
+        // 霸体由 BuffArmor 效果域承载（SSA 窗口数据化 [24,244)）: 命中 ~t45 在窗内 → 不浮空、伤害照常
+        Assert.Equal(2, ber.BuffArmorKind);
+        Assert.True(ber.BuffArmorTicks > 0, "SSA 效果域激活");
         Assert.True(ber.Hp < 10000, "霸体不减伤——伤害照常结算");
         Assert.DoesNotContain(w.Events.All, e => e.Kind == EventKind.Launched && e.VictimId == 0);
 

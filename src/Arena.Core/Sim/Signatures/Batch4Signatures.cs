@@ -81,3 +81,38 @@ public sealed class KniKnightSpirit : ISignature
         ctx.ResetAllCooldowns(def.RuntimeId);   // 重置除骑士精神外全部 CD（GDD §14.23）
     }
 }
+
+/// ROG 以牙还牙（GDD §14.16.3）: 受击「记住」命中自己的技能（每局 3 槽环形）；
+/// 施放时动态重定向至最近记录技执行——MP = 原技能二倍（0+2×原耗），CD 记在按键技（30s）。
+/// 动态施放验证批次: 技能不再只引用静态 SkillDef，运行时按战斗上下文决定执行体（ADR-0008 签名路径）。
+/// DDQ-B5: 「效果/次数随等阶」v1 未实现；重复记录刷新位置（环形覆盖最旧）；无记录时按键技按数据执行。
+public sealed class RogPayback : ISignature
+{
+    public string ClassId => "ROG";
+    private const string SelfSkillId = "ROG_T4_001";
+
+    public void OnEvent(ISimContext ctx, in SimEvent e)
+    {
+        if (e.Kind != EventKind.Hit || e.VictimId != ctx.FighterId) return;
+        var f = ctx.GetFighter(ctx.FighterId);
+        var def = ctx.GetSkillDef(e.SkillId);
+        if (f is null || def is null) return;
+        // 记录门控: 排除普攻链与 U 档（GDD: 不可复制 U 档）；不记录自身
+        if (def.Type.StartsWith("basic") || def.Tier >= 5 || def.SkillId == SelfSkillId) return;
+        f.CopiedSkillUids[f.CopiedSkillNext] = def.RuntimeId;
+        f.CopiedSkillNext = (f.CopiedSkillNext + 1) % f.CopiedSkillUids.Length;
+    }
+
+    public ushort ResolveDynamicCast(ISimContext ctx, ushort requestedSkillId, out long mpCostMult)
+    {
+        mpCostMult = 1;
+        var req = ctx.GetSkillDef(requestedSkillId);
+        if (req is null || req.SkillId != SelfSkillId) return 0;
+        var f = ctx.GetFighter(ctx.FighterId);
+        if (f is null) return 0;
+        ushort uid = f.CopiedSkillUids[(f.CopiedSkillNext + f.CopiedSkillUids.Length - 1) % f.CopiedSkillUids.Length];
+        if (uid == 0 || uid == requestedSkillId) return 0;   // 无记录 → 不重定向（DDQ-B5 空记录语义）
+        mpCostMult = 2;   // GDD: MP 消耗为原技能二倍
+        return uid;
+    }
+}

@@ -75,7 +75,8 @@ public static class RuntimeSkillFactory
             CooldownTicks = d.CooldownTicks,
             // 蓄力（GDD §4.1）: 蓄力时长追加至前摇（巴雷特 30+72=102 等）；v1 全额蓄力语义（登记）
             StartupTicks = d.StartupTicks + (charge?.Item1 ?? 0),
-            ActiveTicks = d.ActiveTicks,
+            // DDQ-B4-①: 纯 buff 技动作窗 = 名义 2T（判定即收），效果持续由 EffectDurationTicks 承载
+            ActiveTicks = IsPureBuffRow(d) ? 2 : d.ActiveTicks,
             RecoveryTicks = d.RecoveryTicks,
             HitSchedule = d.HitSchedule,
             Geo = geo.Geometry,
@@ -105,6 +106,14 @@ public static class RuntimeSkillFactory
             IsGrab = d.Type == "grab",
             IsCounter = d.Type == "counter",
             IsHold = d.ActiveRaw == "hold",
+            // DDQ-B4-①裁定: buff 类技能 act=Ns 为「效果持续」借位事实（动作窗口与效果生命周期解耦）。
+            // 纯 buff（无 hitbox 无伤害）动作窗收为名义 2T（parser 对 '-' 的既有惯例，非发明数值）；
+            // 带 hitbox 的 zone/stance 生命周期耦合仍按 act（DDQ-B5 待解耦）。
+            EffectDurationTicks = (d.Type == "buff" || d.Type == "stance") && d.ActiveRaw.EndsWith("s") ? d.ActiveTicks : 0,
+            IsPureBuff = IsPureBuffRow(d),
+            ReloadMagazine = d.Special.Contains("换弹匣"),
+            ProjHomingDegPerSec = ParseHomingDeg(d.Special),
+            OrbBuffDurationTicks = ParseOrbBuffDuration(d.Special),
             SteerRateDegPerSec = d.ActiveRaw == "controlled" || d.Special.Contains("可转向") || d.Special.Contains("自由转向")
                 ? RuntimeConstants.STEER_DEG_PER_SEC_DEFAULT : 0,
             ChargeTicks = charge?.Item1 ?? 0,
@@ -523,6 +532,40 @@ public static class RuntimeSkillFactory
     {
         var m = System.Text.RegularExpressions.Regex.Match(special, @"-(\d+(?:\.\d+)?)%/s");
         return m.Success ? Quantify(decimal.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture) / 100m) : 0;
+    }
+
+    /// 纯 buff 判定: type=buff/stance 且无 hitbox 且无伤害（动作窗口与效果生命周期解耦的适用域）
+    private static bool IsPureBuffRow(SkillDef d) =>
+        (d.Type == "buff" || d.Type == "stance")
+        && (d.HitboxRaw is "none" or "-" or "")
+        && (d.DamageMultRaw is "0" or "-" or "");
+
+    /// 弹体追踪角速度（数据: 追踪:90°/s——炫纹发射；可复用运动原语）
+    private static int ParseHomingDeg(string special)
+    {
+        var idx = special.IndexOf("追踪:");
+        if (idx < 0) return 0;
+        var rest = special[(idx + 3)..];
+        int end = 0;
+        while (end < rest.Length && (char.IsDigit(rest[end]) || rest[end] == '.')) end++;
+        if (end == 0 || end >= rest.Length || rest[end] != '°'
+            || !double.TryParse(rest[..end], NumberStyles.Float, CultureInfo.InvariantCulture, out var deg))
+            return 0;
+        return (int)Math.Round(deg, MidpointRounding.ToEven);
+    }
+
+    /// 炫纹增益时长（数据: 炫纹增益20s）→ Tick
+    private static int ParseOrbBuffDuration(string special)
+    {
+        var idx = special.IndexOf("增益");
+        if (idx < 0) return 0;
+        var rest = special[(idx + 2)..];
+        int end = 0;
+        while (end < rest.Length && (char.IsDigit(rest[end]) || rest[end] == '.')) end++;
+        if (end == 0 || end >= rest.Length || rest[end] != 's'
+            || !double.TryParse(rest[..end], NumberStyles.Float, CultureInfo.InvariantCulture, out var sec))
+            return 0;
+        return (int)Math.Round(sec * RuntimeConstants.TICK_RATE, MidpointRounding.ToEven);
     }
 
     /// 正嗜血 P%（数据: 正嗜血10%——嗜血奋战；造成伤害的 P% 转回复）

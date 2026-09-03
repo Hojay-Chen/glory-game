@@ -81,7 +81,8 @@ public sealed partial class SimWorld
         if (_classResources.TryGetValue(classId, out var cap))
         {
             f.ResourceCaps[(int)cap.kind] = cap.cap;
-            f.ResourceCounts[(int)cap.kind] = 0;
+            // 弹匣装满入场（GDD §14.5: 15/20 发/匣）；其余资源（炫纹/召唤位/共鸣）从 0 起
+            f.ResourceCounts[(int)cap.kind] = cap.kind == ResourceSlotKind.Magazine ? cap.cap : 0;
         }
         Fighters.Add(f);
         _teams[id] = team;   // 阵营注册随装配即时生效（SealWorld 前后均可 AddFighter）
@@ -348,6 +349,15 @@ public sealed partial class SimWorld
             Events.Emit(new SimEvent { Kind = EventKind.StealthBroken, VictimId = f.Id });
         }
 
+        // 动态施放（ADR-0008 签名路径）: 复制技等运行时重定向——ROG 以牙还牙（MP ×2，CD 记按键技）
+        ushort cdKey = def.RuntimeId;
+        long mpMult = 1;
+        if (TryResolveDynamicSkill(f, def, out var resolved, out mpMult))
+        {
+            cdKey = def.RuntimeId;
+            def = resolved;
+        }
+
         // Act 中: 取消窗判定（GDD §8.2）——资源/CD 预检在终止当前技能之前（原子切换）
         if (f.State == FighterState.Act && f.ActiveSkillUid != 0)
         {
@@ -357,7 +367,7 @@ public sealed partial class SimWorld
                 if (!fromBuffer) BufferInput(f, cmd);   // 缓冲排水尝试不再重复入队
                 return false;
             }
-            if (!CanStartExecution(f, def)) return false;   // CD/MP 不足 → 取消不成立，当前技能不受影响
+            if (!CanStartExecutionDynamic(f, def, mpMult, cdKey)) return false;   // CD/MP 不足 → 取消不成立，当前技能不受影响（CD 记按键技）
             // 陷阱精通: 潜行 hold 被陷阱施放替换时隐身存活（GDD §14.17）
             bool stealthSurvives = f.Hidden && !ShouldBreakStealth(f, def);
             if (exec is not null) TerminateExecution(exec, cancelled: true, keepStealth: stealthSurvives);
@@ -366,16 +376,22 @@ public sealed partial class SimWorld
         {
             return false;   // 受击不可出招（铁则——不缓冲）
         }
+        if (!CanStartExecutionDynamic(f, def, mpMult, cdKey)) return false;   // Normal 路径同预检（CD 记按键技——动态施放重试闸）
 
-        return StartExecution(f, def, cmd);
+        return StartExecution(f, def, cmd, cdKey, mpMult);
     }
 
     /// 施放前置资源检查（MP/CD——不消耗）
-    private bool CanStartExecution(FighterStateData f, SkillRuntimeData def)
+    private bool CanStartExecution(FighterStateData f, SkillRuntimeData def) =>
+        CanStartExecutionDynamic(f, def, 1);
+
+    /// 动态施放感知版（MP ×mpMult——ROG 以牙还牙 0+2×原耗；CD 预检按按键技 cdKey）
+    private bool CanStartExecutionDynamic(FighterStateData f, SkillRuntimeData def, long mpMult, ushort cdKey = 0)
     {
         if (def.Type.StartsWith("basic")) return true;
-        if (f.Mp < def.MpCost) return false;
-        if (f.Cooldowns.TryGetValue(def.RuntimeId, out var cd) && cd > 0) return false;
+        if (f.Mp < def.MpCost * mpMult) return false;
+        var key = cdKey == 0 ? def.RuntimeId : cdKey;
+        if (f.Cooldowns.TryGetValue(key, out var cd) && cd > 0) return false;
         return true;
     }
 
@@ -451,13 +467,31 @@ public sealed partial class SimWorld
         return next.Tier >= exec.Def.CancelMinTier;
     }
 
-    private bool StartExecution(FighterStateData f, SkillRuntimeData def, Command cmd)
+    private bool StartExecution(FighterStateData f, SkillRuntimeData def, Command cmd, ushort cdKeyId = 0, long mpCostMult = 1)
     {
-        // MP/CD 消耗（普攻无消耗；调用方已 CanStartExecution 预检——此处直接消耗）
+        // MP/CD 消耗（普攻无消耗；调用方已 CanStartExecution 预检——此处直接消耗）。
+        // cdKey: 动态施放时 CD 记在被按下的按钮技（ROG 以牙还牙 30s），非被复制的原技。
+        ushort cdKey = cdKeyId == 0 ? def.RuntimeId : cdKeyId;
         if (!def.Type.StartsWith("basic"))
         {
-            f.Mp -= def.MpCost;
-            f.Cooldowns[def.RuntimeId] = def.CooldownTicks;
+            f.Mp -= def.MpCost * mpCostMult;
+            f.Cooldowns[cdKey] = def.CooldownTicks;
+        }
+        // 弹匣资源闭环（Batch 5: class-base Magazine cap>0 的职业普攻消耗 1 发/击；空匣干火失败）
+        if (def.Type.StartsWith("basic"))
+        {
+            int mSlot = (int)ResourceSlotKind.Magazine;
+            if (f.ResourceCaps[mSlot] > 0)
+            {
+                if (f.ResourceCounts[mSlot] <= 0) return false;   // 空匣 → 射击失败（DDQ-B5: 干火表现）
+                f.ResourceCounts[mSlot]--;
+            }
+        }
+        // 换弹匣（GDD §14.5: 装填系施放动作即换弹——回满至 class-base cap）
+        if (def.ReloadMagazine)
+        {
+            int mSlot = (int)ResourceSlotKind.Magazine;
+            if (f.ResourceCaps[mSlot] > 0) f.ResourceCounts[mSlot] = f.ResourceCaps[mSlot];
         }
 
         var exec = new SkillExecution
@@ -486,21 +520,30 @@ public sealed partial class SimWorld
         // 被动技不经施放路径；deploy/aura 由 UnitSystem 自行施加——均跳过。
         if (def.Type != "passive" && def.DeployKind == DeployKind.None && !def.Type.StartsWith("basic"))
         {
+            // DDQ-B4-①裁定: 效果生命周期 = EffectDurationTicks（buff act=Ns 借位事实），动作窗已解耦
+            int effectTicks = def.EffectDurationTicks > 0 ? def.EffectDurationTicks : def.ActiveTicks;
             if (def.SelfBuffAtkPctQ != 0)
             {
                 f.BuffAtkPctQ = def.SelfBuffAtkPctQ;
-                f.BuffAtkPctTicks = def.ActiveTicks;
+                f.BuffAtkPctTicks = effectTicks;
                 Events.Emit(new SimEvent { Kind = EventKind.BuffApplied, VictimId = f.Id, SkillId = def.RuntimeId, ValueRaw = def.SelfBuffAtkPctQ });
             }
             if (def.SelfDrainPctQ > 0)
             {
                 f.BuffDrainHpPctQ = def.SelfDrainPctQ;
-                f.BuffDrainHpPctTicks = def.ActiveTicks;
+                f.BuffDrainHpPctTicks = effectTicks;
             }
             if (def.LifestealPctQ > 0)
             {
                 f.LifestealPctQ = def.LifestealPctQ;
-                f.LifestealTicks = def.ActiveTicks;
+                f.LifestealTicks = effectTicks;
+            }
+            // 纯 buff 的霸体窗 → BuffArmor 效果域承载（动作窗 2T 后霸体持续——SSA 窗口数据化）
+            if (def.IsPureBuff && def.Armor is { } ba)
+            {
+                f.BuffArmorKind = (byte)(ba.SuperArmor ? 2 : 1);
+                f.BuffArmorDelayTicks = Math.Max(0, ba.StartTick);
+                f.BuffArmorTicks = Math.Max(0, ba.EndTick - ba.StartTick);
             }
         }
         f.VelX = Fixed.Zero; f.VelZ = Fixed.Zero;   // 攻击制动（GDD §3.2）
@@ -1255,6 +1298,9 @@ public sealed partial class SimWorld
                 }
             }
             if (f.LifestealTicks > 0 && --f.LifestealTicks == 0) f.LifestealPctQ = 0;
+            // Buff 霸体域（DDQ-B4-①解耦: 纯 buff 技动作窗结束后霸体由效果域承载）
+            if (f.BuffArmorDelayTicks > 0) f.BuffArmorDelayTicks--;
+            else if (f.BuffArmorTicks > 0 && --f.BuffArmorTicks == 0) f.BuffArmorKind = 0;
             TickHealChannel(f);
 
             // MP 回复（20/s 连续量——分数累积，ADR-0003 §1）

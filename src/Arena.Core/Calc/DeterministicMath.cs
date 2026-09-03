@@ -131,6 +131,34 @@ public static class DeterministicMath
         nz = DivRoundHalfEven(dz * Fixed.ONE, len);
     }
 
+    /// 整数 CORDIC 向量模式（E-6 同族，Errata 扩展）: 方向向量 (dx, dz) → HeadingQuantum。
+    /// 约定同 CordicCosSin: heading 0 = +Z，顺时针为正（SPEC-0001）。返回 [0, 65536)；零向量 → 0。
+    /// 纯 int64 移位/加减，确定。输出误差 ≤ 8 量子（17 迭代 + 量化）。
+    public static long CordicAtan2(long dx, long dz)
+    {
+        if (dx == 0 && dz == 0) return 0;
+        // 折叠到 x>0 半平面（向量模式收敛域 ±π/2）
+        long z;
+        if (dx < 0) { z = Atan2Q(-dx, -dz) + PI_Q; }
+        else { z = Atan2Q(dx, dz); }
+        // 数学域角 θ = atan2(dz, dx) ∈ [0, 2π)；heading h = (π/2 − θ)·65536/2π（mod 65536）
+        long h = DivRoundHalfEven((HALF_PI_Q - z) * 65536, TWO_PI_Q);
+        return ((h % 65536) + 65536) % 65536;
+    }
+
+    /// 向量模式迭代: (x, y) 旋至 x 轴，z 累积 atan2(y, x) ∈ [-π/2, π/2]（Q32.16）
+    private static long Atan2Q(long x, long y)
+    {
+        long z = 0;
+        for (int i = 0; i < AtanQ.Length; i++)
+        {
+            long dx = x >> i, dy = y >> i;
+            if (y > 0) { x += dy; y -= dx; z += AtanQ[i]; }
+            else { x -= dy; y += dx; z -= AtanQ[i]; }
+        }
+        return z;
+    }
+
     // ---- Errata E-7（提案）: Int128 中间域二次求根 —— 判别式 b²−4ac 超出 int64 域 ----
     // 场景: SweepSolver 二次约束（圆/球/角圆），坐标 ~3.9e6 raw × 位移 ~2e5 raw ⇒ b² ≤ ~8e24。
     // Int128 为软件纯整数运算（无 float），逐位跨平台一致；仅判别式与求根进入 128 位域。
