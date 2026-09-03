@@ -107,10 +107,14 @@ public sealed class SkillRuntimeData
     // ---- Batch 5: 动作窗/效果生命周期解耦（DDQ-B4-①裁定）+ 资源闭环 + 追踪原语 ----
     public int EffectDurationTicks { get; init; } // buff/stance act=Ns 的效果持续（动作窗已解耦为名义 2T）
     public bool IsPureBuff { get; init; }         // 纯增益技（无 hitbox 无伤害）——动作窗判定即收
+    public bool IsZoneRow { get; init; }          // Zone 行（耐久N hitbox）——Deploy Entity 生命周期（DDQ-B5-7）
     public bool ReloadMagazine { get; init; }     // 换弹匣（装填系: 施法动作即换弹——GDD §14.5）
     public int ProjHomingDegPerSec { get; init; } // 追踪:X°/s——弹体朝锁定目标饱和转向（可复用运动原语）
     public int OrbBuffDurationTicks { get; init; }// 炫纹增益20s → Tick（BMG 签名消费）
     public bool CleanseDebuffs { get; init; }     // 净化/静心符——清除目标全部异常状态（Cleanse 原语）
+    // ---- Flight 原语数据（DDQ-B5-6 裁定方案 B: 时长数据化 4s+1s；触发入口仍 DDQ）----
+    public int FlightBaseTicks { get; init; }     // 飞行基础时长（扫把掌握 飞行4s）
+    public int FlightBonusTicks { get; init; }    // 飞行加成时长（+1s 被动——同一时间域修饰）
     public long SelfBuffAtkPctQ { get; init; }    // 施法自增益 ATK+P%（嗜血 20%/嗜血奋战 8%）
     public long SelfDrainPctQ { get; init; }      // 自伤脉率 P%/s ×HpMax（嗜血系 1.5%/s）
     public long LifestealPctQ { get; init; }      // 正嗜血: 造成伤害 P% 转回复（嗜血奋战 10%）
@@ -127,7 +131,7 @@ public sealed class SkillRuntimeData
 }
 
 /// 部署变体（GDD §14 数据推导——全部由 hitbox/special 文本结构决定，无 skillId 分支）
-public enum DeployKind : byte { None = 0, Trap = 1, Aura = 2, Wall = 3, Scout = 4, Mirror = 5, Taunt = 6 }
+public enum DeployKind : byte { None = 0, Trap = 1, Aura = 2, Wall = 3, Scout = 4, Mirror = 5, Taunt = 6, Zone = 7 }
 
 /// 炫纹属性（GDD §9.3: 光/冰/火/暗/无属性——BMG 签名资源触发标签）
 public enum OrbTagKind : byte { None = 0, Light = 1, Ice = 2, Fire = 3, Dark = 4, NonElemental = 5 }

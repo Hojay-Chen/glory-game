@@ -1115,9 +1115,17 @@ public sealed partial class SimWorld
                 f.PosY = Fixed.FromRaw(ground);   // 台阶吸附
 
             // 垂直运动（Launch/跳跃共用重力路径；GroundStop = 当前地面高度）
-            bool wasAirborne = f.PosY.Raw > ground;
-            if (f.PosY.Raw > ground || f.VelY.Raw > 0)
+            // Flight 原语（DDQ-B5-6 方案 B）: FlightTicks>0 → 重力免除 + 高度上限 6m（GDD §14.4.3）
+            if (f.FlightTicks > 0)
             {
+                if (f.PosY.Raw > RuntimeConstants.FLIGHT_HEIGHT_CAP_M * Fixed.ONE)
+                    f.PosY = Fixed.FromRaw(RuntimeConstants.FLIGHT_HEIGHT_CAP_M * Fixed.ONE);
+                if (f.PosY.Raw < ground) f.PosY = Fixed.FromRaw(ground);
+                f.VelY = Fixed.Zero;
+            }
+            else if (f.PosY.Raw > ground || f.VelY.Raw > 0)
+            {
+                bool wasAirborne = f.PosY.Raw > ground;
                 if (f.PeakY < f.PosY.Raw) f.PeakY = f.PosY.Raw;   // 空中峰值追踪（坠落伤害用）
                 f.VelY = Fixed.FromRaw(f.VelY.Raw - RuntimeConstants.GRAVITY_PER_TICK);
                 f.PosY = Fixed.FromRaw(f.PosY.Raw + DeterministicMath.DivRoundHalfEven(f.VelY.Raw, RuntimeConstants.TICK_RATE));
@@ -1285,6 +1293,7 @@ public sealed partial class SimWorld
                 }
             }
             if (f.LifestealTicks > 0 && --f.LifestealTicks == 0) f.LifestealPctQ = 0;
+            if (f.FlightTicks > 0) f.FlightTicks--;   // Flight 原语: 剩余飞行时间（DDQ-B5-6）
             // Buff 霸体域（DDQ-B4-①解耦: 纯 buff 技动作窗结束后霸体由效果域承载）
             if (f.BuffArmorDelayTicks > 0) f.BuffArmorDelayTicks--;
             else if (f.BuffArmorTicks > 0 && --f.BuffArmorTicks == 0) f.BuffArmorKind = 0;

@@ -69,6 +69,9 @@ public static class RuntimeConstants
     // ---- 投射物（GDD §4.5） ----
     public const int PROJECTILE_LIFETIME_TICKS = (int)(3 * TICK_RATE);   // 存活 3s
     public const int MAX_PROJECTILES_PER_FIGHTER = 8;                    // 每玩家同屏上限
+    // ---- Flight 原语（DDQ-B5-6 裁定方案 B: 通用 FlightTicks 域+重力免除；触发入口仍 DDQ）----
+    public const long FLIGHT_HEIGHT_CAP_M = 6;                           // 飞行高度上限 6m（GDD §14.4.3）
+    public const long FLIGHT_HITDOWN_DMG_CAP = 1200;                     // 飞行中被击中→击坠，所受该击伤害封顶（GDD §14.4.3）
 
     // ---- 输入缓冲（GDD §2.3.1/ADR-0010 §2） ----
     public const int INPUT_BUFFER_TICKS = 12;        // 通用缓冲 12f

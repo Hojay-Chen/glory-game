@@ -130,6 +130,11 @@ public static class HitResolve
         var passiveMod = w.GetDamageModifier(DamageModStage.SignaturePassive, atk, vic, def.RuntimeId);
         if (passiveMod != Fixed.ONE) dmg = DeterministicMath.MulShift(dmg, passiveMod);
 
+        // ---- 击坠伤害封顶（GDD §14.4.3: 飞行中被击中该击伤害封顶 1200；击坠反应在受击反应后统一施加） ----
+        bool flightHitdown = vic.FlightTicks > 0;
+        if (flightHitdown && dmg > RuntimeConstants.FLIGHT_HITDOWN_DMG_CAP)
+            dmg = RuntimeConstants.FLIGHT_HITDOWN_DMG_CAP;
+
         // ---- 沉睡觉醒（GDD §7.3: 受击即醒，醒来那一击 +30%） ----
         bool sleepWakeup = vic.Statuses[(int)StatusKind.Sleep].Active;
         if (sleepWakeup) dmg = DeterministicMath.MulShift(dmg, DeterministicMath.DivRoundHalfEven(130 * Fixed.ONE, 100));
@@ -261,6 +266,14 @@ public static class HitResolve
                 vic.UkemiIneffective = true;
             }
             ApplyReaction(ctx, hitNumber, airMod);
+        }
+
+        // ---- 击坠（GDD §14.4.3: 飞行中被击中 → 硬直 20f + 长倒地——反应后统一施加，不被浮空覆盖） ----
+        if (flightHitdown)
+        {
+            vic.FlightTicks = 0;
+            ForceDown(w, vic);
+            vic.StateTicksRemaining = RuntimeConstants.DOWN_TICKS_LONG;   // 长倒地（GDD §14.4.3 击坠）
         }
 
         // ---- 技能中断（GDD §4.3: 前摇/生效被命中（无霸体）→ 技能中断，MP 不退；霸体不中断） ----

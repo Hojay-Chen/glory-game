@@ -220,6 +220,9 @@ public sealed class FighterStateData
     public int BuffArmorDelayTicks { get; set; }    // 窗口起点延迟（armor start）
     public int BuffArmorTicks { get; set; }         // 霸体剩余（armor end−start）
 
+    // Flight 原语（DDQ-B5-6 裁定方案 B: 通用飞行域——重力免除+高度上限+击坠封顶；触发入口 DDQ）
+    public int FlightTicks { get; set; }
+
     // 炫纹类型计数（BMG 资源闭环: Orb 槽计总数，类型分布供炫纹发射按型发射/增益；Σ==Orb 不变式）
     public readonly long[] OrbTypeCounts = new long[6];   // 下标 = OrbTagKind 枚举值（None/Light/Ice/Fire/Dark/NonElemental）
 
@@ -293,6 +296,7 @@ public sealed class FighterStateData
             LifestealPctQ = LifestealPctQ, LifestealTicks = LifestealTicks,
             LastCastSkillUid = LastCastSkillUid,
             BuffArmorKind = BuffArmorKind, BuffArmorDelayTicks = BuffArmorDelayTicks, BuffArmorTicks = BuffArmorTicks,
+            FlightTicks = FlightTicks,
             CopiedSkillNext = CopiedSkillNext,
             BuffAtkPctQ = BuffAtkPctQ, BuffAtkPctTicks = BuffAtkPctTicks,
             HealPulseAmountQ = HealPulseAmountQ, HealPulseRemaining = HealPulseRemaining,

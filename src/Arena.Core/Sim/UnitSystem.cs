@@ -26,6 +26,7 @@ public sealed class UnitSpec
     public long TriggerRadius { get; init; }
     public long AuraRadius { get; init; }
     public int AuraPulseIntervalTicks { get; init; }
+    public long ZoneFireWeaknessQ { get; init; }   // Zone 受火伤 +P%（魔界之花类——数据驱动元素弱点）
 }
 
 public sealed class UnitState
@@ -48,6 +49,18 @@ public sealed class UnitState
 
 public static class UnitSystem
 {
+    /// Zone 受火伤弱点（数据: 受火伤+50%——魔界之花类元素弱点，数据驱动）
+    private static long ParseZoneFireWeakness(string special)
+    {
+        var idx = special.IndexOf("受火伤+");
+        if (idx < 0) return 0;
+        var rest = special[(idx + 4)..];
+        int end = 0;
+        while (end < rest.Length && (char.IsDigit(rest[end]) || rest[end] == '.')) end++;
+        return end > 0 && decimal.TryParse(rest[..end], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v)
+            ? (long)(v / 100m * 65536m) : 0;
+    }
+
     /// 单位规格派生（单一事实源——cast 与 Snapshot 恢复共用；全字段确定性派生自 def）
     public static UnitSpec BuildFromSkillDef(SkillRuntimeData def)
     {
@@ -59,7 +72,9 @@ public static class UnitSystem
             MoveSpeedMps = FixedM(4.5m),
             AttackRange = FixedM(8m),      // 投掷基线（哥布林扔石头）
             AttackCdTicks = 2 * (int)RuntimeConstants.TICK_RATE,
-            LifetimeTicks = def.SummonLifetimeTicks,
+            // Zone 生命周期 = act 借位效果持续（DDQ-B5-7 裁定: Zone = 独立 Deploy 实体生命周期）
+            LifetimeTicks = def.DeployKind == DeployKind.Zone && def.EffectDurationTicks > 0
+                ? def.EffectDurationTicks : def.SummonLifetimeTicks,
             Flying = def.SummonFlying,
             Decoy = false,
             Stationary = isDeploy || def.SkillId.Contains("魔界之花"),
@@ -68,6 +83,7 @@ public static class UnitSystem
             TriggerRadius = def.TriggerRadius,
             AuraRadius = def.AuraRadius > 0 ? def.AuraRadius : FixedM(4m),
             AuraPulseIntervalTicks = def.AuraPulseIntervalTicks,
+            ZoneFireWeaknessQ = ParseZoneFireWeakness(def.Special),
         };
     }
 
@@ -180,6 +196,36 @@ public static class UnitSystem
     /// Deploy 载荷推进（陷阱单次触发 / 光环周期脉冲 / 静置存在语义）
     private static void AdvanceDeploy(SimWorld w, UnitState u, UnitSpec spec, IReadOnlyList<FighterStateData> fighters)
     {
+        // Zone（DDQ-B5-7 裁定: 独立 Deploy 实体——耐久可被摧毁 + 周期效果脉冲复用 Aura 语义）
+        if (spec.DeployKind == DeployKind.Zone)
+        {
+            // 第一层: 耐久承伤——敌方判定体重叠 Zone 中心即命中（伤害 = mult × ownerAtk，v1 简化: 无防御/部位——DDQ 登记）
+            foreach (var hb in w.Hitboxes)
+            {
+                if (w.Tick < hb.SpawnTick || w.Tick >= hb.ExpireTick) continue;
+                var hOwner = w.GetFighter(hb.OwnerId);
+                if (hOwner is null || hOwner.State == FighterState.Dead || w.SameTeam(hOwner.Id, u.Team)) continue;
+                if (hb.Def is not { } hdef || hdef.DamageMultQ <= 0) continue;
+                long dx = hb.AnchorX - u.PosX.Raw, dz = hb.AnchorZ - u.PosZ.Raw;
+                long reach = spec.AuraRadius + 3 * Fixed.ONE;   // Zone 半径 + 判定体前伸余量
+                if (dx * dx + dz * dz > reach * reach) continue;
+                long dmg = DeterministicMath.MulShift(hdef.DamageMultQ, hOwner.Atk);
+                if (hdef.DamageType == "fire" && spec.ZoneFireWeaknessQ > 0)
+                    dmg = DeterministicMath.MulShift(dmg, Fixed.ONE + spec.ZoneFireWeaknessQ);   // 受火伤+50%（魔界之花类）
+                u.Hp -= dmg;
+                w.Events.Emit(new SimEvent { Kind = EventKind.UnitDied, AttackerId = hOwner.Id, VictimId = u.Uid, DamageRaw = dmg, ReasonByte = 9 });
+            }
+            if (u.Hp <= 0)
+            {
+                Destroy(w, u, UnitEndReason.Recall);
+                return;
+            }
+            // 第二层: 效果脉冲（有伤害/状态 → 敌方脉冲；纯防御罩 → 静默存在，吸收语义 DDQ-B7-3）
+            if (spec.AttackDef.DamageMultQ > 0 || spec.AttackDef.Statuses.Length > 0)
+                ZonePulse(w, u, spec, fighters);
+            return;
+        }
+
         // 陷阱: 敌方进入触发半径 → 单次爆发 → 自毁
         if (spec.DeployKind == DeployKind.Trap)
         {
@@ -249,4 +295,28 @@ public static class UnitSystem
         long h = HitResolve.DirIndexFromVel(nx, nz);
         return h * (65536 / 8);
     }
+
+/// Zone 效果脉冲（第二层 Effect: 范围检测→目标过滤→Effect 应用——DDQ-B5-7 裁定分层）
+private static void ZonePulse(SimWorld w, UnitState u, UnitSpec spec, IReadOnlyList<FighterStateData> fighters)
+{
+    if (--u.AuraPulseTimer > 0) return;
+    u.AuraPulseTimer = spec.AuraPulseIntervalTicks;
+    foreach (var f in fighters)
+    {
+        if (f.State == FighterState.Dead || f.Hidden || f.GrabbedBy >= 0) continue;
+        if (w.SameTeam(u.Team, f.Id)) continue;   // Zone 效果脉冲: 敌方方向（念气罩类静默罩不进入此路径）
+        long dx = f.PosX.Raw - u.PosX.Raw, dz = f.PosZ.Raw - u.PosZ.Raw;
+        long rr = spec.AuraRadius + RuntimeConstants.FIGHTER_RADIUS;
+        if (dx * dx + dz * dz > rr * rr) continue;
+        w.PendingContacts.Add(new PendingContact
+        {
+            ToiRaw = 0, LayerRank = 2, AttackerId = u.OwnerFighterId, DefenderId = f.Id,
+            HitboxUid = u.Uid, Region = (byte)HitRegion.Torso, Kind = (byte)ContactKind.CombatHit,
+            SkillRuntimeId = spec.AttackDef.RuntimeId, SegmentIndex = 0,
+            HitPointX = f.PosX.Raw, HitPointY = f.PosY.Raw + RuntimeConstants.TORSO_TOP / 2, HitPointZ = f.PosZ.Raw,
+            NormalX = 0, NormalZ = 0, FromUnitUid = u.Uid,
+        });
+    }
+}
+
 }

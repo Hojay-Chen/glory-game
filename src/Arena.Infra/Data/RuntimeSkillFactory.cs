@@ -78,8 +78,9 @@ public static class RuntimeSkillFactory
             CooldownTicks = d.CooldownTicks,
             // 蓄力（GDD §4.1）: 蓄力时长追加至前摇（巴雷特 30+72=102 等）；v1 全额蓄力语义（登记）
             StartupTicks = d.StartupTicks + (charge?.Item1 ?? 0),
-            // DDQ-B4-①: 纯 buff 技动作窗 = 名义 2T（判定即收），效果持续由 EffectDurationTicks 承载
-            ActiveTicks = IsPureBuffRow(d) ? 2 : d.ActiveTicks,
+            // DDQ-B4-①: 纯 buff 技动作窗 = 名义 2T（判定即收），效果持续由 EffectDurationTicks 承载；
+            // DDQ-B5-7 裁定: Zone 行同样 2T 施法动作窗（Zone 生命周期 = 独立 Deploy 实体，与施法动作解耦）
+            ActiveTicks = IsPureBuffRow(d) || d.HitboxRaw.Contains("耐久") ? 2 : d.ActiveTicks,
             RecoveryTicks = d.RecoveryTicks,
             HitSchedule = d.HitSchedule,
             Geo = geo.Geometry,
@@ -113,8 +114,11 @@ public static class RuntimeSkillFactory
             // DDQ-B4-①裁定: buff 类技能 act=Ns 为「效果持续」借位事实（动作窗口与效果生命周期解耦）。
             // 纯 buff（无 hitbox 无伤害）动作窗收为名义 2T（parser 对 '-' 的既有惯例，非发明数值）；
             // 带 hitbox 的 zone/stance 生命周期耦合仍按 act（DDQ-B5 待解耦）。
-            EffectDurationTicks = (d.Type == "buff" || d.Type == "stance") && d.ActiveRaw.EndsWith("s") ? d.ActiveTicks : 0,
+            EffectDurationTicks = (d.Type == "buff" || d.Type == "stance" || d.HitboxRaw.Contains("耐久") || hbRawKind == "zone") && d.ActiveRaw.EndsWith("s") ? d.ActiveTicks : 0,
             IsPureBuff = IsPureBuffRow(d),
+            IsZoneRow = d.HitboxRaw.Contains("耐久"),
+            FlightBaseTicks = ParseFlightDuration(d.Special).baseT,
+            FlightBonusTicks = ParseFlightDuration(d.Special).bonusT,
             ReloadMagazine = d.Special.Contains("换弹匣"),
             ProjHomingDegPerSec = ParseHomingDeg(d.Special),
             OrbBuffDurationTicks = ParseOrbBuffDuration(d.Special),
@@ -134,9 +138,9 @@ public static class RuntimeSkillFactory
             SelfDrainPctQ = ParseSelfDrainPct(d.Special),
             LifestealPctQ = ParseLifestealPct(d.Special),
             DeployKind = ParseDeployKind(d, hbRawKind),
-            DeployHp = ParseDeployHp(d.Special),
+            DeployHp = Math.Max(ParseDeployHp(d.Special), ParseDurability(d.HitboxRaw)),   // 耐久N（念气罩 2000）
             TriggerRadius = hbRawKind == "deploy" && d.HitboxRaw.Contains("触发") ? ParseRadiusArg(d.HitboxRaw, 1) : 0,
-            AuraRadius = hbRawKind == "zone" ? ParseRadiusArg(d.HitboxRaw, 1)
+            AuraRadius = hbRawKind == "zone" || d.HitboxRaw.Contains("耐久") ? ParseRadiusArg(d.HitboxRaw, 1)
                        : hbRawKind == "deploy" ? ParseRadiusArg(d.HitboxRaw, 1) : 0,
             AuraPulseIntervalTicks = (int)RuntimeConstants.TICK_RATE,
             HealAmountQ = ParseHealAmount(d),
@@ -489,6 +493,8 @@ public static class RuntimeSkillFactory
     /// 部署变体（hitbox/special 文本结构决定——无 skillId 分支）
     private static DeployKind ParseDeployKind(SkillDef d, string hbKind)
     {
+        if (d.HitboxRaw.Contains("耐久")) return DeployKind.Zone;   // DDQ-B5-7 裁定: 耐久 Zone = 独立 Deploy 实体（念气罩类）
+        if (hbKind == "zone" && d.Type == "summon") return DeployKind.Zone;   // 魔界之花类: zone hitbox 召唤 → Zone 实体
         if (hbKind == "wall") return DeployKind.Wall;
         if (d.SkillName.Contains("魔镜") || d.Special.Contains("悬浮")) return DeployKind.Mirror;
         if (d.Special.Contains("侦察")) return DeployKind.Scout;
@@ -553,6 +559,42 @@ public static class RuntimeSkillFactory
         if (c.StartsWith("暗")) return OrbTagKind.Dark;
         if (c.StartsWith("无属性")) return OrbTagKind.NonElemental;
         return OrbTagKind.None;
+    }
+
+    /// Zone 耐久（数据: hitbox「耐久2000」——念气罩类；Deploy 实体 Durability）
+    private static long ParseDurability(string hitboxRaw)
+    {
+        var idx = hitboxRaw.IndexOf("耐久");
+        if (idx < 0) return 0;
+        var rest = hitboxRaw[(idx + 2)..];
+        int end = 0;
+        while (end < rest.Length && char.IsDigit(rest[end])) end++;
+        return end > 0 && long.TryParse(rest[..end], out var v) ? v : 0;
+    }
+
+    /// 飞行时长（数据: 飞行4s(+1)——扫把掌握；base+bonus 同一时间域，触发入口 DDQ）
+    private static (int baseT, int bonusT) ParseFlightDuration(string special)
+    {
+        var idx = special.IndexOf("飞行");
+        if (idx < 0) return (0, 0);
+        var rest = special[(idx + 2)..];
+        int end = 0;
+        while (end < rest.Length && (char.IsDigit(rest[end]) || rest[end] == '.')) end++;
+        if (end == 0 || end >= rest.Length || rest[end] != 's'
+            || !double.TryParse(rest[..end], NumberStyles.Float, CultureInfo.InvariantCulture, out var sec))
+            return (0, 0);
+        int baseT = (int)Math.Round(sec * RuntimeConstants.TICK_RATE, MidpointRounding.ToEven);
+        int bonus = 0;
+        var plus = rest.IndexOf("(+", end);
+        if (plus >= 0)
+        {
+            var pr = rest[(plus + 2)..];
+            int pe = 0;
+            while (pe < pr.Length && (char.IsDigit(pr[pe]) || pr[pe] == '.')) pe++;
+            if (pe > 0 && double.TryParse(pr[..pe], NumberStyles.Float, CultureInfo.InvariantCulture, out var bsec))
+                bonus = (int)Math.Round(bsec * RuntimeConstants.TICK_RATE, MidpointRounding.ToEven);
+        }
+        return (baseT, bonus);
     }
 
     /// 施法自增益 ATK+P%（数据: ATK+20%——嗜血/嗜血奋战；通用自增益通道，Batch 4）
