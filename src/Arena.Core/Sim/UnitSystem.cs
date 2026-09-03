@@ -48,6 +48,29 @@ public sealed class UnitState
 
 public static class UnitSystem
 {
+    /// 单位规格派生（单一事实源——cast 与 Snapshot 恢复共用；全字段确定性派生自 def）
+    public static UnitSpec BuildFromSkillDef(SkillRuntimeData def)
+    {
+        bool isDeploy = def.DeployKind != DeployKind.None;
+        return new UnitSpec
+        {
+            Label = def.SkillId,
+            Hp = isDeploy && def.DeployHp > 0 ? def.DeployHp : def.SummonHp,
+            MoveSpeedMps = FixedM(4.5m),
+            AttackRange = FixedM(8m),      // 投掷基线（哥布林扔石头）
+            AttackCdTicks = 2 * (int)RuntimeConstants.TICK_RATE,
+            LifetimeTicks = def.SummonLifetimeTicks,
+            Flying = def.SummonFlying,
+            Decoy = false,
+            Stationary = isDeploy || def.SkillId.Contains("魔界之花"),
+            AttackDef = def,
+            DeployKind = def.DeployKind,
+            TriggerRadius = def.TriggerRadius,
+            AuraRadius = def.AuraRadius > 0 ? def.AuraRadius : FixedM(4m),
+            AuraPulseIntervalTicks = def.AuraPulseIntervalTicks,
+        };
+    }
+
     public static int Spawn(SimWorld w, FighterStateData owner, UnitSpec spec, int tick)
     {
         DeterministicMath.CordicCosSin(owner.HeadingQuantum, out var fx, out var fz);

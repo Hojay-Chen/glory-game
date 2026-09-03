@@ -244,7 +244,7 @@ public class SignatureBatch4Tests : IDisposable
         var snap = client.CaptureSnapshot();
         var restored = CreateWorld(DefaultRegistry(), fighters);
         restored.RestoreSnapshot(snap);
-        ReplayRange(restored, clientLog, 351, 700);
+        ReplayRange(restored, log, 351, 700);   // 全量指令日志（ADR-0005 回放语义）
 
         Assert.True(auth.CaptureSnapshot().BitwiseEquals(restored.CaptureSnapshot()),
             "Batch 4 新状态域（Drain/Lifesteal/Resonance/LastCast）快照恢复 + 相同指令 ⇒ 逐位一致");
@@ -274,7 +274,7 @@ public class SignatureBatch4Tests : IDisposable
         {
             var cmds = CommandsFor(t);
             w.Step(t, cmds);
-            foreach (var cmd in cmds) log.Add(cmd);
+            foreach (var cmd in cmds) log.Add(cmd with { TargetTick = t });
         }
     }
 

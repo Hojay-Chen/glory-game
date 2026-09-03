@@ -1,3 +1,4 @@
+using System.Linq;
 using System;
 using System.Collections.Generic;
 using Arena.Core.Snapshot;
@@ -20,6 +21,7 @@ public partial class SimWorld
         snap.Set(c++, _nextExecUid);
         snap.Set(c++, _nextHitboxUid);
         snap.Set(c++, _nextProjUid);
+        snap.Set(c++, _nextUnitUid);
 
         // ---- Fighters（Id 升序） ----
         snap.Set(c++, Fighters.Count);
@@ -51,7 +53,7 @@ public partial class SimWorld
             snap.Set(c++, f.LastCastSkillUid);
             snap.Set(c++, f.BuffArmorKind); snap.Set(c++, f.BuffArmorDelayTicks); snap.Set(c++, f.BuffArmorTicks);
             snap.Set(c++, f.CopiedSkillNext);
-            for (int k = 0; k < 5; k++) snap.Set(c++, f.OrbTypeCounts[k]);
+            for (int k = 0; k < 6; k++) snap.Set(c++, f.OrbTypeCounts[k]);
             for (int k = 0; k < 3; k++) snap.Set(c++, f.CopiedSkillUids[k]);
             snap.Set(c++, f.HealPulseAmountQ); snap.Set(c++, f.HealPulseRemaining);
             snap.Set(c++, f.HealPulseTimer); snap.Set(c++, f.HealPulseInterval); snap.Set(c++, f.HealIsMana ? 1 : 0);
@@ -110,9 +112,45 @@ public partial class SimWorld
             snap.Set(c++, p.DispX); snap.Set(c++, p.DispY); snap.Set(c++, p.DispZ);
             snap.Set(c++, p.Radius); snap.Set(c++, p.SpawnTick); snap.Set(c++, p.ExpireTick);
             snap.Set(c++, p.PierceRemaining);
+            snap.Set(c++, p.TargetId); snap.Set(c++, p.HeadingQuantum);
             snap.Set(c++, (p.IsLob ? 1 : 0) | (p.Expired ? 2 : 0));
             snap.Set(c++, p.HitVictims.Count);
             foreach (var v in p.HitVictims) snap.Set(c++, v);
+        }
+
+        // ---- Units（Uid 升序；Spec 由 AttackDef 单源重建） ----
+        snap.Set(c++, Units.Count);
+        foreach (var u in Units)   // 容器纪律: Uid 升序维护
+        {
+            snap.Set(c++, u.Uid);
+            snap.Set(c++, u.OwnerFighterId); snap.Set(c++, u.Team);
+            snap.Set(c++, u.PosX.Raw); snap.Set(c++, u.PosZ.Raw);
+            snap.Set(c++, u.HeadingQuantum);
+            snap.Set(c++, u.Hp); snap.Set(c++, u.HpMax);
+            snap.Set(c++, u.AttackCdRemaining); snap.Set(c++, u.LifetimeRemaining);
+            snap.Set(c++, u.AuraPulseTimer); snap.Set(c++, u.Triggered ? 1 : 0);
+            snap.Set(c++, u.Expired ? 1 : 0);
+            snap.Set(c++, u.Spec.AttackDef.RuntimeId);
+        }
+
+        // ---- 输入缓冲（IC12: 缓冲指令是战斗状态——ADR-0010 缓冲窗 12f 快照携带） ----
+        int ibCount = 0;
+        foreach (var kv in _inputBuffers) ibCount += kv.Value.Count;
+        snap.Set(c++, _inputBuffers.Count);
+        snap.Set(c++, ibCount);
+        var ibKeys = _inputBuffers.Keys.OrderBy(k => k).ToList();
+        foreach (var fidKey in ibKeys)
+        {
+            var kvKey = fidKey;
+            var kvValue = _inputBuffers[kvKey];
+            snap.Set(c++, kvKey);
+            snap.Set(c++, kvValue.Count);
+            foreach (var entry in kvValue)
+            {
+                snap.Set(c++, entry.cmd.FighterId); snap.Set(c++, (long)entry.cmd.Kind); snap.Set(c++, entry.cmd.SkillId);
+                snap.Set(c++, entry.cmd.AimQuantum); snap.Set(c++, entry.cmd.DirIndex); snap.Set(c++, entry.cmd.TargetTick);
+                snap.Set(c++, entry.expiry);
+            }
         }
 
         // ---- RNG 计数器（保留键段） ----
@@ -133,6 +171,7 @@ public partial class SimWorld
         _nextExecUid = (int)snap.Get(c++);
         _nextHitboxUid = (int)snap.Get(c++);
         _nextProjUid = (int)snap.Get(c++);
+        _nextUnitUid = (int)snap.Get(c++);
 
         // ---- Fighters ----
         // 复位既有 Fighter 对象（保留装配期 ClassId/Team——字符串不进快照，ADR-0001 §8.2）
@@ -170,7 +209,7 @@ public partial class SimWorld
             f.LastCastSkillUid = (ushort)snap.Get(c++);
             f.BuffArmorKind = (byte)snap.Get(c++); f.BuffArmorDelayTicks = (int)snap.Get(c++); f.BuffArmorTicks = (int)snap.Get(c++);
             f.CopiedSkillNext = (int)snap.Get(c++);
-            for (int k = 0; k < 5; k++) f.OrbTypeCounts[k] = snap.Get(c++);
+            for (int k = 0; k < 6; k++) f.OrbTypeCounts[k] = snap.Get(c++);
             for (int k = 0; k < 3; k++) f.CopiedSkillUids[k] = (ushort)snap.Get(c++);
             f.HealPulseAmountQ = snap.Get(c++); f.HealPulseRemaining = (int)snap.Get(c++);
             f.HealPulseTimer = (int)snap.Get(c++); f.HealPulseInterval = (int)snap.Get(c++); f.HealIsMana = snap.Get(c++) != 0;
@@ -260,6 +299,7 @@ public partial class SimWorld
                 Radius = snap.Get(c++),
                 SpawnTick = (int)snap.Get(c++), ExpireTick = (int)snap.Get(c++),
                 PierceRemaining = (int)snap.Get(c++),
+                TargetId = (int)snap.Get(c++), HeadingQuantum = snap.Get(c++),
             };
             var flags = snap.Get(c++);
             p.IsLob = (flags & 1) != 0; p.Expired = (flags & 2) != 0;
@@ -267,6 +307,48 @@ public partial class SimWorld
             int vc = (int)snap.Get(c++);
             for (int k = 0; k < vc; k++) p.HitVictims.Add((int)snap.Get(c++));
             Projectiles.Add(p);
+        }
+
+        // ---- Units（Batch 6: 单位/部署实体——Spec 由 AttackDef 单源重建） ----
+        Units.Clear();
+        int uCount = (int)snap.Get(c++);
+        for (int i = 0; i < uCount; i++)
+        {
+            var u = new UnitState
+            {
+                Uid = (int)snap.Get(c++),
+                OwnerFighterId = (int)snap.Get(c++),
+                Team = (byte)snap.Get(c++),
+                PosX = Fixed.FromRaw(snap.Get(c++)), PosZ = Fixed.FromRaw(snap.Get(c++)),
+                HeadingQuantum = snap.Get(c++),
+                Hp = snap.Get(c++), HpMax = snap.Get(c++),
+                AttackCdRemaining = (int)snap.Get(c++),
+                LifetimeRemaining = (int)snap.Get(c++),
+                AuraPulseTimer = (int)snap.Get(c++),
+                Triggered = snap.Get(c++) != 0,
+            };
+            u.Expired = snap.Get(c++) != 0;
+            u.Spec = BuildUnitSpecFromCatalog((ushort)snap.Get(c++));
+            Units.Add(u);
+        }
+
+        // ---- 输入缓冲恢复 ----
+        _inputBuffers.Clear();
+        int ibFighters = (int)snap.Get(c++);
+        int ibTotal = (int)snap.Get(c++);
+        for (int i = 0; i < ibFighters; i++)
+        {
+            int fid = (int)snap.Get(c++);
+            int n = (int)snap.Get(c++);
+            var list = new List<(Command, int)>();
+            for (int k = 0; k < n; k++)
+            {
+                var cmd = new Command((int)snap.Get(c++), (CmdKind)snap.Get(c++), (ushort)snap.Get(c++),
+                    (ushort)snap.Get(c++), (byte)snap.Get(c++), (int)snap.Get(c++));
+                int expiry = (int)snap.Get(c++);
+                list.Add((cmd, expiry));
+            }
+            _inputBuffers[fid] = list;
         }
 
         // ---- RNG 计数器 ----

@@ -230,12 +230,22 @@ public static class ProjectileSystem
             // 法术反射（KNI/WRK: 窗口内 magic 弹体反弹向施法者——OwnerId 转移+反向）
             if (f.ReflectTicks > 0 && p.Def is { } rdef && rdef.DamageType != "phys")
             {
+                long oldOwner = p.OwnerId;
                 p.OwnerId = f.Id;
                 p.DispX = -p.DispX;
                 p.DispZ = -p.DispZ;
+                // 追踪弹反射后重锁目标并直接朝向新目标（原目标=反射者；仅重锁不重置朝向则
+                // 转弯弧 R=v/ω≈12.7m 追不上直线回程——IC06 探针暴露）
+                if (p.TargetId == f.Id)
+                {
+                    p.TargetId = SelectNearestEnemy(w, f);
+                    var tgt = w.GetFighter(p.TargetId);
+                    if (tgt is not null)
+                        p.HeadingQuantum = DeterministicMath.CordicAtan2(tgt.PosX.Raw - p.PosX, tgt.PosZ.Raw - p.PosZ);
+                }
                 p.HitVictims.Clear();
                 p.HitVictims.Add(f.Id);   // 反射者不被自己的反弹立即命中
-                w.Events.Emit(new SimEvent { Kind = EventKind.Reflected, AttackerId = f.Id, VictimId = p.OwnerId, SkillId = p.SkillRuntimeId, ValueRaw = p.Uid });
+                w.Events.Emit(new SimEvent { Kind = EventKind.Reflected, AttackerId = f.Id, VictimId = (int)oldOwner, SkillId = p.SkillRuntimeId, ValueRaw = p.Uid });
                 return;   // 本 Tick 弹体折返——剩余交互归下一 Tick（确定性: 每 Tick 至多一次反射）
             }
 

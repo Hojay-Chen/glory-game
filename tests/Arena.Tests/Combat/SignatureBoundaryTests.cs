@@ -118,7 +118,7 @@ public class SignatureBoundaryTests : IDisposable
             (0, "BMG", 0), (1, "BMG", 0), (2, "BER", 0), (3, "ASN", 1));
         restored.RestoreSnapshot(midSnap);
         // 客户端事件流重放（与 auth 相同 tick-command 流——RunRange 用同序列表）
-        ReplayRange(restored, clientEvents, 301, 600);
+        ReplayRange(restored, authEvents, 301, 600);   // 全量指令日志（ADR-0005 回放语义）
 
         Assert.True(auth.CaptureSnapshot().BitwiseEquals(restored.CaptureSnapshot()),
             "签名状态（Orb/Buff/Def 域）快照恢复 + 相同指令 ⇒ 逐位一致");
@@ -130,7 +130,7 @@ public class SignatureBoundaryTests : IDisposable
         {
             var cmds = CommandsFor(t);
             w.Step(t, cmds);
-            foreach (var c in cmds) log.Add(c);
+            foreach (var c in cmds) log.Add(c with { TargetTick = t });   // 打戳（ReplayRange 按 TargetTick 分组）
         }
     }
 
@@ -160,6 +160,9 @@ public class SignatureBoundaryTests : IDisposable
             70 => new[] { new Command(2, CmdKind.Skill, c["BMG_T1_001"], 32768, 0, t) }, // ASN 借用天击朝 −Z
             90 => Array.Empty<Command>(),
             120 => new[] { new Command(3, CmdKind.Skill, c["BMG_T1_002"], 0, 0, t) }, // ASN 龙牙朝 +Z
+            // 恢复点（300）后补真实指令——重放路径必须演练恢复后指令处理（RunRange 落日志带 TargetTick）
+            420 => new[] { new Command(0, CmdKind.Skill, c["BMG_T1_003"], 0, 0, t) }, // BMG#0 连突
+            500 => new[] { new Command(0, CmdKind.Skill, c["BMG_T1_001"], 0, 0, t) }, // BMG#0 天击
             _ => Array.Empty<Command>(),
         };
     }

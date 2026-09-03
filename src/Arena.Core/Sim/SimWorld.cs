@@ -733,24 +733,7 @@ public sealed partial class SimWorld
                 if (owner.ResourceCounts[slot] < owner.ResourceCaps[slot] || owner.ResourceCaps[slot] == 0)
                 {
                     // Deploy 变体（deploy/wall/zone hitbox → 载荷实体; unit → 召唤兽）
-                    bool isDeploy = def.DeployKind != DeployKind.None;
-                    UnitSystem.Spawn(this, owner, new UnitSpec
-                    {
-                        Label = def.SkillId,
-                        Hp = isDeploy && def.DeployHp > 0 ? def.DeployHp : def.SummonHp,
-                        MoveSpeedMps = FixedM2(4.5m),
-                        AttackRange = FixedM2(8m),      // 投掷基线（哥布林扔石头）
-                        AttackCdTicks = 2 * (int)RuntimeConstants.TICK_RATE,
-                        LifetimeTicks = def.SummonLifetimeTicks,
-                        Flying = def.SummonFlying,
-                        Decoy = false,
-                        Stationary = isDeploy || def.SkillId.Contains("魔界之花"),
-                        AttackDef = def,
-                        DeployKind = def.DeployKind,
-                        TriggerRadius = def.TriggerRadius,
-                        AuraRadius = def.AuraRadius > 0 ? def.AuraRadius : FixedM2(4m),
-                        AuraPulseIntervalTicks = def.AuraPulseIntervalTicks,
-                    }, (int)Tick);
+                    UnitSystem.Spawn(this, owner, UnitSystem.BuildFromSkillDef(def), (int)Tick);
                     owner.ResourceCounts[slot]++;
                 }
             }

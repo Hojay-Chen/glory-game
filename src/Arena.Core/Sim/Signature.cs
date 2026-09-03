@@ -174,6 +174,13 @@ public sealed partial class SimWorld
         return sig.ShouldBreakStealth(ctx, def.RuntimeId);
     }
 
+    /// 单位规格恢复（Snapshot——AttackDef RuntimeId → 单源派生重建；未知 Id = 装配缺陷 fail-fast）
+    private UnitSpec BuildUnitSpecFromCatalog(ushort attackDefId)
+    {
+        var def = GetSkill(attackDefId) ?? throw new InvalidOperationException($"unit spec restore: unknown skill uid {attackDefId}");
+        return UnitSystem.BuildFromSkillDef(def);
+    }
+
     /// 动态施放解析（TryCastSkill——ROG 以牙还牙: 按键技 → 运行时复制技重定向）
     internal bool TryResolveDynamicSkill(FighterStateData f, SkillRuntimeData requested, out SkillRuntimeData resolved, out long mpMult)
     {
