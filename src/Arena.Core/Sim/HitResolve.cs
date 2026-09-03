@@ -276,6 +276,20 @@ public static class HitResolve
             vic.StateTicksRemaining = RuntimeConstants.DOWN_TICKS_LONG;   // 长倒地（GDD §14.4.3 击坠）
         }
 
+        // ---- Pull 原语（Batch 7 Part 3: 拉拽/拖拽——目标向攻击者强制位移，与击退共用 ④ 位移通道反向） ----
+        if (def.PullTowardOwnerM > 0)
+        {
+            DeterministicMath.Normalize(atk.PosX.Raw - vic.PosX.Raw, atk.PosZ.Raw - vic.PosZ.Raw, out var pnx, out var pnz);
+            long pullSpeed = DeterministicMath.MulShift(def.PullTowardOwnerM, 9 * Fixed.ONE);   // 位移 ×9 同击退律
+            vic.PullVelX = DeterministicMath.MulShift(pnx, pullSpeed);
+            vic.PullVelZ = DeterministicMath.MulShift(pnz, pullSpeed);
+            vic.PullTicks = RuntimeConstants.PULL_MOVE_TICKS;
+        }
+
+        // ---- 强制中断（Batch 7 Part 3: 打断攻击/打断吟唱——命中即中断目标执行体，独立于伤害/霸体判定） ----
+        if (def.ForceInterrupt && vic.ActiveSkillUid != 0)
+            w.TerminateExecutionById(vic.ActiveSkillUid, cancelled: false, interrupted: true);
+
         // ---- 技能中断（GDD §4.3: 前摇/生效被命中（无霸体）→ 技能中断，MP 不退；霸体不中断） ----
         if (!armored && vic.ActiveSkillUid != 0)
             w.TerminateExecutionById(vic.ActiveSkillUid, cancelled: false, interrupted: true);

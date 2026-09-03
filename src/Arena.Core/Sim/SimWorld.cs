@@ -710,6 +710,24 @@ public sealed partial class SimWorld
                 }
             }
 
+            // Decoy（Batch 7 Part 3: 分身/假身——静置诱饵实体，吸引单位类攻击；真身换位/瞬移 DDQ-B7-14）
+            if (def.IsDecoy && exec.CurrentOffset == exec.EffectiveStartup)
+            {
+                UnitSystem.Spawn(this, owner, new UnitSpec
+                {
+                    Label = def.SkillId,
+                    Hp = def.SummonHp > 0 ? def.SummonHp : 300,
+                    MoveSpeedMps = 0,
+                    AttackRange = 0,
+                    AttackCdTicks = int.MaxValue,
+                    LifetimeTicks = def.EffectDurationTicks > 0 ? def.EffectDurationTicks : 10 * (int)RuntimeConstants.TICK_RATE,
+                    Flying = false,
+                    Decoy = true,
+                    Stationary = true,
+                    AttackDef = def,
+                }, (int)Tick);
+            }
+
             // 召唤（summon 技: 召唤位资源槽消费 + UnitSpec 数据化出生）
             if ((def.IsSummon || def.DeployKind != DeployKind.None) && exec.CurrentOffset == exec.EffectiveStartup && !def.IsProjectile)
             {
@@ -1178,6 +1196,20 @@ public sealed partial class SimWorld
             else
             {
                 f.PeakY = ground;   // 地面行进——峰值复位
+            }
+
+            // Pull 原语（Batch 7 Part 3: 拉拽/拖拽——PullVel 强制位移，IntegrateMove 防穿墙，击退同律）
+            if (f.PullTicks > 0)
+            {
+                var pullMove = Collision.IntegrateMove(f.PosX.Raw, f.PosZ.Raw, f.PullVelX, f.PullVelZ,
+                    RuntimeConstants.FIGHTER_RADIUS, bounceEnabled: true);
+                f.PosX = Fixed.FromRaw(pullMove.FinalX);
+                f.PosZ = Fixed.FromRaw(pullMove.FinalZ);
+                // 拉拽摩擦衰减 ×85/100（击退同律——总位移 = 标称距离）
+                f.PullVelX = DeterministicMath.MulShift(f.PullVelX * RuntimeConstants.FRICTION_KEEP_NUM, Fixed.ONE) / RuntimeConstants.FRICTION_KEEP_DEN;
+                f.PullVelZ = DeterministicMath.MulShift(f.PullVelZ * RuntimeConstants.FRICTION_KEEP_NUM, Fixed.ONE) / RuntimeConstants.FRICTION_KEEP_DEN;
+                f.PullTicks--;
+                if (f.PullTicks == 0) { f.PullVelX = 0; f.PullVelZ = 0; }
             }
 
             // 浮空连时钟（GDD §5.3 第二道闸: 累计 3s 强制落地）

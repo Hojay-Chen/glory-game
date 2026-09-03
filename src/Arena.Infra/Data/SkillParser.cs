@@ -122,9 +122,13 @@ public static class SkillParser
         }
 
         // P-2: 多段 hitSchedule
+        // Channel 周期化（Batch 7 Part 3 裁定）: type=channel 且 hits 缺省且 iv>0 → active/iv 周期重复判定
+        // （引导类持续 AOE 的数据驱动展开——寒冰降雨/火焰喷射/格林机枪/神佑之光）
         int hits = ParseIntOrZero(d.GetValueOrDefault("hits", "1"));
-        if (hits <= 0) hits = 1;
         int iv = ParseIntOrZero(d.GetValueOrDefault("hit_interval_f", "0"));
+        if (d.GetValueOrDefault("type", "") == "channel" && hits <= 0 && iv > 0 && activeTicks >= iv)
+            hits = Math.Max(1, activeTicks / iv);
+        if (hits <= 0) hits = 1;
         var schedule = new int[hits];
         if (hits > 1 && iv > 0)
         {

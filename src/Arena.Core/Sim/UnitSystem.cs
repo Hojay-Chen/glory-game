@@ -76,7 +76,7 @@ public static class UnitSystem
             LifetimeTicks = def.DeployKind == DeployKind.Zone && def.EffectDurationTicks > 0
                 ? def.EffectDurationTicks : def.SummonLifetimeTicks,
             Flying = def.SummonFlying,
-            Decoy = false,
+            Decoy = def.IsDecoy,
             Stationary = isDeploy || def.SkillId.Contains("魔界之花"),
             AttackDef = def,
             DeployKind = def.DeployKind,

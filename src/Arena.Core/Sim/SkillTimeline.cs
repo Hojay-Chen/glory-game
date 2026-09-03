@@ -112,6 +112,10 @@ public sealed class SkillRuntimeData
     public int ProjHomingDegPerSec { get; init; } // 追踪:X°/s——弹体朝锁定目标饱和转向（可复用运动原语）
     public int OrbBuffDurationTicks { get; init; }// 炫纹增益20s → Tick（BMG 签名消费）
     public bool CleanseDebuffs { get; init; }     // 净化/静心符——清除目标全部异常状态（Cleanse 原语）
+    // ---- Batch 7 Part 3: Pull / 强制中断 / Decoy（全部数据驱动，零 per-skill 分支）----
+    public long PullTowardOwnerM { get; init; }   // 拉拽: 命中后目标向攻击者强制位移 N m（悬磁炮/勾魂）
+    public bool ForceInterrupt { get; init; }     // 打断攻击/打断吟唱——命中即中断目标执行体（陷阱扣/寒冰降雨）
+    public bool IsDecoy { get; init; }            // 分身/假身——静置诱饵实体（吸引单位类攻击，NJA 影分身）
     // ---- Flight 原语数据（DDQ-B5-6 裁定方案 B: 时长数据化 4s+1s；触发入口仍 DDQ）----
     public int FlightBaseTicks { get; init; }     // 飞行基础时长（扫把掌握 飞行4s）
     public int FlightBonusTicks { get; init; }    // 飞行加成时长（+1s 被动——同一时间域修饰）

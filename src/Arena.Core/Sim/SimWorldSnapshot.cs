@@ -52,6 +52,7 @@ public partial class SimWorld
             snap.Set(c++, f.LifestealPctQ); snap.Set(c++, f.LifestealTicks);
             snap.Set(c++, f.LastCastSkillUid);
             snap.Set(c++, f.FlightTicks);
+            snap.Set(c++, f.PullVelX); snap.Set(c++, f.PullVelZ); snap.Set(c++, f.PullTicks);
             snap.Set(c++, f.BuffArmorKind); snap.Set(c++, f.BuffArmorDelayTicks); snap.Set(c++, f.BuffArmorTicks);
             snap.Set(c++, f.CopiedSkillNext);
             for (int k = 0; k < 6; k++) snap.Set(c++, f.OrbTypeCounts[k]);
@@ -209,6 +210,7 @@ public partial class SimWorld
             f.LifestealPctQ = snap.Get(c++); f.LifestealTicks = (int)snap.Get(c++);
             f.LastCastSkillUid = (ushort)snap.Get(c++);
             f.FlightTicks = (int)snap.Get(c++);
+            f.PullVelX = snap.Get(c++); f.PullVelZ = snap.Get(c++); f.PullTicks = (int)snap.Get(c++);
             f.BuffArmorKind = (byte)snap.Get(c++); f.BuffArmorDelayTicks = (int)snap.Get(c++); f.BuffArmorTicks = (int)snap.Get(c++);
             f.CopiedSkillNext = (int)snap.Get(c++);
             for (int k = 0; k < 6; k++) f.OrbTypeCounts[k] = snap.Get(c++);

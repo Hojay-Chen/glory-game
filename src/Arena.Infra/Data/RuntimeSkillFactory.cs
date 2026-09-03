@@ -92,6 +92,9 @@ public static class RuntimeSkillFactory
             LaunchVelQ = Quantify(d.LaunchV),
             Statuses = statuses,
             CleanseDebuffs = cleanseDebuffs,
+            PullTowardOwnerM = ParsePullToward(d.StatusRaw),
+            ForceInterrupt = d.StatusRaw.Contains("打断攻击") || d.Special.Contains("打断吟唱"),
+            IsDecoy = d.Special.Contains("假身") || d.Special.Contains("影分身"),
             Armor = armor,
             Invuln = invuln,
             Sweep = d.Sweep != 0,
@@ -303,6 +306,8 @@ public static class RuntimeSkillFactory
             // 粘合时长拆分:「僵直0.3s」→ kind=僵直 + 隐式时长 0.3s（补进 seg 尾部供 ParseDuration 消费）
             var kindStr = kindRaw;
             {
+                var plusIdx = kindStr.IndexOf('+');
+                if (plusIdx > 0) kindStr = kindStr[..plusIdx];   // 「冻结值+50」→ 冻结值
                 int dpos = 0;
                 while (dpos < kindRaw.Length && !char.IsDigit(kindRaw[dpos])) dpos++;
                 if (dpos < kindRaw.Length && dpos > 0 && kindRaw[^1] == 's')
@@ -378,11 +383,27 @@ public static class RuntimeSkillFactory
                 case "僵直":       // THF 陷阱系——触发后无法行动 = 眩晕语义（GDD §7.3 眩晕）
                     list.Add(new StatusEffectDef(StatusKind.Stun, 0, ParseDuration(seg, 1, defaultSec: 1), chance));
                     break;
+                case "打断攻击":   // THF 陷阱扣——ForceInterrupt 由 statusRaw 直接提取（status 本身无持续效果）
+                    break;
                 case "冻结":       // SBL_T3_002 冰创波动阵「冻结@40%」——几率冻结
                     list.Add(new StatusEffectDef(StatusKind.Freeze, 0, ParseDuration(seg, 1, defaultSec: 1), chance));
                     break;
                 case "shock":
                     list.Add(new StatusEffectDef(StatusKind.Shock, 0, ParseDuration(seg, 1, defaultSec: 2), chance));
+                    break;
+                case "拉拽":
+                case "拖拽":
+                    break;   // Pull 原语: ParsePullToward 从整列提取距离（非持续状态——Cleanse 同款即时语义）
+                case "对敌":   // QIM_T3_002 念龙波「对敌:削攻削速」→ GDD §7.3 基准: 虚弱 ATK−20% + 减速 30%（数值 DDQ 待念龙波专属）
+                    list.Add(new StatusEffectDef(StatusKind.Weakness, 0, 6 * (int)RuntimeConstants.TICK_RATE, chance));
+                    list.Add(new StatusEffectDef(StatusKind.Slow, Quantify(0.30m), 3 * (int)RuntimeConstants.TICK_RATE, chance));
+                    break;
+                case "截脉":   // QIM_T3_004「ATK/攻速/移速/防御剥夺:8s」→ v1 三围（虚弱/减速/防御剥夺）+攻速域 DDQ
+                    list.Add(new StatusEffectDef(StatusKind.Weakness, 0, 8 * (int)RuntimeConstants.TICK_RATE, chance));
+                    list.Add(new StatusEffectDef(StatusKind.Slow, Quantify(0.30m), 8 * (int)RuntimeConstants.TICK_RATE, chance));
+                    break;
+                case "冻结值":   // EXO_T2_002「冻结值+50」→ 冻结效果（控制值注入语义 v1=冻结施加——DDQ 登记注入）
+                    list.Add(new StatusEffectDef(StatusKind.Freeze, 0, ParseDuration(seg, 1, defaultSec: 1), chance));
                     break;
                 case "驱散全部异状态":   // PRI_T2_005 净化——友方异常清除（Cleanse 原语）
                 case "解除被嘲讽":       // EXO_T2_006 静心符——v1 全异常清除（单 cleanse 语义近似登记）
@@ -559,6 +580,23 @@ public static class RuntimeSkillFactory
         if (c.StartsWith("暗")) return OrbTagKind.Dark;
         if (c.StartsWith("无属性")) return OrbTagKind.NonElemental;
         return OrbTagKind.None;
+    }
+
+    /// 拉拽距离（数据: status「拉拽:目标向自身2.5m」/「拖拽:目标向自身位移」——Pull 原语）
+    private static long ParsePullToward(string statusRaw)
+    {
+        foreach (var kw in new[] { "拉拽:目标向自身", "拖拽:目标向自身" })
+        {
+            var idx = statusRaw.IndexOf(kw);
+            if (idx < 0) continue;
+            var rest = statusRaw[(idx + kw.Length)..];
+            int end = 0;
+            while (end < rest.Length && (char.IsDigit(rest[end]) || rest[end] == '.')) end++;
+            if (end > 0 && double.TryParse(rest[..end], NumberStyles.Float, CultureInfo.InvariantCulture, out var m))
+                return (long)(m * 65536.0);
+            if (kw.StartsWith("拖拽")) return 163840;   // 悬磁炮「位移」无数值——v1 取 2.5m 基准同勾魂（Q32.16=2.5×65536；DDQ 登记数值待补）
+        }
+        return 0;
     }
 
     /// Zone 耐久（数据: hitbox「耐久2000」——念气罩类；Deploy 实体 Durability）

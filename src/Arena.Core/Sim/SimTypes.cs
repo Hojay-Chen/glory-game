@@ -223,6 +223,11 @@ public sealed class FighterStateData
     // Flight 原语（DDQ-B5-6 裁定方案 B: 通用飞行域——重力免除+高度上限+击坠封顶；触发入口 DDQ）
     public int FlightTicks { get; set; }
 
+    // Pull 原语（Batch 7 Part 3: 拉拽/拖拽——强制位移向攻击者，与击退共用 ④ 位移通道反向）
+    public long PullVelX { get; set; }
+    public long PullVelZ { get; set; }
+    public int PullTicks { get; set; }
+
     // 炫纹类型计数（BMG 资源闭环: Orb 槽计总数，类型分布供炫纹发射按型发射/增益；Σ==Orb 不变式）
     public readonly long[] OrbTypeCounts = new long[6];   // 下标 = OrbTagKind 枚举值（None/Light/Ice/Fire/Dark/NonElemental）
 
@@ -297,6 +302,7 @@ public sealed class FighterStateData
             LastCastSkillUid = LastCastSkillUid,
             BuffArmorKind = BuffArmorKind, BuffArmorDelayTicks = BuffArmorDelayTicks, BuffArmorTicks = BuffArmorTicks,
             FlightTicks = FlightTicks,
+            PullVelX = PullVelX, PullVelZ = PullVelZ, PullTicks = PullTicks,
             CopiedSkillNext = CopiedSkillNext,
             BuffAtkPctQ = BuffAtkPctQ, BuffAtkPctTicks = BuffAtkPctTicks,
             HealPulseAmountQ = HealPulseAmountQ, HealPulseRemaining = HealPulseRemaining,
