@@ -117,6 +117,17 @@
 - **测试基础设施三教训（全部转纪律）**: ①跳 Tick 冻结物理时间线（exec offset 按步进数推进——Launch 悬停/ActEnded 顺延）②Command 默认 TargetTick=0 → ReplayRange 按 TargetTick 分组重放会全空转（SG09/SG16 历史通过均为假阳性——已改为全量日志打戳重放并在恢复点后补真实指令）③命中伤害含武器重量/部位加成——探针 HP 校准须实测
 - **测试 169/169**（+IC01-IC12 12 探针；SG09/SG16 重放路径加固）；双门禁 PASS
 
+## Phase 7 Batch 7 上半段 Snapshot/Restore/Replay Integrity Closure（2026-09-03，本次）
+
+- **DDQ-B6-1 裁定落地（Guard Resolution）**: 格挡判定体按语义来源（def.Guard is not null）在 SweepCombat 过滤——不进入普通命中链（不产生 Hit/Interrupt/伤害），**禁以 dmg==0 数值判定**（裁定原文）；真实防御在攻击帧命中格挡者时经 Guard/Perfect Guard 路径化解（HitResolve guardExec 分支不变）。**弹刀链恢复**: IC02 改写验证 Parry→弹刀 20f→反击窗 15f→免费取消上挑→命中弹刀者全链
+- **实体关系转换类别审查**（Batch 6 裁定「不大规模重构，类别审查」）: 法术反射（ReflectTicks+Projectile.OwnerId/TargetId/Heading）/抓取（GrabbedBy）/召唤物（Units 全字段+Spec 单源重建）/复制技（CopiedSkillUids）/可控弹/资源槽/输入缓冲/Buff 域/CD——**全部已进快照域，无新缺口**
+- **Integrity 压力测试（IT01-IT03，Batch7IntegrityTests）**:
+  - IT01: **3000T 全机制混战 × 5 次链式 restore × 全量打戳日志重放**——每段末态与权威同 tick 快照逐位一致 + 每次恢复自反一致
+  - IT02: 重放真实性证明——恢复后重放段消费真实指令（replayedCommands>0）且产生 SkillCast≥3/Hit 事件（防 SG09/SG16 式假阳性空转）
+  - IT03: 实体关系跨恢复延续——反射弹 OwnerId/TargetId/Heading 快照恢复后继续追击并命中原攻击者
+- **核心承诺达成**: 复杂战斗状态（含实体关系转移）经长时运行、多次恢复、真实重放后逐位一致——Determinism Contract/Snapshot/Replay 无退化
+- **测试 172/172**（+IT01/02/03；IC02 改写为 Guard Resolution 版）；三门禁 PASS（math/deps/balance）
+
 ## DDQ-B5（Batch 5 新登记，待用户裁定）
 
 1. BMG 炫纹三档（大中小——连击数定档）系统未实现

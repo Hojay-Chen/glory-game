@@ -879,6 +879,10 @@ public sealed partial class SimWorld
         {
             if (Tick < hb.SpawnTick || Tick >= hb.ExpireTick) continue;
             var def = hb.Def;
+            // DDQ-B6-1 裁定: 格挡判定体（Guard 技的判定体）= 防御判定语义，不进入普通命中链——
+            // 不产生 Hit/Interrupt/伤害（按语义来源 def.Guard 区分，禁以 dmg==0 数值判定）；
+            // 真实防御在攻击帧命中格挡者时经 Guard / Perfect Guard 路径化解（HitResolve guardExec 分支）
+            if (def.Guard is not null) continue;
             var owner = GetFighter(hb.OwnerId);
             if (owner is not { } ownerN || ownerN.State == FighterState.Dead) continue;
             var own = ownerN;

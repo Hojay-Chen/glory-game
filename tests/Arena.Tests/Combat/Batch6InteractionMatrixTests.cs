@@ -79,15 +79,14 @@ public class Batch6InteractionMatrixTests : IDisposable
         Assert.Contains(w.Events.All, e => e.Kind == EventKind.Hit && e.VictimId == 0 && e.SkillId == Catalog.IdMap["BMG_T1_001"]);
     }
 
-    // ================= IC02: 格挡锥 0 伤害命中 vs 完美格挡——优先级冲突（DDQ-B6-1 真实发现） =================
+    // ================= IC02: Guard Resolution（DDQ-B6-1 裁定落地）——完美格挡链恢复 =================
 
     [Fact]
-    public void IC02_GuardCone_Interrupts_Attacker_Before_Parry()
+    public void IC02_GuardResolution_Parry_Chain_Restored()
     {
-        // 真实发现（IC02 探针）: 格挡锥判定体（BLA_T1_002 dmg=0 cone）在来袭攻击落地前先命中攻击者，
-        // 0 伤害命中 → 攻击者技能被中断（§4.3）——完美格挡/弹刀路径因此从未触发。
-        // 与 GDD §6.3 弹刀预期的优先级冲突，根因 = Batch 5 遗留设计决策「①格挡锥 dmg=0 判定体意图」。
-        // 本探针固化当前行为，待设计裁定后按裁定改写。
+        // DDQ-B6-1 裁定: 格挡判定体按语义来源（def.Guard）进入 Guard Resolution——
+        // 不产生普通 Hit/Interrupt（禁以 dmg==0 数值判定）。锥体不再先手中断攻击者，
+        // 来袭攻击正常落地 → 完美格挡（6f 窗）→ 弹刀 → 反击窗免费取消——全链恢复。
         var w = CreateWorld(DefaultRegistry(), (0, "BLA", 0), (1, "BMG", 1));
         var defender = w.Fighters[0];
         var attacker = w.Fighters[1];
@@ -96,15 +95,23 @@ public class Batch6InteractionMatrixTests : IDisposable
 
         var schedule = new Dictionary<int, Command[]>
         {
-            [5] = new[] { Skill(1, "BMG_T1_002", 32768) },
-            [9] = new[] { Skill(0, "BLA_T1_002") },
+            [5] = new[] { Skill(1, "BMG_T1_002", 32768) },   // 龙牙 su10 → 命中 t14-15
+            [9] = new[] { Skill(0, "BLA_T1_002") },          // 格挡 su4 → 生效 t12，完美窗 t12-18
         };
-        Run(w, 1, 40, t => schedule.TryGetValue(t, out var c) ? c : Array.Empty<Command>());
+        Run(w, 1, 16, t => schedule.TryGetValue(t, out var c) ? c : Array.Empty<Command>());
 
-        Assert.Contains(w.Events.All, e => e.Kind == EventKind.Hit && e.AttackerId == 0 && e.SkillId == Catalog.IdMap["BLA_T1_002"] && e.DamageRaw == 0);
-        Assert.Contains(w.Events.All, e => e.Kind == EventKind.Interrupted && e.AttackerId == 1);   // Interrupted 事件按 OwnerId 记攻击方
-        Assert.DoesNotContain(w.Events.All, e => e.Kind == EventKind.Parry);   // 弹刀被锥体先手屏蔽
-        Assert.DoesNotContain(w.Events.All, e => e.Kind == EventKind.GuardHit); // 来袭攻击未进入格挡化解
+        // 完美格挡: 命中落在生效后 6f 内 → Parry + 攻击者弹刀 20f（弹刀期内在 t16 断言，勿过期）
+        Assert.Contains(w.Events.All, e => e.Kind == EventKind.Parry);
+        Assert.Equal(FighterState.Hitstun, attacker.State);
+        Assert.True(defender.CounterWindowTicks > 0, "守方 15f 反击窗");
+        // 格挡锥不再产生攻击性命中（Guard Resolution 语义）
+        Assert.DoesNotContain(w.Events.All, e => e.Kind == EventKind.Hit && e.SkillId == Catalog.IdMap["BLA_T1_002"]);
+
+        // 反击窗内免费取消 hold → 上挑命中弹刀中的攻击者
+        w.Step(17, new[] { Skill(0, "BLA_T1_001") });
+        Run(w, 18, 80);
+        Assert.Contains(w.Events.All, e => e.Kind == EventKind.SkillCast && e.Tick == 17 && e.AttackerId == 0 && e.SkillId == Catalog.IdMap["BLA_T1_001"]);
+        Assert.Contains(w.Events.All, e => e.Kind == EventKind.Hit && e.AttackerId == 0 && e.SkillId == Catalog.IdMap["BLA_T1_001"]);
     }
 
     // ================= IC03: 抓取者死亡 → 被擒者释放（实体关系） =================
