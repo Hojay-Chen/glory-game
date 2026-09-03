@@ -110,6 +110,7 @@ public sealed class SkillRuntimeData
     public bool ReloadMagazine { get; init; }     // 换弹匣（装填系: 施法动作即换弹——GDD §14.5）
     public int ProjHomingDegPerSec { get; init; } // 追踪:X°/s——弹体朝锁定目标饱和转向（可复用运动原语）
     public int OrbBuffDurationTicks { get; init; }// 炫纹增益20s → Tick（BMG 签名消费）
+    public bool CleanseDebuffs { get; init; }     // 净化/静心符——清除目标全部异常状态（Cleanse 原语）
     public long SelfBuffAtkPctQ { get; init; }    // 施法自增益 ATK+P%（嗜血 20%/嗜血奋战 8%）
     public long SelfDrainPctQ { get; init; }      // 自伤脉率 P%/s ×HpMax（嗜血系 1.5%/s）
     public long LifestealPctQ { get; init; }      // 正嗜血: 造成伤害 P% 转回复（嗜血奋战 10%）

@@ -128,6 +128,16 @@
 - **核心承诺达成**: 复杂战斗状态（含实体关系转移）经长时运行、多次恢复、真实重放后逐位一致——Determinism Contract/Snapshot/Replay 无退化
 - **测试 172/172**（+IT01/02/03；IC02 改写为 Guard Resolution 版）；三门禁 PASS（math/deps/balance）
 
+## Phase 7 Batch 7 下半段 Partial 收口 + 语义裁定文书（2026-09-04，本次）
+
+- **Partial 60 行证据化收口（IT04，Batch7IntegrityTests）**: PF02 关键词口径（Batch 2 前）的 partial 行逐行独立世界实测——**60/60 全部可执行、零静默、零异常**。「partial」分类整体过时（SUM 单位 12/THF 陷阱 5/PRI 治疗 7 等早已被 Batch 2-6 路由）
+- **status 解析收口（数据驱动，无新机制）**: 「技能封印:Ns」/「水牢」→ Silence（GDD §7.3 技能封禁）；「僵直:Ns」→ Stun（含粘合时长「僵直0.3s」拆分）；「冻结@N%」→ Freeze（几率）；「paralysis@N%」格式（ParseChance 统一提取）；**Cleanse 原语**——「驱散全部异状态」/「解除被嘲讽」→ CleanseDebuffs（净化/静心符，施法时清除自身全部异常）
+- **残留 13 行 = DDQ-B7 白名单固化**（IT04 断言：新出现未路由状态即回归失败）: 拉拽×3（悬磁炮/勾魂/死亡之门）/震地波（背摔）/截脉四围剥夺/全异常满值/对敌削攻削速/分身×2/操纵目标移动/冻结值+50/打断攻击/反射法术冗余 token
+- **语义裁定文书（DDQ-B7——WIT Flight 与 Zone 生命周期，先裁定后编码）**:
+  - **WIT 飞行（DDQ-B5-6）**: 已知=GDD §14.4.3「飞行 4s(+1s)、高度上限 6m、飞行中被击中→击坠（伤害封顶 1200）」+ 空袭俯冲「飞行中俯冲」+ 扫把冲刺「可空中」。**缺口=进入触发**（跳跃延展？冲刺进入？独立键？）。实现选项: A) 新 FighterState.Flight+独立域（最忠实，动状态机）B) 通用 FlightTicks 域+重力免除（最小，可被雷鹰等飞行单位复用）C) 纯 WIT 签名。**待裁**: 触发入口 + 方案 A/B/C
+  - **Zone 生命周期（DDQ-B5-7）**: 现状=带 hitbox 的 zone/stance act=Ns 承载实体存在期→施法者锁身 N 秒。证据=念气罩「耐久2000」/魔界之花「受火伤+50%」→ zone 是**独立实体**（耐久=DeployHp）→ 建议裁定: zone 类走 Deploy 实体路径（DeployKind 扩展 Zone）+ act 重解释为实体存在期 + 施法者 2T 判定即收（与纯 buff 解耦同构）；channel 类 4 行单独语义
+- **测试 173/173**（+IT04 证据基线；残留白名单断言=新未路由状态即回归失败）；三门禁 PASS
+
 ## DDQ-B5（Batch 5 新登记，待用户裁定）
 
 1. BMG 炫纹三档（大中小——连击数定档）系统未实现

@@ -190,6 +190,82 @@ public class Batch7IntegrityTests : IDisposable
         Assert.True(restored.Events.All.Any(e => e.Kind == EventKind.Hit), "重放段产生命中");
     }
 
+    // ================= IT04: Partial 55 实测重分类（证据基线） =================
+
+    [Fact]
+    public void IT04_PartialRows_Evidence_Reclassification()
+    {
+        // PF02 关键词分类（Batch 2 前口径）已陈旧——逐行实测: 每行独立世界执行，
+        // 记录 cast/命中/状态施加/单位生成的真实行为，产出证据化路由基线。
+        var pf2Keywords = new[] { "分身", "假身", "操纵", "附身", "携带", "形态三选", "变弹", "随机", "干扰", "删除", "召唤物", "镜像", "替换", "伪装",
+            "全异常", "冻结值", "震地", "拖拽", "拉拽", "对敌", "截脉", "封印", "嘲讽", "束缚", "藤蔓", "感电" };
+        var hbPrefix = new[] { "unit", "deploy", "ally", "wall", "portal" };
+        var pf2Classes = new[] { "ELE", "EXO", "GRP", "LAU", "MEH", "NJA", "PRI", "QIM", "SPF", "SUM", "THF", "WIT", "WRK" };
+        var partialIds = new List<string>();
+        foreach (var raw in Catalog.Skills)
+        {
+            bool partial = pf2Classes.Contains(raw.ClassId) &&
+                (hbPrefix.Any(p => RawHitbox(raw.SkillId).StartsWith(p)) ||
+                 pf2Keywords.Any(k => RawSpecial(raw.SkillId).Contains(k)) ||
+                 pf2Keywords.Any(k => RawStatus(raw.SkillId).Contains(k)));
+            if (partial) partialIds.Add(raw.SkillId);
+        }
+        Assert.True(partialIds.Count >= 40, $"PF2 关键词口径 partial={partialIds.Count}");
+
+        // 实测: 每行独立世界执行
+        int castOk = 0, silent = 0;
+        var silentIds = new List<string>();
+        foreach (var sid in partialIds)
+        {
+            var w = CreateWorld((0, "BLA", 0), (1, "BLA", 1));
+            w.Fighters[1].PosX = Fixed.FromInt(2);
+            var def = Catalog.Skills.First(d => d.SkillId == sid);
+            int eventsBefore = w.Events.All.Count;
+            bool hadCast = false, hadEffect = false;
+            for (int t = 1; t <= 120 && !hadEffect; t++)
+            {
+                var cmds = def.Type == "passive" ? Array.Empty<Command>() : new[] { Skill(0, sid) };
+                if (cmds.Length > 0) hadCast = true;
+                w.Step(t, cmds);
+                if (w.Events.All.Count > eventsBefore) hadEffect = true;
+                if (w.Units.Count > 0) hadEffect = true;
+            }
+            if (hadCast && hadEffect) castOk++;
+            else { silent++; silentIds.Add(sid); }
+        }
+        Console.WriteLine($"[IT04] partial 逐行实测: cast+effect={castOk} silent/无效果={silent}");
+        if (silentIds.Count > 0) Console.WriteLine("[IT04] silent: " + string.Join(",", silentIds));
+        Assert.Equal(0, silent);   // 全表可执行——零静默（证据基线）
+
+        // 语义完整性: 这些行的 status 是否真被 Compiler 路由（unrouted 登记为语义缺口）
+        var unroutedBySkill = Catalog.UnroutedStatuses
+            .Select(u => u.Split(':')[0]).ToHashSet();
+        var gapRows = partialIds.Where(unroutedBySkill.Contains).ToList();
+        Console.WriteLine($"[IT04] status 未路由行 ({gapRows.Count}): " + string.Join(",", gapRows));
+        foreach (var u in Catalog.UnroutedStatuses) Console.WriteLine("  UNROUTED " + u);
+        Assert.True(gapRows.Count < partialIds.Count / 2, $"status 语义缺口行过多: {gapRows.Count}");
+    }
+
+    private static Dictionary<string, (string hb, string status, string special)>? _rawCache;
+    private static Dictionary<string, (string hb, string status, string special)> RawCache
+    {
+        get
+        {
+            if (_rawCache is not null) return _rawCache;
+            _rawCache = new Dictionary<string, (string, string, string)>();
+            foreach (var line in System.IO.File.ReadAllLines(System.IO.Path.Combine(CombatGoldenSlice.FindRepoRoot(), "docs/skill-spec/skills.csv")).Skip(1))
+            {
+                var c = line.Split(',');
+                if (c.Length != 36) continue;   // 引号内逗号行跳过（MigrationPilotTests 同律）
+                _rawCache[c[0]] = (c[12], c[21], c[29]);
+            }
+            return _rawCache;
+        }
+    }
+    private static string RawHitbox(string sid) => RawCache.TryGetValue(sid, out var v) ? v.hb : "";
+    private static string RawStatus(string sid) => RawCache.TryGetValue(sid, out var v) ? v.status : "";
+    private static string RawSpecial(string sid) => RawCache.TryGetValue(sid, out var v) ? v.special : "";
+
     // ================= IT03: 实体关系转换审查（状态域完整性核对） =================
 
     [Fact]

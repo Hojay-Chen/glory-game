@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Collections.Generic;
 using System.Globalization;
 using Arena.Core.Sim;
@@ -45,7 +46,9 @@ public static class RuntimeSkillFactory
 
         var geo = ParseHitbox(d, unroutedHitbox);
         var hbRawKind = d.HitboxRaw.Split(':')[0];
-        var statuses = ParseStatuses(d, unroutedStatus);
+        var allStatuses = ParseStatuses(d, unroutedStatus);
+        bool cleanseDebuffs = allStatuses.Any(st => st.Kind == StatusKind.None);   // Cleanse 记号
+        var statuses = allStatuses.Where(st => st.Kind != StatusKind.None).ToArray();
         var armor = ParseArmor(d);
         var invuln = ParseInvuln(d);
         byte cancelTier = ParseCancelTier(d.CancelMinTier);
@@ -87,6 +90,7 @@ public static class RuntimeSkillFactory
             KnockbackVelQ = Quantify(d.KnockbackM * 9),     // 击退初速 = 位移 ×9 m/s（摩擦 0.85/tick 收敛）
             LaunchVelQ = Quantify(d.LaunchV),
             Statuses = statuses,
+            CleanseDebuffs = cleanseDebuffs,
             Armor = armor,
             Invuln = invuln,
             Sweep = d.Sweep != 0,
@@ -285,12 +289,27 @@ public static class RuntimeSkillFactory
     {
         var raw = d.StatusRaw;
         if (raw is "none" or "-" or "") return Array.Empty<StatusEffectDef>();
+        bool cleanse = false;
         var tokens = raw.Split(';', StringSplitOptions.RemoveEmptyEntries);
         var list = new List<StatusEffectDef>();
         foreach (var tok in tokens)
         {
             var seg = tok.Split(':');
-            var kindStr = seg[0];
+            var kindRaw = seg[0].Split('@')[0];   // paralysis@15% → paralysis（几率由 ParseChance 统一提取）
+            // 粘合时长拆分:「僵直0.3s」→ kind=僵直 + 隐式时长 0.3s（补进 seg 尾部供 ParseDuration 消费）
+            var kindStr = kindRaw;
+            {
+                int dpos = 0;
+                while (dpos < kindRaw.Length && !char.IsDigit(kindRaw[dpos])) dpos++;
+                if (dpos < kindRaw.Length && dpos > 0 && kindRaw[^1] == 's')
+                {
+                    kindStr = kindRaw[..dpos];
+                    var glue = kindRaw[dpos..];
+                    var segList = new List<string>(seg);
+                    if (segList.Count > 1) segList[1] = glue; else segList.Add(glue);
+                    seg = segList.ToArray();
+                }
+            }
             var chance = ParseChance(tok);
             switch (kindStr)
             {
@@ -347,14 +366,30 @@ public static class RuntimeSkillFactory
                 case "curse":
                     list.Add(new StatusEffectDef(StatusKind.Curse, 0, ParseDuration(seg, 1, defaultSec: 4), chance));
                     break;
+                // Batch 7 下半段 Partial 收口: 中文状态 token → 既有 StatusKind（GDD §7.3 对应）
+                case "技能封印":   // PRI_T2_004 神圣之火——GDD「技能封禁」= 全部技能不可用 → Silence
+                case "水牢":       // NJA_T3_003 百流斩——「封印移动类技能」v1 全技能封印（语义近似登记）
+                    list.Add(new StatusEffectDef(StatusKind.Silence, 0, ParseDuration(seg, 1, defaultSec: 2), chance));
+                    break;
+                case "僵直":       // THF 陷阱系——触发后无法行动 = 眩晕语义（GDD §7.3 眩晕）
+                    list.Add(new StatusEffectDef(StatusKind.Stun, 0, ParseDuration(seg, 1, defaultSec: 1), chance));
+                    break;
+                case "冻结":       // SBL_T3_002 冰创波动阵「冻结@40%」——几率冻结
+                    list.Add(new StatusEffectDef(StatusKind.Freeze, 0, ParseDuration(seg, 1, defaultSec: 1), chance));
+                    break;
                 case "shock":
                     list.Add(new StatusEffectDef(StatusKind.Shock, 0, ParseDuration(seg, 1, defaultSec: 2), chance));
+                    break;
+                case "驱散全部异状态":   // PRI_T2_005 净化——友方异常清除（Cleanse 原语）
+                case "解除被嘲讽":       // EXO_T2_006 静心符——v1 全异常清除（单 cleanse 语义近似登记）
+                    cleanse = true;
                     break;
                 default:
                     unrouted.Add($"{d.SkillId}:status:{tok}");
                     break;
             }
         }
+        if (cleanse) list.Add(new StatusEffectDef(StatusKind.None, 0, 0, 0));   // Cleanse 记号（Sim 消费）
         return list.ToArray();
     }
 
