@@ -48,6 +48,12 @@ public sealed partial class Hud : CanvasLayer
         _info.Text = $"tick {tick}  stamina {f0.Stamina}  [WASD move | Space jump | Shift roll | J basic | K 上挑 | L 三段斩 | U 格挡 | I 仙人指路 | O 拔刀斩]";
     }
 
+    public void Reset()
+    {
+        _result.Visible = false;
+        _info.Text = "";
+    }
+
     public void ShowResult(string result, int tick)
     {
         _result.Text = result;

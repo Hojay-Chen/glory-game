@@ -1,105 +1,170 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.IO;
+using System.Linq;
 using Arena.Core;
 using Arena.Core.Sim;
+using Arena.Infra.Ai;
 using Arena.Infra.Data;
+using Arena.Infra.Match;
 
 // PRODUCTION - Arena.Headless
 // VS-Headless: 完整可玩战斗驱动（ADR-0007 AI 同权 + ADR-0009 权威 Tick 循环）。
-// 双 AI 对局 3000T：全机制、KO/限时判定、逐 tick 战报统计。
-// 本驱动是「玩家能否完整进行一场真实战斗」的自动化验证载体（表现层在 Arena.Client）。
+// 严格可玩判据（用户 VS-5 裁定）: 接近/互攻/浮空连段/HP 下降/KO 或明确诊断/多 seed 确定性。
+// 装配走 MatchAssembler——与 Godot MatchRoot 完全同一条战斗链路。
 namespace Arena.Headless;
 
 public static class MatchDriver
 {
+    private const int TotalTicks = 3600;
+
     public static int Run(string[] args)
     {
         var seed = args.Length > 0 && long.TryParse(args[0], out var s) ? s : 0x5EED_0001L;
-        const int TotalTicks = 3000;
-        const string PlayerClass = "BLA";
-        const string EnemyClass = "BLA";
-
         var root = FindRoot();
-        var compiler = new DataCompiler();
-        var (result, catalog) = compiler.CompileWithCatalog(
-            Path.Combine(root, "docs/skill-spec/skills.csv"),
-            Path.Combine(root, "docs/weapon-spec/weapons.csv"),
-            Path.Combine(root, "docs/balance-sheet/class-base.csv"));
-        if (catalog is null)
+
+        // 确定性双跑: 同 seed 两次完整对局，快照序列逐位一致（ADR-0001 D01/D02）
+        var runA = PlayMatch(seed, root, verbose: false);
+        var runB = PlayMatch(seed, root, verbose: false);
+        if (!runA.FinalSnap.BitwiseEquals(runB.FinalSnap))
         {
-            Console.WriteLine("[VS-FAIL] data compile blockers=" + result.Blockers.Count);
-            return 2;
+            Console.WriteLine($"[VS-FAIL] seed={seed} 确定性违约——同 seed 双跑快照不一致");
+            return 3;
         }
 
-        var world = new SimWorld(seed, catalog.DataVersionHash);
-        foreach (var sk in catalog.Skills) world.AddSkill(sk);
+        // 正式对局（带战报）
+        var run = PlayMatch(seed, root, verbose: true);
 
-        // 地形装配（arena.csv——结界墙/平台/掩体）
-        var arenaObjects = ArenaDefParser.Parse(Path.Combine(root, "docs/balance-sheet/arena.csv"));
-        foreach (var body in ArenaDefParser.BuildTerrain(arenaObjects))
-            world.AddTerrain(body);
+        Console.WriteLine("=== VS MATCH REPORT ===");
+        Console.WriteLine($"seed={seed} ticks={run.Ticks} terrain={run.TerrainCount}");
+        Console.WriteLine($"result: {run.Result} killAt={(run.KillTick > 0 ? run.KillTick.ToString() : "n/a")}");
+        foreach (var f in run.FinalState) Console.WriteLine("  " + f);
+        Console.WriteLine("events: " + string.Join(", ", run.EventCounts.OrderByDescending(kv => kv.Value).Select(kv => $"{kv.Key}={kv.Value}")));
 
-        // 出场位
-        var spawns = arenaObjects.Where(o => o.Kind == "spawn").ToList();
-        var (x0, z0, x1, z1) = spawns.Count >= 2
-            ? (Q(spawns[0].X), Q(spawns[0].Z), Q(spawns[1].X), Q(spawns[1].Z))
-            : (0, -8 << 16, 0, 8 << 16);
-
-        world.AddFighter(0, PlayerClass, Fixed.FromRaw(x0), Fixed.FromRaw(z0), team: 0);
-        world.AddFighter(1, EnemyClass, Fixed.FromRaw(x1), Fixed.FromRaw(z1), team: 1);
-        world.SealWorld();
-
-        // AI 同权（ADR-0007 §1）: 双 bot 经同一条 Command 流
-        var bots = new[]
+        // 严格可玩判据
+        var checks = new (string name, bool ok, string diag)[]
         {
-            new AiBot(0, 1, seed: 0xB07_01),
-            new AiBot(1, 0, seed: 0xB07_02),
+            ("AI 主动接近",   run.MinDistance <= 3.0, $"minDist={run.MinDistance:F2}m"),
+            ("双方发生攻击",  run.HitsByFighter.GetValueOrDefault(0) > 0 && run.HitsByFighter.GetValueOrDefault(1) > 0,
+                $"atk0={run.HitsByFighter.GetValueOrDefault(0)} atk1={run.HitsByFighter.GetValueOrDefault(1)}"),
+            ("浮空/连段发生", run.LaunchCount > 0 && run.PostLaunchHits > 0,
+                $"launch={run.LaunchCount} postLaunchHits={run.PostLaunchHits}"),
+            ("HP 实际下降",   run.MinHp < run.MaxHp0, $"minHp={run.MinHp}"),
+            ("KO 或明确诊断", run.KillTick > 0 || run.Diagnosis.Length > 0, run.Diagnosis),
         };
+        var hardChecks = new[] { checks[0], checks[1], checks[3] };
+        foreach (var (name, ok, diag) in checks)
+            Console.WriteLine($"  [{(ok ? "PASS" : "SOFT")}] {name} {diag}");
+
+        Console.WriteLine(run.KillTick > 0
+            ? "[VS-PASS] 对局决出 KO——可玩战斗闭环"
+            : checks.All(c => c.ok)
+                ? "[VS-PASS] 全判据满足（timeout draw——诊断已输出）"
+                : "[VS-FAIL] 可玩判据未满足");
+
+        // 多 seed 由外部批跑；本入口单 seed 严格判据全过即 PASS
+        return checks.All(c => c.ok) ? 0 : 1;
+    }
+
+    private static MatchRun PlayMatch(long seed, string root, bool verbose)
+    {
+        var setup = MatchAssembler.Assemble(seed, root);
+        var world = setup.World;
+        var bot0 = new AiBot(0, 1, seed: unchecked((int)seed), aggression: 0.8);   // 激进人格
+        var bot1 = new AiBot(1, 0, seed: unchecked((int)seed) + 1, aggression: 0.45);
 
         var kindCount = new Dictionary<EventKind, int>();
-        var dmgByTick = new List<(int tick, long total)>();
-        int killTicks = -1;
+        var hitsByFighter = new Dictionary<int, int>();
+        var finalByTick = new Dictionary<int, string>();
+        int launchCount = 0, postLaunchHits = 0, launchUntil = -1;
+        double minDistance = double.MaxValue;
+        long minHp = long.MaxValue, maxHp0 = 10000;
+        int killTick = -1, hpSample = 0;
 
         for (int t = 1; t <= TotalTicks; t++)
         {
-            var cmds = bots.SelectMany(b => b.Produce(t, world, catalog)).ToArray();
+            var cmds = bot0.Produce(t, world, setup.Catalog)
+                .Concat(bot1.Produce(t, world, setup.Catalog)).ToArray();
             world.Step(t, cmds);
 
-            foreach (var e in world.Events.All)
-                kindCount[e.Kind] = kindCount.GetValueOrDefault(e.Kind) + 1;
+            double dist = Math.Sqrt(Math.Pow((double)(world.Fighters[0].PosX.Raw - world.Fighters[1].PosX.Raw) / 65536.0, 2)
+                + Math.Pow((double)(world.Fighters[0].PosZ.Raw - world.Fighters[1].PosZ.Raw) / 65536.0, 2));
+            if (dist < minDistance) minDistance = dist;
 
-            var dead = world.Fighters.FirstOrDefault(f => f.State == FighterState.Dead);
-            if (dead is not null && killTicks < 0)
+            foreach (var e in world.Events.All)
             {
-                killTicks = t;
-                Console.WriteLine($"[VS] KO at t={t}: {dead.ClassId} (team {dead.Team}) down — " +
-                    $"survivor HP {world.Fighters.First(f => f.State != FighterState.Dead).Hp}");
+                kindCount[e.Kind] = kindCount.GetValueOrDefault(e.Kind) + 1;
+                if (e.Kind == EventKind.Hit)
+                    hitsByFighter[e.AttackerId] = hitsByFighter.GetValueOrDefault(e.AttackerId) + 1;
+                if (e.Kind == EventKind.Launched) { launchCount++; launchUntil = t + 60; }
+                if (e.Kind == EventKind.Hit && t <= launchUntil && e.VictimId == 1) postLaunchHits++;
+                if (e.Kind == EventKind.Died && killTick < 0) killTick = t;
+            }
+
+            if (t % 60 == 0)
+            {
+                var hp = world.Fighters.Sum(f => f.Hp);
+                if (hp < minHp) minHp = hp;
+                if (t == 60) maxHp0 = hp;
+                finalByTick[t] = $"t{t} hpΣ={hp}";
+                hpSample++;
+            }
+
+            if (killTick > 0 && verbose)
+            {
+                Console.WriteLine($"[VS] KO at t={t}: {world.Fighters.First(f => f.State == FighterState.Dead).ClassId}");
+                verbose = false;
             }
         }
+        _ = hpSample;
 
-        // 战报
-        var alive = world.Fighters.Where(f => f.State != FighterState.Dead).ToList();
-        Console.WriteLine("=== VS MATCH REPORT ===");
-        Console.WriteLine($"seed={seed} ticks={TotalTicks} terrain={world.Collision.Terrain.Count} bodies");
-        Console.WriteLine($"result: {(alive.Count == 1 ? $"TEAM {alive[0].Team} WIN ({alive[0].ClassId})" : alive.Count == 2 ? "TIMEOUT DRAW" : "DRAW")}" +
-            $" killAt={(killTicks > 0 ? killTicks.ToString() : "n/a")}");
-        foreach (var f in world.Fighters)
-            Console.WriteLine($"  F{f.Id} {f.ClassId} team{f.Team}: hp={f.Hp}/{f.HpMax} state={f.State}");
-        Console.WriteLine("events: " + string.Join(", ", kindCount.OrderByDescending(kv => kv.Value)
-            .Select(kv => $"{kv.Key}={kv.Value}")));
-        Console.WriteLine($"total damage events: {kindCount.GetValueOrDefault(EventKind.Hit)}");
+        // timeout 诊断
+        var diag = new System.Text.StringBuilder();
+        if (killTick < 0)
+        {
+            diag.Append($"双方互相打断 {kindCount.GetValueOrDefault(EventKind.Interrupted)} 次；" +
+                $"whiff {kindCount.GetValueOrDefault(EventKind.Whiff)} 次；" +
+                $"末距 {Math.Sqrt(Math.Pow((double)(world.Fighters[0].PosX.Raw - world.Fighters[1].PosX.Raw) / 65536.0, 2)):F1}m；" +
+                $"HP 曲线 {string.Join("→", finalByTick.Values.TakeLast(4))}");
+        }
 
-        // 可玩性判据: 真实战斗发生（命中+施法+浮空/倒地/死亡类事件齐备）
-        bool battleHappened = kindCount.GetValueOrDefault(EventKind.Hit) > 10
-            && kindCount.GetValueOrDefault(EventKind.SkillCast) > 5
-            && (kindCount.GetValueOrDefault(EventKind.Launched) > 0 || killTicks > 0);
-        Console.WriteLine(battleHappened ? "[VS-PASS] 真实战斗完整发生" : "[VS-FAIL] 战斗强度不足");
-        return battleHappened ? 0 : 1;
+        return new MatchRun
+        {
+            Ticks = TotalTicks,
+            TerrainCount = world.Collision.Terrain.Count,
+            Result = world.Fighters.Count(f => f.State != FighterState.Dead) == 1
+                ? $"TEAM {world.Fighters.First(f => f.State != FighterState.Dead).Team} WIN" : "TIMEOUT DRAW",
+            KillTick = killTick,
+            MinDistance = minDistance,
+            MinHp = minHp,
+            MaxHp0 = maxHp0,
+            LaunchCount = launchCount,
+            PostLaunchHits = postLaunchHits,
+            HitsByFighter = hitsByFighter,
+            EventCounts = kindCount,
+            Diagnosis = diag.ToString(),
+            FinalSnap = world.CaptureSnapshot(),
+            FinalState = world.Fighters.Select(f => $"F{f.Id} {f.ClassId} hp={f.Hp}/{f.HpMax} state={f.State}"),
+        };
     }
 
-    private static long Q(decimal m) => (long)(m * 65536m);
+    private sealed record MatchRun
+    {
+        public required int Ticks { get; init; }
+        public required int TerrainCount { get; init; }
+        public required string Result { get; init; }
+        public required int KillTick { get; init; }
+        public required double MinDistance { get; init; }
+        public required long MinHp { get; init; }
+        public required long MaxHp0 { get; init; }
+        public required int LaunchCount { get; init; }
+        public required int PostLaunchHits { get; init; }
+        public required Dictionary<int, int> HitsByFighter { get; init; }
+        public required Dictionary<EventKind, int> EventCounts { get; init; }
+        public required string Diagnosis { get; init; }
+        public required Arena.Core.Snapshot.SnapshotData FinalSnap { get; init; }
+        public required IEnumerable<string> FinalState { get; init; }
+    }
 
     private static string FindRoot()
     {

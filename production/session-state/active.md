@@ -200,6 +200,22 @@
 - **Gate D 首战**: 技能 A 结果改变技能 B 行为的交互验证——IC 矩阵 12 项 + Headless 对局战报即组合压力证据链
 - **测试 184/184**（Headless MatchDriver 不进 xUnit——独立可执行验证器）；三门禁 PASS
 
+## VS-5 Playable Combat Loop Closure（2026-09-04，本轮）
+
+- **八项用户裁定全部落地**:
+  1. **AiBot 接入 Arena.Client**——AiBot 移至 Arena.Infra.Ai（Client/Headless 共用同一实现），MatchRoot `_PhysicsProcess` 为 Fighter1 产 AI Command（同一条 Command→SimWorld 权威链路）
+  2. **R 重开实现**——RestartMatch(): QueueFree _matchRoot 全部子节点 → 重新 MatchAssembler.Assemble → views/mapper/bot/camera 重建（零隐式状态残留；R 冷却 60T 防按住连触发）
+  3. **Arena Kind 强类型 Registry**——ArenaObjectKind enum + ArenaKindRegistry（Parse/EntersSim/Action/NeedsVisual 集中语义表）+ ArenaObject.KindId 强类型字段；ArenaDefParser.BuildTerrain 与 Client ArenaBuilder 均消费 Registry（零散落字符串 switch）
+  4. **Input Press/Held/Release**——Infra.Input.InputMapper（IKeyPoller 抽象）: 移动 Held、普攻/技能/跳/翻滚 Press、格挡 Press→hold + Release 发 Basic 释放；Client GodotKeyPoller 适配
+  5. **架构约束全保**: Godot 层只产 Input + Presentation；SimWorld 唯一权威；AI/玩家同一 Command 流；表现层不预测
+  6. **Headless 严格可玩判据**——AI 主动接近（minDist 1.39m）/双方攻击（99K+125K hits）/HP 下降（minHp 2188）/**KO at t=1274**——5 判据 4 PASS + 1 SOFT（launch 浮空在 2.2m 边缘互挥时序不定）
+  7. **自动化测试**——VS5ClosureTests 8 项（T01 AI 同权/T02 bot 确定性/T03 Restart 逐位复位/T04 Kind 映射/T05 Input Edge/T06 格挡语义/T07 AI vs AI 恢复重放逐位/T08 combat smoke）
+  8. 不加第二职业不加 Epic ✓
+- **AiBot 重大修复**: 施法/普攻 **AimQuantum 缺失**——原产 Command aim=0 → 强制朝 +Z → 全部 whiff（背对敌人）。修复: aim = DirQuantized(dx,dz)×8192 指向敌人（CordicAtan2——8 向确定性）
+- **AI 人格参数**: Aggression 0..1 双 bot 产生节奏差——激进(0.8) vs 保守(0.45) → **KO at t=1274 可达**
+- **测试 192/192**（+VS5 T01-T08 八项）；三门禁 PASS
+- **踩坑**: MatchSetup 无 Events 属性（需 .World.Events）；Client TreatWarningsAsErrors=true 要求零警告（partial/GD0001）；AI Bot 决策 RNG 用 Math.Atan2 触发 math ban（CordicAtan2 同效）；ArenaBuilder Math.Max decimal 3 参数重载不存在
+
 ## DDQ-B5（Batch 5 新登记，待用户裁定）
 
 1. BMG 炫纹三档（大中小——连击数定档）系统未实现

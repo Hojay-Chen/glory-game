@@ -14,7 +14,10 @@ public static class ArenaDefParser
     public sealed record ArenaObject(
         string ArenaId, string ObjectId, string Kind, string Shape,
         decimal X, decimal Z, decimal R, decimal HalfW, decimal HalfD,
-        decimal Height, long Hp, string Interaction);
+        decimal Height, long Hp, string Interaction)
+    {
+        public ArenaObjectKind KindId { get; } = ArenaKindRegistry.Parse(Kind);   // 强类型视图（SPEC-0004 Registry）
+    }
 
     public static List<ArenaObject> Parse(string arenaCsvPath)
     {
@@ -52,19 +55,20 @@ public static class ArenaDefParser
         int id = 1;
         foreach (var o in objects)
         {
-            // spawn/pot 不入碰撞世界；platform/ramp = 高地（QueryGround 消费，不阻挡）
-            if (o.Kind is "spawn" or "prop_pot") continue;
+            if (!ArenaKindRegistry.EntersSim(o.KindId)) continue;   // spawn/pot 不入碰撞世界
 
-            var action = o.Kind switch
+            // 强类型 Registry → TerrainAction（SPEC-0004 语义集中点）
+            var actionKind = ArenaKindRegistry.Action(o.KindId);
+            var action = actionKind switch
             {
-                "boundary" => TerrainAction.Bounce,
-                "cover_wall" or "pillar" or "prop_wood" or "prop_rock" => TerrainAction.DestroyProjectile,
-                _ => TerrainAction.PassThrough,   // platform/ramp: 高地（不阻挡水平运动）
+                TerrainActionKind.Bounce => TerrainAction.Bounce,
+                TerrainActionKind.DestroyProjectile => TerrainAction.DestroyProjectile,
+                _ => TerrainAction.PassThrough,
             };
             if (action == TerrainAction.PassThrough && o.Height == 0) continue;
 
             ConvexRegion? region;
-            if (o.Kind == "boundary")
+            if (o.KindId == ArenaObjectKind.Boundary)
             {
                 // 结界墙 = 场外半空间×4（rect 描述的是场内有效区——实体不得整体入碰撞世界）
                 // GDD §2.1.1: 60×84m 有效战斗区，四周结界墙撞反弹
@@ -80,7 +84,7 @@ public static class ArenaDefParser
                 };
             }
 
-            if (o.Kind == "boundary")
+            if (o.KindId == ArenaObjectKind.Boundary)
             {
                 long hw = Q(o.HalfW), hd = Q(o.HalfD);
                 bodies.Add(new TerrainBody(id++, ConvexRegion.HalfSpace(-Fixed.ONE, 0, -hw), action, 0));   // x ≥ +hw
