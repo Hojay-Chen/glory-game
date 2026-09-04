@@ -216,6 +216,24 @@
 - **测试 192/192**（+VS5 T01-T08 八项）；三门禁 PASS
 - **踩坑**: MatchSetup 无 Events 属性（需 .World.Events）；Client TreatWarningsAsErrors=true 要求零警告（partial/GD0001）；AI Bot 决策 RNG 用 Math.Atan2 触发 math ban（CordicAtan2 同效）；ArenaBuilder Math.Max decimal 3 参数重载不存在
 
+## VS-6 Combat Feel & Presentation Foundation（2026-09-04，本轮）
+
+- **VS-6.1 Presentation Event Bridge**: SimWorld → EventLog → `PresentationEventBridge.Consume` → PresentationEvent（12 种 Kind）——单向只读（Sim 零触碰）。SkillCast↔表现 1:1（PE04）；MatchEnded 首个 Died 自动触发 + FlagMatchEnd 手动；终局后闸断战斗表现（PE07）
+- **VS-6.2 Hit Feedback 五件套**: HitStop（Infra.Presentation.HitStopController——伤害量级 2~4f 表现冻结，Sim 独立）+ Hit Flash（材质 Emission 瞬时提亮 + _Process 衰减）+ Hit Spark（SphereMesh 扩散渐隐 tween）+ Camera Shake（CameraPresenter trauma² 衰减）+ 击飞/击退视觉（Sync 状态色覆盖）——PE02 证明消费/冻结路径 Sim 逐位不变
+- **VS-6.3 技能表现**: AnimationDriver——OnAttackStarted 触发武器挥摆 tween（weaponPivot 旋转弧）+ SpawnSlashArc（技能色弧形轨迹 alpha 渐隐 + auto-free）。SkillCast 1:1 锚点
+- **VS-6.4 Camera**: CameraPresenter（trauma² shake + MatchEnd 状态）——PE03 验证不触碰 Sim；MatchDriver 相机集成待 Godot 侧接入（D-P0-2 限制——代码就绪）
+- **VS-6.5 FighterView 五段结构**: Body（胶囊）+ Weapon（pivot+mesh 挥摆）+ EffectRoot（spark/arc 生成点）+ StateVisual（名牌+状态色）+ AnimationDriver（tween/flash/arc 方法）+ FighterVisualProfile 可替换档案
+- **VS-6.6 AI 微调**: 不改战斗数值——bot 决策已含 Approach/攻击/连段/拉开/压制窗口；aggression 人格差维持（KO seed 默认可达）
+- **测试 199/199**（+PE01-07 七项纯逻辑探针）；三门禁 PASS；Determinism/Replay/Restart 无退化（PE02/PE05 验证）
+- **踩坑**: Arena.Infra 无 ImplicitUsings（新文件须手动 using System/System.IO）；CPUParticles3D 不存在于 Godot 4.3 C#（改用 SphereMesh tween 扩散渐隐）；/tmp 中间产物被系统清理——持久文件一律 /var/tmp
+
+## VS-6 完成后待做（用户裁定后）
+
+1. Godot 客户端接入 PresentationEventBridge（代码已就绪——MatchRoot 消费桥接事件派发到 FighterView/CameraRig/HitStop——本机 D-P0-2 限制待用户 Windows 侧运行验证）
+2. Weapon trail 完整实现（当前简化为 slash arc + weapon pivot tween——ImmediateMesh 拖尾后续）
+3. DDQ-B7 白名单 13 项裁定（拉拽/震地/截脉/全异常/分身/操纵/冻结值注入/打断攻击）
+4. MEH/NJA/SUM/UNS Epic 集中推进
+
 ## DDQ-B5（Batch 5 新登记，待用户裁定）
 
 1. BMG 炫纹三档（大中小——连击数定档）系统未实现

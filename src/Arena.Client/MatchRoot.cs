@@ -95,7 +95,7 @@ public partial class MatchRoot : Node
         // FighterView
         foreach (var f in _world.Fighters)
         {
-            var view = new FighterView(f.Id, f.Team);
+            var view = new FighterView(f.Id, f.Team, Arena.Client.Visuals.FighterVisualProfile.Blade);
             _views[f.Id] = view;
             _matchRoot.AddChild(view);
         }
