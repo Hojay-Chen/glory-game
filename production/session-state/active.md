@@ -188,6 +188,18 @@
 12. **替身术自动触发**（NJA_T3_005 受击瞬发+草人+随机传送——RNG 流键已备）
 13. **死亡之门 portal**（WRK_T4_002 拉拽入门内+自动追击）
 
+## Vertical Slice 阶段开启（2026-09-04，38e8020→本轮，184/184 三门禁）
+
+- **阶段切换（用户裁定）**: 不再以 Batch/原语数量为 KPI → 「玩家能否完整进行一场真实战斗」。路线: VS-1 Godot bootstrap / VS-2 场景+视觉 / VS-3 键位输入 / VS-4 HUD+AI 对手 / VS-5 双重验证（Headless 自动对局 + 用户侧 Godot 运行）
+- **VS-1 Godot bootstrap 完成**: MatchRoot（数据编译→SimWorld→地形→Fighters→60Hz 权威步进）+ MainScene.tscn + project.godot main_scene
+- **VS-2 场景+视觉完成**: ArenaBuilder（arena.csv→3D 白盒: 地板 58×82/边界墙/中央擂台 r8/cover/pillar 颜色区分）+ FighterView（胶囊+队伍色+状态反馈: 命中橙闪/倒地旋转暗化/浮空提亮/潜行半透明/死亡灰 KO）+ 相机跟随（中点+间距缩放）
+- **VS-3 键位输入完成**: WASD 8 向移动 / Space 跳 / Shift 翻滚 / J 普攻链 / K 上挑 / L 三段斩 / U 格挡 / I 仙人指路 / O 拔刀斩（BLA 全技能键位；CD/缓冲由 Sim 裁决）
+- **VS-4 HUD 完成**: 双方 HP/MP 条 + 耐力/键位提示 + 胜负显示 + R 重开
+- **Headless 可玩性验证（MatchDriver）**: 双 AI 对局 3000T——**VS-PASS**（3 seeds 全过）: 129K hits / 198K casts / 7.2K 浮空 / 21 terrain bodies；战斗强度判据=真实战斗完整发生。Timeout draw 归因: 镜像 BLA 对局+bot 轮换保守+互断（§4.3 真实表现）——AI 质量/平衡调优不阻塞
+- **环境偏差 D-P0-2（如实记录）**: 容器内 Godot 4.3 mono headless 无法加载任何 C# assembly（最小项目复现，官方 binary+官方 GodotSharp 同败）——Godot 客户端代码交付且构建通过，实际运行在用户 Windows/Godot 编辑器侧验证；Headless 驱动承担本机可玩性验证。/tmp 文件系统会话中被系统清理（日志/二进制消失）——持久产物一律用 /var/tmp
+- **Gate D 首战**: 技能 A 结果改变技能 B 行为的交互验证——IC 矩阵 12 项 + Headless 对局战报即组合压力证据链
+- **测试 184/184**（Headless MatchDriver 不进 xUnit——独立可执行验证器）；三门禁 PASS
+
 ## DDQ-B5（Batch 5 新登记，待用户裁定）
 
 1. BMG 炫纹三档（大中小——连击数定档）系统未实现

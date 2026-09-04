@@ -16,6 +16,10 @@ public static class Program
 {
     public static void Main(string[] args)
     {
+        if (args.Length > 0 && args[0] == "vs")
+        {
+            Environment.Exit(MatchDriver.Run(args.Skip(1).ToArray()));
+        }
         var root = FindRoot();
         var compiler = new DataCompiler();
         var (result, catalog) = compiler.CompileWithCatalog(

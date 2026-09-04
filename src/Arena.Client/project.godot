@@ -2,12 +2,19 @@ config_version=5
 
 [application]
 config/name="Arena Client"
-run/main_scene=""
+run/main_scene="res://MainScene.tscn"
 config/features=PackedStringArray("4.3", "C#")
 dotnet/project/assembly_name="Arena.Client"
 
+[display]
+window/size/viewport_width=1280
+window/size/viewport_height=720
+
 [physics]
 common/physics_ticks_per_second=60
+
+[input_devices]
+pointing/emulate_touch_from_mouse=false
 
 [rendering]
 renderer/rendering_method="gl_compatibility"
