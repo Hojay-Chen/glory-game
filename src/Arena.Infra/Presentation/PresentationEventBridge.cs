@@ -22,6 +22,7 @@ public enum PresentationEventKind : byte
     FighterDown = 9,        // Landed/ForcedDown（倒地）
     FighterDied = 10,       // Died
     MatchEnded = 11,        // 终局（首个 Died 或外部 Flag——仅一次）
+    AttackEnded = 12,       // ActEnded/Cancelled（本次攻击生命周期结束——武器尾迹收束锚点）
 }
 
 public readonly record struct PresentationEvent(
@@ -50,6 +51,9 @@ public readonly record struct PresentationEvent(
         EventKind.Knockback => PresentationEventKind.Knockback,
         EventKind.Landed or EventKind.ForcedDown or EventKind.FallLanded => PresentationEventKind.FighterDown,
         EventKind.Died => PresentationEventKind.FighterDied,
+        // 攻击生命周期结束——自然结束(ActEnded) / 取消(Cancelled) 同义：该执行体不再推进。
+        // 两者载荷均为 AttackerId=执行体主人、SkillId=该技（Cancelled 尤见于取消链）。
+        EventKind.ActEnded or EventKind.Cancelled => PresentationEventKind.AttackEnded,
         _ => (PresentationEventKind)255,   // 非表现事件（Whiff/StatusExpired 等）——桥接层过滤
     };
 

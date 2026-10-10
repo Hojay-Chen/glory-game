@@ -15,8 +15,9 @@ using Godot;
 // Vertical Slice 主入口（ADR-0009 §5 场景树落地）:
 //   StartMatch 装配（数据编译→SimWorld→地形→Fighters→AI）→ 60Hz 权威步进 → 视觉/HUD/相机同步
 //   → 胜负判定 → R 重开（RestartMatch: 完整重装配，零状态残留）。
-//   VS-7: 步进后经 PresentationDirector 消费 Sim 事件流 → DispatchCue 翻译为节点动作
-//   （挥摆/火花/闪白/弹刀/HitStop 冻结/相机 trauma）——判定全在 Arena.Infra，本层只做节点操作。
+//   VS-7/VS-8: 步进后经 PresentationDirector 消费 Sim 事件流 → DispatchCue 翻译为节点动作
+//   （挥摆/尾迹/火花/闪白/弹刀/HitStop 冻结/相机 trauma）——判定全在 Arena.Infra，本层只做节点操作。
+//   Hit Stop 冻结同时下发到各视图（暂停挥摆 tween + 停止尾迹采样），避免解冻时尖端跳变画出残留直线。
 // 架构约束（ADR-0001/0007/0009）: Godot 层只产 Input + Presentation；
 //   SimWorld 是唯一战斗权威；AI 与玩家经同一条 Command 流（AiBot 在 Arena.Infra.Ai——与
 //   Headless MatchDriver 共用同一 bot 实现）。表现层不预测 Sim。
@@ -192,7 +193,10 @@ public partial class MatchRoot : Node
             DispatchCue(cue);
 
         // 视觉/HUD 同步（Hit Stop 冻结期跳过位置/状态同步——表现冻结，Sim 照常步进）
-        if (!_director.HitStop.ShouldFreezeVisuals)
+        // 冻结同时下发到各视图：暂停挥摆 tween 并停止尾迹采样（否则解冻瞬间尖端跳变会画出残留直线）
+        var frozen = _director.HitStop.ShouldFreezeVisuals;
+        foreach (var v in _views.Values) v.SetFrozen(frozen);
+        if (!frozen)
         {
             foreach (var f in _world.Fighters)
                 if (_views.TryGetValue(f.Id, out var view)) view.Sync(f);
@@ -280,10 +284,21 @@ public partial class MatchRoot : Node
             case PresentationCueKind.Death:
                 if (_views.TryGetValue(cue.VictimId, out var vDead)) vDead.OnDeath();
                 break;
+            case PresentationCueKind.AttackEnded:
+                // 攻击生命周期结束（自然结束/取消）——收束尾迹
+                if (_views.TryGetValue(cue.AttackerId, out var vEnd)) vEnd.OnAttackEnded(cue.SkillId);
+                break;
             case PresentationCueKind.Interrupt:
-            case PresentationCueKind.Knockback:
+                // 注: Sim 侧 Interrupted 载荷是 AttackerId=被中断的施法者（字段名与语义不符，
+                // 属既有 Sim 契约——不改，只按实际语义消费）——因此这里收的是它的尾迹。
+                if (_views.TryGetValue(cue.AttackerId, out var vInt)) vInt.OnAttackEnded(cue.SkillId);
+                break;
             case PresentationCueKind.MatchEnd:
-                // 表现由 Sync 状态色 / 相机 MatchEnd 覆盖（无独立节点动作）
+                // 终局——所有尾迹立即清空（不留结算画面残影）
+                foreach (var v in _views.Values) v.OnMatchEnd();
+                break;
+            case PresentationCueKind.Knockback:
+                // 表现由 Sync 状态色覆盖（无独立节点动作）
                 break;
         }
     }

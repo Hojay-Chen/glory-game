@@ -6,9 +6,9 @@ using Arena.Client.Visuals;
 using Godot;
 
 // PRODUCTION - Arena.Client
-// VS-6.5 FighterView 五段结构: Body / Weapon / EffectRoot / StateVisual / AnimationDriver。
+// FighterView 六段结构: Body / Weapon / WeaponTrail(VS-8) / EffectRoot / StateVisual / AnimationDriver。
 // 表现资源由 FighterVisualProfile 驱动（未来按职业替换，Sim 零修改）。
-// 事件驱动反馈: OnPresentationEvent 统一入口——禁止轮询 Sim 状态猜测事件。
+// 事件驱动反馈: 由 MatchRoot 从表现线索翻译为节点动作——禁止轮询 Sim 状态猜测事件。
 namespace Arena.Client;
 
 public sealed partial class FighterView : Node3D
@@ -32,9 +32,14 @@ public sealed partial class FighterView : Node3D
     // ---- StateVisual ----
     private readonly Label3D _nameTag;
 
+    // ---- Weapon Trail（VS-8）----
+    private readonly WeaponTrail _trail;
+
     // ---- AnimationDriver ----
     private Tween? _swingTween;
     private float _flash;
+    private bool _frozen;        // Hit Stop 表现冻结
+    private bool _tweenPaused;   // 冻结时暂停挥摆、解冻时恢复（只恢复自己暂停的那次）
 
     public FighterView(int id, byte team, FighterVisualProfile profile)
     {
@@ -65,6 +70,10 @@ public sealed partial class FighterView : Node3D
         };
         _weaponPivot.AddChild(_weapon);
         AddChild(_weaponPivot);
+
+        // Weapon Trail（尖端世界轨迹——挂在 FighterView 下随视图释放，TopLevel 用世界坐标）
+        _trail = new WeaponTrail(_weaponPivot, _profile.WeaponLength, _profile.WeaponWidth * 1.5f, _profile.SlashColor);
+        AddChild(_trail);
 
         // EffectRoot（命中特效/粒子生成点——胸口高度）
         _effectRoot = new Node3D { Position = new Godot.Vector3(0, _profile.BodyHeight * 0.7f, 0) };
@@ -115,13 +124,30 @@ public sealed partial class FighterView : Node3D
     {
         // 武器挥摆 tween（前摇反馈——出刀感）
         _swingTween?.Kill();
+        _tweenPaused = false;
         _swingTween = CreateTween();
         _weaponPivot.RotationDegrees = new Godot.Vector3(0, 0, -60);
         _swingTween.TweenProperty(_weaponPivot, "rotation_degrees", new Godot.Vector3(0, 0, 60), 0.12f);
         _swingTween.TweenProperty(_weaponPivot, "rotation_degrees", Godot.Vector3.Zero, 0.15f);
 
-        // 技能轨迹（简单武器轨迹——技能起手侧颜色弧）
-        SpawnSlashArc(pos + dir * 0.6f + Godot.Vector3.Up * 1.1f, dir, 0.5f, 0.18f, _profile.SlashColor);
+        // 尾迹武装（清掉上一击余点——连续攻击不跨技连线）；实际轨迹在 _Process 逐帧采样
+        _trail.Arm(skillId);
+    }
+
+    /// 攻击生命周期结束（ActEnded/Cancelled/被打断）——停止采样，余点自然淡出
+    public void OnAttackEnded(ushort skillId) => _trail.Disarm(skillId);
+
+    /// 终局——立即清空尾迹（不淡出，避免结算画面残留）
+    public void OnMatchEnd() => _trail.Clear();
+
+    /// Hit Stop 表现冻结：冻结期暂停挥摆并停止采样（否则解冻瞬间尖端跳变会画出长直线残留）
+    public void SetFrozen(bool frozen)
+    {
+        if (frozen == _frozen) return;
+        _frozen = frozen;
+        if (_swingTween is null || !_swingTween.IsValid()) { _tweenPaused = false; return; }
+        if (frozen && !_tweenPaused && _swingTween.IsRunning()) { _swingTween.Pause(); _tweenPaused = true; }
+        else if (!frozen && _tweenPaused) { if (_swingTween.IsValid()) _swingTween.Play(); _tweenPaused = false; }
     }
 
     public void OnHitFlash(Godot.Vector3 pos)
@@ -145,7 +171,13 @@ public sealed partial class FighterView : Node3D
 
     public void OnDown() { /* 倒地姿态由 Sync 覆盖 */ }
 
-    public void OnDeath() { /* KO 灰色由 Sync 覆盖 */ }
+    /// 阵亡——KO 灰色由 Sync 覆盖；同时收掉挥摆与尾迹（不留残影）
+    public void OnDeath()
+    {
+        _swingTween?.Kill();
+        _tweenPaused = false;
+        _trail.Clear();
+    }
 
     /// Hit 特效（命中点——简易扩散球体渐隐）
     private void SpawnSpark(Godot.Vector3 worldPos, Color col, int count)
@@ -171,31 +203,12 @@ public sealed partial class FighterView : Node3D
         tw.Chain().TweenCallback(Callable.From(mi.QueueFree));
     }
 
-    /// 武器轨迹（简易弧——技能起手/普攻共用；tween alpha 渐隐）
-    private void SpawnSlashArc(Godot.Vector3 worldPos, Godot.Vector3 dir, float len, float width, Color col)
-    {
-        var mi = new MeshInstance3D
-        {
-            Mesh = new BoxMesh { Size = new Godot.Vector3(width, 0.04f, len) },
-            MaterialOverride = new StandardMaterial3D
-            {
-                AlbedoColor = new Color(col.R, col.G, col.B, 0.7f),
-                Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
-                ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
-                EmissionEnabled = true,
-                Emission = col,
-            },
-            Position = worldPos + dir * len / 2,
-        };
-        GetParent().AddChild(mi);
-        var tw = CreateTween();
-        tw.TweenProperty(mi.MaterialOverride, "albedo_color:a", 0.0f, 0.2f);
-        tw.TweenCallback(Callable.From(() => mi.QueueFree()));
-    }
-
-    /// Hit Flash 衰减（_Process 表现帧驱动）
+    /// 每表现帧：尾迹采样 + Hit Flash 衰减（Hit Stop 冻结期整体跳过）
     public override void _Process(double delta)
     {
+        if (_frozen) return;
+        _trail.Sample(delta);
+
         if (_flash <= 0) return;
         _flash = Math.Max(0, _flash - (float)delta * 6f);
         _bodyMat.Emission = new Color(_flash, _flash * 0.8f, _flash * 0.5f);

@@ -12,7 +12,7 @@ namespace Arena.Infra.Presentation;
 
 public enum PresentationCueKind : byte
 {
-    WeaponSwing = 0,   // 攻击者：武器挥摆 + 轨迹弧（技能/普攻起手）
+    WeaponSwing = 0,   // 攻击者：武器挥摆 + 尾迹武装（技能/普攻起手）
     HitSpark = 1,      // 受击点：接触火花（判定命中但无伤害）
     HitFlash = 2,      // 受击者：材质闪亮 + 火花（有伤害的命中——Hit Stop 触发源）
     GuardSpark = 3,    // 格挡化解火花
@@ -23,6 +23,7 @@ public enum PresentationCueKind : byte
     Down = 8,          // 倒地
     Death = 9,         // 阵亡
     MatchEnd = 10,     // 终局（仅一次）
+    AttackEnded = 11,  // 攻击者：本次攻击生命周期结束——尾迹收束
 }
 
 public readonly record struct PresentationCue(
@@ -78,6 +79,7 @@ public sealed class PresentationDirector
             PresentationEventKind.FighterDown      => PresentationCueKind.Down,
             PresentationEventKind.FighterDied      => PresentationCueKind.Death,
             PresentationEventKind.MatchEnded       => PresentationCueKind.MatchEnd,
+            PresentationEventKind.AttackEnded      => PresentationCueKind.AttackEnded,
             _ => (PresentationCueKind)255,
         };
 
