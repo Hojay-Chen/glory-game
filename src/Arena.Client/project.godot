@@ -9,6 +9,12 @@ config/features=PackedStringArray("4.3", "C#")
 
 project/assembly_name="Arena.Client"
 
+[gui]
+
+; 内置 CJK 字体（Noto Sans CJK 子集，OFL）——否则导出后中文会掉成方块。
+; 重新生成: tools/build_ui_font.sh
+theme/custom_font="res://assets/fonts/UiCJK-Regular.ttf"
+
 [display]
 window/size/viewport_width=1280
 window/size/viewport_height=720
