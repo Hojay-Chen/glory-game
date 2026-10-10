@@ -57,6 +57,15 @@ public static class UiTheme
         return sb;
     }
 
+    /// 紧凑盒（无内容边距）——列表行用：默认 Box 的 Sp3 内外边距会把行高撑开近一倍
+    public static StyleBoxFlat BoxTight(Color fill, int radius = RSm, int borderPx = 0, Color? border = null)
+    {
+        var sb = Box(fill, radius, borderPx, border);
+        sb.ContentMarginTop = 0; sb.ContentMarginBottom = 0;
+        sb.ContentMarginLeft = Sp3; sb.ContentMarginRight = Sp3;
+        return sb;
+    }
+
     /// 面板（带描边，抬起层次）
     public static PanelContainer Panel(Node? parent = null, Color? fill = null, int radius = Rlg)
     {

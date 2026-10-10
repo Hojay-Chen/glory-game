@@ -65,6 +65,7 @@ public partial class MatchRoot : Node
     private string _enemyWeapon = "";
     private List<ClassDefParser.ClassEntry> _classList = new();
     private List<WeaponCatalogParser.WeaponEntry> _weaponList = new();
+    private RuntimeCatalog? _uiCatalog;
     private ClassSelectScreen? _select;
     private WeaponSelectScreen? _weaponSelect;
     private MainMenuScreen? _menu;
@@ -93,8 +94,15 @@ public partial class MatchRoot : Node
         AddChild(_camera);
 
         // 非 autopilot（真人）才走选人界面；autopilot 是自动化验证，直接按默认职业开打
-        _classList = ClassDefParser.Parse(
-            Path.Combine(FindRepoRoot(), "docs/balance-sheet/class-base.csv"));
+        var repo = FindRepoRoot();
+        _classList = ClassDefParser.Parse(Path.Combine(repo, "docs/balance-sheet/class-base.csv"));
+        _weaponList = WeaponCatalogParser.Parse(Path.Combine(repo, "docs/weapon-spec/weapons.csv"));
+        // 界面需要展示职业面板与技能预览 → 编译一次 catalog（仅菜单用；对局仍由 MatchAssembler 自行编译）
+        var (_, uiCatalog) = new DataCompiler().CompileWithCatalog(
+            Path.Combine(repo, "docs/skill-spec/skills.csv"),
+            Path.Combine(repo, "docs/weapon-spec/weapons.csv"),
+            Path.Combine(repo, "docs/balance-sheet/class-base.csv"));
+        _uiCatalog = uiCatalog;
 
         // ARENA_P0 / ARENA_P1 指定双方职业并跳过选人界面（渲染验证 / 快速开打用）
         var p0 = Godot.OS.GetEnvironment("ARENA_P0");
@@ -113,6 +121,17 @@ public partial class MatchRoot : Node
         if (_autopilot) { _hud.Visible = true; _state = AppState.Playing; StartMatch(); return; }
 
         _hud.Visible = false;                   // 菜单期间藏起战斗 HUD
+
+        // 渲染取证入口：ARENA_SCREEN=select 直接进选人屏（正常流程要先点「开始对战」）
+        if (Godot.OS.GetEnvironment("ARENA_SCREEN") == "select")
+        {
+            SetWorldVisible(false);
+            _state = AppState.Selecting;
+            _select = new ClassSelectScreen(_classList, _uiCatalog, OnClassesChosen);
+            AddChild(_select);
+            return;
+        }
+
         ShowMainMenu();
     }
 
@@ -141,7 +160,7 @@ public partial class MatchRoot : Node
         _menu = null;
         _state = AppState.Selecting;
         SetWorldVisible(false);
-        _select = new ClassSelectScreen(_classList, OnClassesChosen);
+        _select = new ClassSelectScreen(_classList, _uiCatalog, OnClassesChosen);
         AddChild(_select);
     }
 
@@ -187,7 +206,7 @@ public partial class MatchRoot : Node
         ClearMatch();
         SetWorldVisible(false);
         _state = AppState.Selecting;
-        _select = new ClassSelectScreen(_classList, OnClassesChosen);
+        _select = new ClassSelectScreen(_classList, _uiCatalog, OnClassesChosen);
         AddChild(_select);
     }
 
