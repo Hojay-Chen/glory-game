@@ -17,11 +17,11 @@ public static class ArenaDecor
 {
     // ---- 共用材质（少量实例覆盖全部装饰件）----
     private static readonly StandardMaterial3D GuideMat =
-        Emissive(new Color(0.42f, 0.55f, 0.66f), 0.35f, 0.30f, 0.20f);   // 地面引导纹（暗青、低自发光）
+        Emissive(new Color(0.26f, 0.34f, 0.41f), 0.16f, 0.30f, 0.20f);   // 地面引导纹（暗青、低自发光）
     private static readonly StandardMaterial3D RimMat =
-        Emissive(new Color(1.00f, 0.76f, 0.30f), 1.10f, 0.35f, 0.25f);   // 擂台描边 / 顶灯（暖金）
+        Emissive(new Color(0.62f, 0.48f, 0.20f), 0.28f, 0.35f, 0.25f);   // 擂台描边 / 顶灯（暖金）
     private static readonly StandardMaterial3D StoneMat =
-        new() { AlbedoColor = new Color(0.550f, 0.530f, 0.490f), Roughness = 0.72f, Metallic = 0.05f };  // 与立柱同族
+        new() { AlbedoColor = new Color(0.34f, 0.33f, 0.31f), Roughness = 0.72f, Metallic = 0.05f };  // 与立柱同族
     private static readonly StandardMaterial3D BleacherMat =
         new() { AlbedoColor = new Color(0.137f, 0.149f, 0.180f), Roughness = 0.92f, Metallic = 0.00f };  // 观众席（暗、退让）
     private static readonly StandardMaterial3D RailMat =

@@ -20,13 +20,13 @@ public sealed class ArenaBuilder
     private static readonly StandardMaterial3D WallMat =
         Mat(new Color(0.227f, 0.247f, 0.290f), 0.70f, 0.10f);   // 结界墙 冷灰石（退让背景）
     private static readonly StandardMaterial3D PlatformMat =
-        Mat(new Color(0.550f, 0.520f, 0.440f), 0.60f, 0.15f);   // 高台 略暖（高处=危险提示 §5.2）
+        Mat(new Color(0.335f, 0.315f, 0.265f), 0.60f, 0.15f);   // 高台 略暖（高处=危险提示 §5.2）
     private static readonly StandardMaterial3D RampMat =
-        Mat(new Color(0.450f, 0.425f, 0.360f), 0.72f, 0.08f);   // 坡道 同族压暗
+        Mat(new Color(0.295f, 0.278f, 0.235f), 0.72f, 0.08f);   // 坡道 同族压暗
     private static readonly StandardMaterial3D CoverMat =
-        Mat(new Color(0.300f, 0.270f, 0.230f), 0.78f, 0.05f);   // 掩体墙 暖褐
+        Mat(new Color(0.225f, 0.202f, 0.172f), 0.78f, 0.05f);   // 掩体墙 暖褐
     private static readonly StandardMaterial3D PillarMat =
-        Mat(new Color(0.550f, 0.530f, 0.490f), 0.72f, 0.05f);   // 石柱 亮石
+        Mat(new Color(0.335f, 0.322f, 0.298f), 0.72f, 0.05f);   // 石柱 亮石
     private static readonly StandardMaterial3D WoodMat =
         Mat(new Color(0.350f, 0.260f, 0.160f), 0.88f, 0.00f);   // 木箱 暖棕
     private static readonly StandardMaterial3D RockMat =
@@ -67,7 +67,7 @@ public sealed class ArenaBuilder
         {
             RotationDegrees = new Godot.Vector3(-50, 35, 0),
             LightColor = new Color(1.000f, 0.965f, 0.910f),   // #FFF6E8
-            LightEnergy = 1.15f,                              // 规格 1.0–1.2
+            LightEnergy = 0.70f,                              // 规格 1.0–1.2
             ShadowEnabled = true,
         });
 
@@ -76,7 +76,7 @@ public sealed class ArenaBuilder
         {
             RotationDegrees = new Godot.Vector3(-20, -140, 0),
             LightColor = new Color(0.788f, 0.839f, 1.000f),   // #C9D6FF 冷调
-            LightEnergy = 0.30f,                              // 规格 0.25–0.35
+            LightEnergy = 0.15f,                              // 规格 0.25–0.35
             ShadowEnabled = false,
         });
 
@@ -86,7 +86,7 @@ public sealed class ArenaBuilder
         {
             RotationDegrees = new Godot.Vector3(-16, 0, 0),
             LightColor = new Color(0.900f, 0.930f, 1.000f),   // 近白微冷
-            LightEnergy = 0.60f,                              // 规格 0.5–0.7
+            LightEnergy = 0.25f,                              // 规格 0.5–0.7，但无色调映射需再压
             ShadowEnabled = false,
         });
     }
@@ -99,7 +99,7 @@ public sealed class ArenaBuilder
             BackgroundColor = new Color(0.086f, 0.098f, 0.129f),                 // #161A21 暗沉去饱和（§5.2 区间 #14171E~#1E2330）
             AmbientLightSource = Godot.Environment.AmbientSource.Color,
             AmbientLightColor = new Color(0.549f, 0.588f, 0.671f),               // #8C96AB
-            AmbientLightEnergy = 0.60f,                                          // 规格 0.5–0.7（比旧 0.8 略降以提对比）
+            AmbientLightEnergy = 0.26f,                                          // 规格 0.5–0.7；Compat 渲染器无色调映射，压低防过曝
             FogEnabled = false,                                                  // §5.1: 关雾（否则吃掉 35m 外剪影）
         };
         parent.AddChild(new WorldEnvironment { Environment = env });

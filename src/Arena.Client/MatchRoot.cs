@@ -101,6 +101,9 @@ public partial class MatchRoot : Node
             _playerClass = p0;
             var p1 = Godot.OS.GetEnvironment("ARENA_P1");
             _enemyClass = p1.Length > 0 ? p1 : "BLA";
+            _playerWeapon = Godot.OS.GetEnvironment("ARENA_W0");
+            _enemyWeapon = Godot.OS.GetEnvironment("ARENA_W1");
+            _state = AppState.Playing;      // ← 必须置 Playing，否则 _PhysicsProcess 直接早退（世界不步进）
             StartMatch();
             return;
         }
@@ -390,6 +393,13 @@ public partial class MatchRoot : Node
                 if (_views.TryGetValue(f.Id, out var view)) view.Sync(f);
         }
         _hud?.Sync(_world, _tick);
+        if (_tick % 60 == 0 && Godot.OS.GetEnvironment("ARENA_DEBUG") == "1" && _camera is not null)
+        {
+            var fa = _world.Fighters[0]; var fb = _world.Fighters[1];
+            Console.WriteLine($"[DBG] t={_tick} f0=({(double)fa.PosX.Raw/65536:0.0},{(double)fa.PosZ.Raw/65536:0.0}) " +
+                              $"f1=({(double)fb.PosX.Raw/65536:0.0},{(double)fb.PosZ.Raw/65536:0.0}) " +
+                              $"cam=({_camera.Position.X:0.0},{_camera.Position.Y:0.0},{_camera.Position.Z:0.0})");
+        }
         if (_world.Fighters.Count >= 2 && _world.Fighters[1].HitstunCount > _statMaxCombo)
             _statMaxCombo = _world.Fighters[1].HitstunCount;
 
