@@ -1435,8 +1435,9 @@ public sealed partial class SimWorld
         Events.Emit(new SimEvent { Kind = EventKind.BreakTriggered, VictimId = f.Id });
     }
 
-    public void ApplyStatus(FighterStateData f, StatusEffectDef eff, int sourceFighterId, ushort skillId) =>
-        StatusSystem.Apply(f, eff, sourceFighterId, this);
+    public void ApplyStatus(FighterStateData f, StatusEffectDef eff, int sourceFighterId, ushort skillId,
+        bool addControlValue = true) =>
+        StatusSystem.Apply(f, eff, sourceFighterId, this, addControlValue);
 
     public void RemoveStatus(FighterStateData f, StatusKind kind) => StatusSystem.Remove(f, kind, this);
 }

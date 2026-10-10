@@ -115,6 +115,10 @@ public sealed class SkillRuntimeData
     // ---- Batch 7 Part 3: Pull / 强制中断 / Decoy（全部数据驱动，零 per-skill 分支）----
     public long PullTowardOwnerM { get; init; }   // 拉拽: 命中后目标向攻击者强制位移 N m（悬磁炮/勾魂）
     public bool ForceInterrupt { get; init; }     // 打断攻击/打断吟唱——命中即中断目标执行体（陷阱扣/寒冰降雨）
+    /// 本技施加的状态**不注入控制值**。用于「全异常满值」这类一次施加大量异常的技能：
+    /// 控制值是累积量，满 100 触发 Break（解除一切控制 + 1.5s 免控），
+    /// 若按常规注入，14 类增量合计 315 会让目标**反而免控**——与本技意图相反。
+    public bool SuppressControlValue { get; init; }
     public bool IsDecoy { get; init; }            // 分身/假身——静置诱饵实体（吸引单位类攻击，NJA 影分身）
     // ---- Flight 原语数据（DDQ-B5-6 裁定方案 B: 时长数据化 4s+1s；触发入口仍 DDQ）----
     public int FlightBaseTicks { get; init; }     // 飞行基础时长（扫把掌握 飞行4s）

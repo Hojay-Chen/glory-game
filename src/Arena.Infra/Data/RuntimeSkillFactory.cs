@@ -46,7 +46,7 @@ public static class RuntimeSkillFactory
 
         var geo = ParseHitbox(d, unroutedHitbox);
         var hbRawKind = d.HitboxRaw.Split(':')[0];
-        var allStatuses = ParseStatuses(d, unroutedStatus);
+        var allStatuses = ParseStatuses(d, unroutedStatus, out bool suppressControlValue);
         bool cleanseDebuffs = allStatuses.Any(st => st.Kind == StatusKind.None);   // Cleanse 记号
         var statuses = allStatuses.Where(st => st.Kind != StatusKind.None).ToArray();
         var armor = ParseArmor(d);
@@ -93,9 +93,11 @@ public static class RuntimeSkillFactory
             Statuses = statuses,
             CleanseDebuffs = cleanseDebuffs,
             PullTowardOwnerM = ParsePullToward(d.StatusRaw),
-            // ForceInterrupt: 「打断攻击」在 status 列、「打断吟唱」两列都可能出现（WRK_T3_001 在 status）
+            // ForceInterrupt: 「打断攻击」在 status 列；「打断吟唱」两列都可能出现（WRK_T3_001 在 status）；
+            // WRK_T4_001 出神只写「可打断任何动作（不只是吟唱）」——最强打断，同样置位
             ForceInterrupt = d.StatusRaw.Contains("打断攻击") || d.StatusRaw.Contains("打断吟唱")
-                          || d.Special.Contains("打断吟唱"),
+                          || d.Special.Contains("打断吟唱") || d.Special.Contains("可打断"),
+            SuppressControlValue = suppressControlValue,
             IsDecoy = d.Special.Contains("假身") || d.Special.Contains("影分身"),
             Armor = armor,
             Invuln = invuln,
@@ -294,8 +296,20 @@ public static class RuntimeSkillFactory
 
     // ---- status 语法解析（GDD §7.3 路由集；未路由语法显式登记） ----
 
-    private static StatusEffectDef[] ParseStatuses(SkillDef d, List<string> unrouted)
+    /// GDD §7.3 全部控制异常 + 各自基准时长（秒）与 Slow 的基准比例。
+    /// 「全异常满值」（WIT_U_001）展开用；顺序即枚举序，确定性无碍（编译期常量表）。
+    private static readonly (StatusKind Kind, int Seconds, long PotencyQ)[] AllControlStatuses =
     {
+        (StatusKind.Slow, 3, 0), (StatusKind.Root, 2, 0), (StatusKind.Stun, 1, 0),
+        (StatusKind.Freeze, 1, 0), (StatusKind.Sleep, 2, 0), (StatusKind.Silence, 2, 0),
+        (StatusKind.Blind, 2, 0), (StatusKind.Weakness, 6, 0), (StatusKind.GuardBreak, 5, 0),
+        (StatusKind.Paralysis, 1, 0), (StatusKind.Taunt, 3, 0), (StatusKind.Fear, 3, 0),
+        (StatusKind.Confuse, 3, 0), (StatusKind.Curse, 4, 0),
+    };
+
+    private static StatusEffectDef[] ParseStatuses(SkillDef d, List<string> unrouted, out bool suppressControlValue)
+    {
+        suppressControlValue = false;
         var raw = d.StatusRaw;
         if (raw is "none" or "-" or "") return Array.Empty<StatusEffectDef>();
         bool cleanse = false;
@@ -424,6 +438,34 @@ public static class RuntimeSkillFactory
                 case "解除免疫挑衅/恐惧/混乱":   // KNI_T3_006——v1 全异常清除（与 EXO 静心符同款近似登记）
                     cleanse = true;
                     break;
+                // —— 裁定落地 C1a（2026-10-11）: 已裁定项的纯路由 ——
+                case "结界":       // D2 SBL_T3_001 裂波斩——token 形如「结界:封锁1.2s」（首段才是 kind）
+                case "封锁":       //   原著「结界将其封锁」= 被挑起者不能行动（GDD §7.3 眩晕）
+                {
+                    int ticks = ExtractTicks(tok, 1);
+                    list.Add(new StatusEffectDef(StatusKind.Stun, 0, ticks, chance));
+                    break;
+                }
+                case "禁闪现":     // WRK_T4_003——本作无闪现/瞬移系统可禁（原著本意是「打断瞬移手段」，见 D7 登记）
+                    break;
+                case "出神":       // WRK_T4_001「出神:操作无效:1.2s」——GDD §7.3 操作无效=眩晕语义
+                    list.Add(new StatusEffectDef(StatusKind.Stun, 0, ParseDuration(seg, 2, defaultSec: 1), chance));
+                    break;
+                case "禁足":       // WRK_U_001「禁足:完全禁足3.5s」——GDD §7.3 禁足=Root
+                {
+                    // 时长写在第二段（「完全禁足3.5s」），从整串里找 Ns
+                    list.Add(new StatusEffectDef(StatusKind.Root, 0, ExtractTicks(tok, 3), chance));
+                    break;
+                }
+                case "全异常满值":   // D8 WIT_U_001 禁忌大爆炸——GDD §7.3 全部控制异常一次施加
+                {
+                    foreach (var (kind, secs, pot) in AllControlStatuses)
+                        list.Add(new StatusEffectDef(kind, pot, secs * (int)RuntimeConstants.TICK_RATE, chance));
+                    // ⚠️ 本技**不得注入控制值**：14 类增量合计 315 ≫ 阈值 100，注入必然触发 Break
+                    // （Break = 解除一切控制 + 1.5s 免控）——结果与技能意图完全相反。
+                    suppressControlValue = true;
+                    break;
+                }
                 // —— 批次 B1 路由收口（2026-10-11）: 新增状态域 ——
                 case "目标所受伤害":   // PRI_T4_001 增伤光环「目标所受伤害+30%:6s」→ DamageTakenUp
                     list.Add(new StatusEffectDef(StatusKind.DamageTakenUp, ParsePlusPercent(kindRaw),
@@ -451,6 +493,22 @@ public static class RuntimeSkillFactory
         if (at < 0) return 0;
         var pct = tok[(at + 1)..].TrimEnd('%');
         return int.TryParse(pct, out var v) ? v : 0;
+    }
+
+    /// 从整串里找「Ns」形式并取 **Tick 数**（「禁足:完全禁足3.5s」→ 210），找不到用 defaultSec 秒。
+    /// 注意返回的是 Tick——早先误按整秒取整，把 1.2s 压成了 1s。
+    private static int ExtractTicks(string s, int defaultSec)
+    {
+        for (int i = 0; i < s.Length; i++)
+        {
+            if (s[i] != 's') continue;
+            int j = i - 1;
+            while (j >= 0 && (char.IsDigit(s[j]) || s[j] == '.')) j--;
+            if (j == i - 1) continue;                       // 's' 前没有数字
+            if (decimal.TryParse(s[(j + 1)..i], NumberStyles.Float, CultureInfo.InvariantCulture, out var v))
+                return (int)Math.Round(v * RuntimeConstants.TICK_RATE, MidpointRounding.ToEven);
+        }
+        return defaultSec * (int)RuntimeConstants.TICK_RATE;
     }
 
     /// 「…+30%」→ Q32.16 比例（0.30）。kindStr 处已把 '+' 之后剥离（供「冻结值+50」类 token 归一），

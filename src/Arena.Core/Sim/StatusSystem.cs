@@ -10,7 +10,8 @@ namespace Arena.Core.Sim;
 public static class StatusSystem
 {
     /// 施加状态（GDD §7.5 共存规则）。返回是否生效。
-    public static bool Apply(FighterStateData f, in StatusEffectDef eff, int sourceFighterId, SimWorld w)
+    public static bool Apply(FighterStateData f, in StatusEffectDef eff, int sourceFighterId, SimWorld w,
+        bool addControlValue = true)
     {
         if (f.State == FighterState.Dead || f.State == FighterState.Break) return false;   // 免控
         ref var slot = ref f.Statuses[(int)eff.Kind];
@@ -51,7 +52,7 @@ public static class StatusSystem
             });
             // 控制值积累（§7.4，起身保护 ×0.5）
             long cv = StatusRules.ControlValueAdd(eff.Kind);
-            if (cv > 0) w.AddControlValue(f, f.ProtectTicks > 0 ? cv / 2 : cv);
+            if (cv > 0 && addControlValue) w.AddControlValue(f, f.ProtectTicks > 0 ? cv / 2 : cv);
         }
         return true;
     }

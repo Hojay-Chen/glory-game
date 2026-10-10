@@ -92,8 +92,6 @@ public class StatusRoutingTests
     {
         "ELE_T2_001:status:forcespin:180°",
         "WIT_T2_003:status:dispel:1",
-        "WIT_U_001:status:全异常满值",
-        "SBL_T3_001:status:结界:封锁1.2s",
         "GBL_T3_004:status:weight:x2",
         "LAU_T1_003:status:三发:①击退②僵直③击倒",
         "MEH_T3_001:status:weight:x1.5",
@@ -105,10 +103,7 @@ public class StatusRoutingTests
         "WRK_T2_003:status:吸血:治疗自身×1.1",
         "WRK_T3_004:status:操纵目标移动",
         "WRK_T3_006:status:附身DoT",
-        "WRK_T4_001:status:出神:操作无效:1.2s",
         "WRK_T4_002:status:拉拽入门内",
-        "WRK_T4_003:status:禁闪现",
-        "WRK_U_001:status:禁足:完全禁足3.5s:无法解除",
         "KNI_T3_004:status:反噬:伤害+效果",
         "KNI_T3_007:status:免疫挑衅/吼叫",
         "EXO_U_001:status:技能封禁:指定一技能8s(U档4s)",
@@ -187,6 +182,57 @@ public class StatusRoutingTests
         w.Step(1, new[] { Skill(0, "PRI_T1_002") });     // 治疗 800（v1 ally=自体）
         Run(w, 2, 120);
         return me.Hp - before;
+    }
+
+    // ================= SR10: 裁定落地 C1a 的四行路由 =================
+
+    [Fact]
+    public void SR10_C1a_Routing_Yields_Expected_Effects()
+    {
+        // D2 裂波斩「结界:封锁1.2s」→ Stun 1.2s（原著「结界将其封锁」= 被挑起者不能行动）
+        var seal = Def("SBL_T3_001").Statuses.FirstOrDefault(s => s.Kind == StatusKind.Stun);
+        Assert.Equal(StatusKind.Stun, seal.Kind);
+        Assert.Equal(72, seal.DurationTicks);            // 1.2s × 60
+
+        // 出神「操作无效:1.2s」→ Stun 1.2s + 打断任何动作
+        Assert.Equal(72, Def("WRK_T4_001").Statuses.First(s => s.Kind == StatusKind.Stun).DurationTicks);
+        Assert.True(Def("WRK_T4_001").ForceInterrupt);
+
+        // 禁足「完全禁足3.5s」→ Root 3.5s
+        var root = Def("WRK_U_001").Statuses.First(s => s.Kind == StatusKind.Root);
+        Assert.Equal(210, root.DurationTicks);           // 3.5s × 60
+    }
+
+    // ================= SR11: D8「全异常满值」——关键：不得因控制值溢出而反被 Break =================
+
+    [Fact]
+    public void SR11_AllAnomalies_Does_Not_Self_Defeat_Via_Break()
+    {
+        var def = Def("WIT_U_001");
+        Assert.True(def.SuppressControlValue, "「全异常满值」必须抑制控制值注入");
+        Assert.True(def.Statuses.Length >= 13, $"应展开为全部控制异常，实际 {def.Statuses.Length} 类");
+
+        // 施加后：目标被控住，而不是进入 Break（免控）——这才是本技意图。
+        // 注：14 类里存在互斥对（沉睡↔眩晕），先后施加会互相顶掉，故不能断言某一个具体状态，
+        // 只能断言「确实存在阻断行动的控制」。
+        var controlled = ApplyAll(def, addControlValue: false);
+        Assert.NotEqual(FighterState.Break, controlled.State);
+        bool actionBlocked = Enum.GetValues<StatusKind>()
+            .Any(k => k != StatusKind.None && controlled.Statuses[(int)k].Active && StatusRules.BlocksAction(k));
+        Assert.True(actionBlocked, "应确实处于无法行动的控制下");
+
+        // 反证：若照常注入控制值（14 类增量合计 315 ≫ 阈值 100），目标反而 Break 免控——
+        // 这正是 SuppressControlValue 存在的理由，锁死它以防后人"顺手"删掉。
+        var broken = ApplyAll(def, addControlValue: true);
+        Assert.Equal(FighterState.Break, broken.State);
+    }
+
+    private static FighterStateData ApplyAll(SkillRuntimeData def, bool addControlValue)
+    {
+        var w = CreateWorld(0, "WIT", 1, "BLA");
+        var vic = w.Fighters[1];
+        foreach (var st in def.Statuses) w.ApplyStatus(vic, st, 0, def.RuntimeId, addControlValue);
+        return vic;
     }
 
     // ================= 测试世界 / 指令助手 =================

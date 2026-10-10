@@ -258,7 +258,7 @@ public static class HitResolve
                 int roll = w.Rng.Roll100(new RollScope(StreamClass.SKILL_CHANCE, atk.Id, def.RuntimeId));
                 if (roll >= eff.ChancePercent) continue;
             }
-            w.ApplyStatus(vic, eff, atk.Id, def.RuntimeId);
+            w.ApplyStatus(vic, eff, atk.Id, def.RuntimeId, addControlValue: !def.SuppressControlValue);
         }
 
         // ---- 受击反应（armored 时跳过硬直/浮空/击退——承伤不硬直） ----
