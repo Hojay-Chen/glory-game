@@ -424,6 +424,14 @@ public static class RuntimeSkillFactory
                 case "解除免疫挑衅/恐惧/混乱":   // KNI_T3_006——v1 全异常清除（与 EXO 静心符同款近似登记）
                     cleanse = true;
                     break;
+                // —— 批次 B1 路由收口（2026-10-11）: 新增状态域 ——
+                case "目标所受伤害":   // PRI_T4_001 增伤光环「目标所受伤害+30%:6s」→ DamageTakenUp
+                    list.Add(new StatusEffectDef(StatusKind.DamageTakenUp, ParsePlusPercent(kindRaw),
+                        ParseDuration(seg, 1, defaultSec: 6), chance));
+                    break;
+                case "禁疗":           // ASN_T4_002「禁疗:10s」→ HealBlock（含封锁吸血/自愈）
+                    list.Add(new StatusEffectDef(StatusKind.HealBlock, 0, ParseDuration(seg, 1, defaultSec: 10), chance));
+                    break;
                 case "驱散全部异状态":   // PRI_T2_005 净化——友方异常清除（Cleanse 原语）
                 case "解除被嘲讽":       // EXO_T2_006 静心符——v1 全异常清除（单 cleanse 语义近似登记）
                     cleanse = true;
@@ -443,6 +451,17 @@ public static class RuntimeSkillFactory
         if (at < 0) return 0;
         var pct = tok[(at + 1)..].TrimEnd('%');
         return int.TryParse(pct, out var v) ? v : 0;
+    }
+
+    /// 「…+30%」→ Q32.16 比例（0.30）。kindStr 处已把 '+' 之后剥离（供「冻结值+50」类 token 归一），
+    /// 需要数值的场景在这里从原串取回。
+    private static long ParsePlusPercent(string kindRaw)
+    {
+        int i = kindRaw.IndexOf('+');
+        if (i < 0) return 0;
+        var tail = kindRaw[(i + 1)..].TrimEnd('%');
+        return decimal.TryParse(tail, NumberStyles.Float, CultureInfo.InvariantCulture, out var v)
+            ? Quantify(v / 100m) : 0;
     }
 
     private static long ParsePercent(string s)

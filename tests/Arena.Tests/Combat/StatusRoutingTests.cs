@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Arena.Core;
+using Arena.Core.Calc;
 using Arena.Core.Sim;
 using Xunit;
 
@@ -27,12 +28,15 @@ public class StatusRoutingTests
         "KNI_T3_006",                 // status「解除免疫挑衅/恐惧/混乱」→ Cleanse
     };
 
-    // ================= SR01: 7 行不再登记为未路由 =================
+    /// 批次 B1 收口的 2 行（新增状态域）
+    private static readonly string[] BatchB1 = { "PRI_T4_001", "ASN_T4_002" };
+
+    // ================= SR01: 批次 A/B1 各行不再登记为未路由 =================
 
     [Fact]
     public void SR01_BatchA_Rows_Are_No_Longer_Unrouted()
     {
-        var still = BatchA.Where(Unrouted.Contains).ToList();
+        var still = BatchA.Concat(BatchB1).Where(Unrouted.Contains).ToList();
         Assert.True(still.Count == 0, "仍有未路由登记: " + string.Join(",", still));
     }
 
@@ -98,7 +102,6 @@ public class StatusRoutingTests
         "GRP_U_001:status:落点AOE:r3.0",
         "ROG_T2_001:status:锁喉:目标攻防-50%",
         "ROG_T3_004:status:压制:目标倒地期间持续",
-        "ASN_T4_002:status:禁疗:10s",
         "WRK_T2_003:status:吸血:治疗自身×1.1",
         "WRK_T3_004:status:操纵目标移动",
         "WRK_T3_006:status:附身DoT",
@@ -106,7 +109,6 @@ public class StatusRoutingTests
         "WRK_T4_002:status:拉拽入门内",
         "WRK_T4_003:status:禁闪现",
         "WRK_U_001:status:禁足:完全禁足3.5s:无法解除",
-        "PRI_T4_001:status:目标所受伤害+30%:6s",
         "KNI_T3_004:status:反噬:伤害+效果",
         "KNI_T3_007:status:免疫挑衅/吼叫",
         "EXO_U_001:status:技能封禁:指定一技能8s(U档4s)",
@@ -124,4 +126,88 @@ public class StatusRoutingTests
         Assert.True(added.Count == 0, "新出现未路由（须显式裁定后再登记）: " + string.Join(" | ", added));
         Assert.True(removed.Count == 0, "白名单已过期（行被路由后须同步更新）: " + string.Join(" | ", removed));
     }
+
+    // ================= SR07: 批次 B1 的两行产出了新的状态域 =================
+
+    [Fact]
+    public void SR07_BatchB1_Tokens_Yield_New_Status_Domains()
+    {
+        var up = Def("PRI_T4_001").Statuses.FirstOrDefault(s => s.Kind == StatusKind.DamageTakenUp);
+        Assert.Equal(StatusKind.DamageTakenUp, up.Kind);
+        Assert.Equal(6 * 60, up.DurationTicks);      // 「…+30%:6s」
+        Assert.Equal(FixedM(0.30m), up.PotencyQ);    // +30% → Q32.16
+
+        var hb = Def("ASN_T4_002").Statuses.FirstOrDefault(s => s.Kind == StatusKind.HealBlock);
+        Assert.Equal(StatusKind.HealBlock, hb.Kind);
+        Assert.Equal(10 * 60, hb.DurationTicks);     // 「禁疗:10s」
+    }
+
+    // ================= SR08: 易伤真的提高伤害（行为验证，非枚举断言） =================
+
+    [Fact]
+    public void SR08_DamageTakenUp_Multiplies_Incoming_Damage()
+    {
+        long plain = HitDamage(up: false);
+        long boosted = HitDamage(up: true);
+
+        Assert.True(plain > 0, "基线必须真的命中");
+        Assert.True(boosted > plain, $"易伤应提高所受伤害: {plain} → {boosted}");
+        double ratio = (double)boosted / plain;
+        Assert.InRange(ratio, 1.25, 1.35);   // 数据是 +30%
+    }
+
+    private static long HitDamage(bool up)
+    {
+        var w = CreateWorld(0, "BLA", 1, "BLA");
+        w.Fighters[1].PosZ = Fixed.FromInt(1);          // 贴身（fan r2.2）
+        if (up)
+            w.ApplyStatus(w.Fighters[1], new StatusEffectDef(StatusKind.DamageTakenUp, FixedM(0.30m), 600, 0), 0, 0);
+        w.Step(1, new[] { Skill(0, "BLA_T1_001") });    // aim=0 → 朝 +Z，正对受害者
+        Run(w, 2, 60);
+        return w.Events.All.Where(e => e.Kind == EventKind.Hit && e.VictimId == 1).Sum(e => e.DamageRaw);
+    }
+
+    // ================= SR09: 禁疗真的封锁回复（行为验证） =================
+
+    [Fact]
+    public void SR09_HealBlock_Prevents_Healing()
+    {
+        Assert.True(HealGain(blocked: false) > 0, "基线治疗必须真的生效");
+        Assert.Equal(0, HealGain(blocked: true));
+    }
+
+    private static long HealGain(bool blocked)
+    {
+        var w = CreateWorld(0, "PRI", 1, "BLA");
+        var me = w.Fighters[0];
+        me.Hp = 5000;                                   // 先受伤，留出回复空间
+        long before = me.Hp;
+        if (blocked)
+            w.ApplyStatus(me, new StatusEffectDef(StatusKind.HealBlock, 0, 600, 0), 1, 0);
+        w.Step(1, new[] { Skill(0, "PRI_T1_002") });     // 治疗 800（v1 ally=自体）
+        Run(w, 2, 120);
+        return me.Hp - before;
+    }
+
+    // ================= 测试世界 / 指令助手 =================
+
+    private static SimWorld CreateWorld(int id0, string cls0, int id1, string cls1)
+    {
+        var w = new SimWorld(0x7EED_1234L, CombatGoldenSlice.Catalog.DataVersionHash);
+        foreach (var s in CombatGoldenSlice.Catalog.Skills) w.AddSkill(s);
+        w.AddFighter(id0, cls0, Fixed.FromInt(0), Fixed.FromInt(0), team: 0);
+        w.AddFighter(id1, cls1, Fixed.FromInt(0), Fixed.FromInt(0), team: 1);
+        w.SealWorld();
+        return w;
+    }
+
+    private static Command Skill(int f, string id, ushort aim = 0) =>
+        new(f, CmdKind.Skill, CombatGoldenSlice.Catalog.IdMap[id], aim, 0, 0);
+
+    private static void Run(SimWorld w, int from, int to)
+    {
+        for (int t = from; t <= to; t++) w.Step(t, Array.Empty<Command>());
+    }
+
+    private static long FixedM(decimal m) => (long)Math.Round(m * 65536m, MidpointRounding.ToEven);
 }

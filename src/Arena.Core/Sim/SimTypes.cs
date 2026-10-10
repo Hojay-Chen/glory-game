@@ -101,6 +101,11 @@ public enum StatusKind : byte
     Silence = 6, Blind = 7, Burn = 8, Bleed = 9, Poison = 10,
     Weakness = 11, GuardBreak = 12, Paralysis = 13, Taunt = 14,
     Fear = 15, Confuse = 16, Curse = 17, Shock = 18,
+    // ---- 非控制类状态（2026-10-11 扩展）----
+    // 新增项一律**追加在尾部**（既有编号不许改动）；Statuses 槽位固定 32（SimTypes.FighterStateData），
+    // 故不改变 Snapshot 布局；StatusRules 的默认分支已正确处理（不计控制值、不阻断动作）。
+    DamageTakenUp = 19,   // 易伤: 目标所受伤害 ×(1+PotencyQ)（GDD §7.3 增伤——PRI_T4_001 增伤光环）
+    HealBlock = 20,       // 禁疗: 期间一切 HP 回复无效（ASN_T4_002 燃烧生命）
 }
 
 /// GDD §7.3 控制值增量 + 行为路由表（数据驱动消费）

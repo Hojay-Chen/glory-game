@@ -58,6 +58,13 @@
 
 统计：**B 类 17 行 / C 类 7 行**。
 
+> **进度（2026-10-11 追加）**：批次 B1 的前 2 行已落地 —— `ASN_T4_002 禁疗` → `StatusKind.HealBlock`、
+> `PRI_T4_001 易伤` → `StatusKind.DamageTakenUp`。**未路由 31 → 22**。
+> 做法：新状态号**追加在 `StatusKind` 尾部**（既有编号不动），`Statuses` 槽位本就固定 32 →
+> **Snapshot 布局零变化**，`PotencyQ` 已在快照域内，故新状态天然随快照/回放。
+> 消费点：`HitResolve`（易伤乘区，紧邻 DEF 结算）+ `SimWorld.ApplyHeal/ApplyHealSelf`（禁疗闸门）。
+> 行为测试 SR08/SR09 验证的是「伤害真的高了 30%」「回复真的被挡住」，不是枚举存在。
+
 ## 3. 需你裁定（C 类 + 关键 DDQ）
 
 每条给了推荐——同意就说"按推荐"，不同意指出改哪条即可。
@@ -84,7 +91,7 @@
 
 ## 4. 建议的推进顺序（不含裁定项）
 
-1. **批次 B1**：`DamageTakenPctQ` + `HealBlockTicks` + `WeightMult` + `NextHitMultQ` —— 4 个域覆盖 5 行（PRI/ASN/GBL/MEH），都是"乘区/闸门"型，改动模式与 Batch 4 的 BuffAtkPct 同构，最稳。
+1. **批次 B1**（进行中）：~~`DamageTakenUp` + `HealBlock`~~ ✅ 2026-10-11；余 `WeightMult`（GBL/MEH 2 行）+ `NextHitMultQ`（MEH 1 行）。
 2. **批次 B2**：`ForceFacing` + `ImmunityMask` + `BannedSkillUid` —— 3 个域覆盖 3 行（ELE/KNI/EXO）。
 3. **批次 B3**：`DispelEnemyBuffs` + 全异常展开 + 锁喉 + 三发序列 + 反噬 + 吸血/出神/禁足 —— 剩余 B 类。
 4. 裁定后：C 类 7 行按 D1–D7 结论落地。

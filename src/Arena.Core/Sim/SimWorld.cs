@@ -229,6 +229,7 @@ public sealed partial class SimWorld
         }
         else
         {
+            if (f.Statuses[(int)StatusKind.HealBlock].Active) return;   // 禁疗（ASN_T4_002）——HP 回复整体无效
             f.Hp = Math.Min(f.HpMax, f.Hp + amountQ);
         }
         Events.Emit(new SimEvent { Kind = EventKind.Healed, VictimId = f.Id, DamageRaw = amountQ });
@@ -238,6 +239,7 @@ public sealed partial class SimWorld
     internal void ApplyHealSelf(FighterStateData f, long amountQ)
     {
         if (f.State == FighterState.Dead) return;
+        if (f.Statuses[(int)StatusKind.HealBlock].Active) return;   // 禁疗同样封锁吸血/自愈
         f.Hp = Math.Min(f.HpMax, f.Hp + amountQ);
         Events.Emit(new SimEvent { Kind = EventKind.Healed, VictimId = f.Id, DamageRaw = amountQ });
     }

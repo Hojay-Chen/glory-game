@@ -100,6 +100,10 @@ public static class HitResolve
             RuntimeConstants.DEFENSE_CONST * Fixed.ONE,
             RuntimeConstants.DEFENSE_CONST + effDef);                         // D = 1200/(1200+effDef) Q32.16
         dmg = DeterministicMath.MulShift(dmg, defenseFactor);
+        // 易伤（GDD §7.3 增伤）: 受击者身上 DamageTakenUp → 所受伤害 ×(1+PotencyQ)
+        // （PRI_T4_001 增伤光环「目标所受伤害+30%」；PotencyQ=0 时乘数为 1，天然退化为无操作）
+        if (vic.Statuses[(int)StatusKind.DamageTakenUp].Active)
+            dmg = DeterministicMath.MulShift(dmg, Fixed.ONE + vic.Statuses[(int)StatusKind.DamageTakenUp].PotencyQ);
         // 蓄力加成（GDD §4.1 蓄力技能; 数据: 蓄力:Ts:+P%——如 LAU_T3_001 +40%）
         if (def.ChargeBonusQ > 0) dmg = DeterministicMath.MulShift(dmg, def.ChargeBonusQ);
 
