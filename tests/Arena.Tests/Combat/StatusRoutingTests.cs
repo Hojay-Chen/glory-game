@@ -98,7 +98,6 @@ public class StatusRoutingTests
         "MEH_T4_001:status:amplify:下一击×2",
         "GRP_T1_001:status:震地波:r2.5:0.30",
         "GRP_U_001:status:落点AOE:r3.0",
-        "ROG_T3_004:status:压制:目标倒地期间持续",
         "WRK_T2_003:status:吸血:治疗自身×1.1",
         "WRK_T3_004:status:操纵目标移动",
         "WRK_T4_002:status:拉拽入门内",
@@ -334,6 +333,29 @@ public class StatusRoutingTests
         w.ApplyStatus(f, slow, 0, def.RuntimeId);
         Assert.Equal(DeterministicMath.DivRoundHalfEven(50 * Fixed.ONE, 100),
                      StatusSystem.MoveSpeedMultQ(f));                       // ×0.50
+    }
+
+    // ================= SR18: D3 压制——按翻在地后继续乱打 =================
+
+    [Fact]
+    public void SR18_OverwhelmingFist_KnocksDown_Then_Keeps_Hitting()
+    {
+        var def = Def("ROG_T3_004");                 // 霸王连拳，6 段
+        Assert.True(def.ForcedDown, "「压制」= 本技自己把人按倒");
+        Assert.True(def.Sweep, "按翻后要继续乱打 → 必须能命中倒地目标");
+
+        var w = CreateWorld(0, "ROG", 1, "BLA");
+        w.Fighters[1].PosZ = Fixed.FromInt(1);
+        w.Step(1, new[] { Skill(0, "ROG_T3_004") });
+        Run(w, 2, 90);
+
+        var ev = w.Events.All;
+        Assert.Contains(ev, e => e.Kind == EventKind.ForcedDown && e.VictimId == 1);
+        int hits = ev.Count(e => e.Kind == EventKind.Hit && e.VictimId == 1);
+        Assert.True(hits >= 3, $"按倒后应继续命中多段，实际 {hits} 段");
+        // 反证：倒地目标默认不可命中——若没置 Sweep，后续段会全部 Whiff(DownProtected)
+        Assert.DoesNotContain(ev, e => e.Kind == EventKind.Whiff
+                                    && e.ReasonByte == (byte)WhiffReason.DownProtected);
     }
 
     // ================= 测试世界 / 指令助手 =================

@@ -53,6 +53,8 @@ public static class RuntimeSkillFactory
         var armor = ParseArmor(d);
         var invuln = ParseInvuln(d);
         byte cancelTier = ParseCancelTier(d.CancelMinTier);
+        // D3 裁定: 「压制」的落地靠 **CSV 数据**承载（ROG_T3_004 的 sweep=1 + special 增补「受身无效」），
+        // 不在此处从 status 派生 —— PF01 保真度门禁明确要求 sweep/forced_down 只来自各自的数据列。
         bool forcedDown = d.Special.Contains("受身无效");
         bool armorBreak = d.Special.Contains("破霸体");
         bool isProj = geo.IsProjectile;
@@ -469,6 +471,8 @@ public static class RuntimeSkillFactory
                     break;
                 }
                 case "禁闪现":     // WRK_T4_003——本作无闪现/瞬移系统可禁（原著本意是「打断瞬移手段」，见 D7 登记）
+                    break;
+                case "压制":       // D3 ROG_T3_004——语义由 ForcedDown + Sweep 两个 flag 承载（工厂头部派生）
                     break;
                 case "出神":       // WRK_T4_001「出神:操作无效:1.2s」——GDD §7.3 操作无效=眩晕语义
                     list.Add(new StatusEffectDef(StatusKind.Stun, 0, ParseDuration(seg, 2, defaultSec: 1), chance));

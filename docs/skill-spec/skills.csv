@@ -323,7 +323,7 @@ ROG_T2_009,双月牙,ROG,T2,active,55,0,11,12,-,12,-,proj:30m/s:8m,8.0,-,0.62,ph
 ROG_T3_001,毒针,ROG,T3,active,70,0,22,12,-,12,-,proj:35m/s:10m,10.0,-,1.57,phys,1,10,0,-,bleed:50:5s;破霸体:5-10s,none,none,0,0,1,T3+,0,几率出血+破霸体,30级（原著）,30,job_change,AM_ROG_T3_001,VX_ROG_T3_001_HIT,SD_ROG_T3_001_HIT
 ROG_T3_002,伤疤之痛,ROG,T3,active,65,0,20,12,-,12,-,box:0.9x0.9x2.0,2.0,-,1.62,phys,1,16,0,-,bleed:60:5s,none,none,0,0,0,T3+,0,挂伤疤出血,-,35,job_change,AM_ROG_T3_002,VX_ROG_T3_002_HIT,SD_ROG_T3_002_HIT
 ROG_T3_003,恐吓,ROG,T3,active,70,0,25,12,-,12,-,cone:r6:a60,6.0,60,0,dark,-,0,0,-,虚弱:ATK-20%:8s,none,none,0,0,0,T3+,0,精神系无法闪避,无直接伤害,35,job_change,AM_ROG_T3_003,VX_ROG_T3_003,SD_ROG_T3_003
-ROG_T3_004,霸王连拳,ROG,T3,active,90,0,24,14,18,16,3,box:1.0x1.0x1.5,1.5,-,0.37,phys,6,0,0,-,压制:目标倒地期间持续,none,none,0,0,0,T3+,0,把人按翻在地乱打,控制技,40,job_change,AM_ROG_T3_004,VX_ROG_T3_004_HIT,SD_ROG_T3_004_HIT
+ROG_T3_004,霸王连拳,ROG,T3,active,90,0,24,14,18,16,3,box:1.0x1.0x1.5,1.5,-,0.37,phys,6,0,0,-,压制:目标倒地期间持续,none,none,1,0,0,T3+,0,把人按翻在地乱打;受身无效,控制技,40,job_change,AM_ROG_T3_004,VX_ROG_T3_004_HIT,SD_ROG_T3_004_HIT
 ROG_T4_001,以牙还牙,ROG,T4,counter,0,0,30,8,-,8,-,none,-,-,0,none,-,0,0,-,none,none,0f,0,0,0,any,0,复制最近命中自己的技能:MP×2:每局记3个,75级；不可复制U档,75,job_change,AM_ROG_T4_001,VX_ROG_T4_001,SD_ROG_T4_001
 ROG_U_001,街头风暴,ROG,U,buff,280,0,120,20,8s,22,-,none,-,-,0,none,-,0,0,-,none,none,-,0,0,0,none,0,中低阶技能强化且不计CD,8秒无限阴招（原著75级）,75,job_change,AM_ROG_U_001,VX_ROG_U_001,SD_ROG_U_001
 ASN_BAS_001,匕击一段,ASN,BAS,basic,0,0,0,6,2,9,-,box:0.7x0.7x1.5,1.5,-,0.26,phys,1,10,0,-,none,none,-,0,0,0,any,0,-,GDD14.17.4,1,normal,AM_ASN_BAS_001,VX_ASN_BAS_001_HIT,SD_ASN_BAS_001_HIT
