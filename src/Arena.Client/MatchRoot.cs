@@ -46,8 +46,9 @@ public partial class MatchRoot : Node
 
     // VS-7 表现调度（纯逻辑——只读 Sim 事件流，产出引擎无关的表现线索）
     private readonly PresentationDirector _director = new();
-    private Godot.Vector3 _lastMid;
-    private float _lastSpread;
+    private Godot.Vector3 _lastPlayer;    // 相机跟随的玩家位（越肩机位用）
+    private Godot.Vector3 _lastEnemy;
+    private bool _camValid;
 
     private const int LocalPlayerId = 0;
     private const int EnemyId = 1;
@@ -366,10 +367,10 @@ public partial class MatchRoot : Node
         // 非对战中（菜单/选人/暂停/结算）: 不步进 Sim；只让表现层收尾，并处理全局键
         if (_state is not AppState.Playing)
         {
-            if (_camera is not null && _lastSpread > 0)
+            if (_camera is not null && _camValid)
             {
                 _director.Camera.Tick(delta);
-                CameraFactory.Follow(_camera, _lastMid, _lastSpread);
+                CameraFactory.Follow(_camera, _lastPlayer, _lastEnemy);
                 ApplyCameraShake();
             }
             return;
@@ -437,14 +438,10 @@ public partial class MatchRoot : Node
         {
             var a = _world.Fighters[0];
             var b = _world.Fighters[1];
-            var mid = new Godot.Vector3(
-                (float)((a.PosX.Raw + b.PosX.Raw) / 131072.0),
-                0,
-                (float)((a.PosZ.Raw + b.PosZ.Raw) / 131072.0));
-            var spread = (float)(Math.Abs(a.PosX.Raw - b.PosX.Raw) + Math.Abs(a.PosZ.Raw - b.PosZ.Raw)) / 65536f;
-            _lastMid = mid;
-            _lastSpread = spread;
-            CameraFactory.Follow(_camera, mid, spread);
+            _lastPlayer = new Godot.Vector3((float)(a.PosX.Raw / 65536.0), 0, (float)(a.PosZ.Raw / 65536.0));
+            _lastEnemy = new Godot.Vector3((float)(b.PosX.Raw / 65536.0), 0, (float)(b.PosZ.Raw / 65536.0));
+            _camValid = true;
+            CameraFactory.Follow(_camera, _lastPlayer, _lastEnemy);
             ApplyCameraShake();
         }
 

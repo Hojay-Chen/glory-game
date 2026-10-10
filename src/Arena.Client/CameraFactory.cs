@@ -5,50 +5,54 @@ using Godot;
 
 // PRODUCTION - Arena.Client
 // 战斗相机（GDD §21.3: 第三人称越肩动作机位，非转播俯瞰）。
-//   · 越肩：贴在中点后上方，俯角 ~20°，让角色在画面里"有身体"，而不是一枚棋子。
-//   · 自适应帧内：间距越大拉得越远，但**上限收紧**（旧实现 9–26m/FOV38 把角色压到屏高 11%，
-//     读起来像 demo）。FOV 60 + 距离上限 13m，保证任何时候角色都占屏高 ≥22%。
-//   · 镜头碰撞：贴地/穿墙时抬高到地板之上，避免钻进几何。
+//   · **玩家相对**：机位在本地玩家(P0)背后、沿 P0→敌人方向朝前看——这是动作游戏的可读性根，
+//     旧实现把相机钉在中点固定的 −Z 侧（转播机），两人靠近时**互相遮挡**，读起来像围棋回放。
+//   · 越肩：距离基础 4.2m + 随间距 0.4×，夹 [4, 11]；FOV 60（GDD）。
+//   · 锁定感：视线落点偏向敌人，玩家在画面下三分之一，敌人落在上三分之二。
+//   · 平滑：位置/朝向各留惯性，运镜有重量但不飘。
 // 与判定无关（纯视觉）——只读 Sim 已同步的坐标，不预测。
 namespace Arena.Client;
 
 public sealed class CameraFactory
 {
-    // 平滑跟随速度（防抖；Sim 60Hz 采样仍留一点惯性让运镜有重量感）
-    private const float PosLerp = 0.22f;
-    private const float LookLerp = 0.28f;
+    private const float PosLerp = 0.18f;
+    private const float LookLerp = 0.24f;
 
-    private static Godot.Vector3 _lookAt = new(0, 1.2f, 0);
+    private static Godot.Vector3 _lookAt = new(0, 1.3f, 0);
     private static bool _init;
 
-    public static Camera3D CreateFollowCamera()
+    public static Camera3D CreateFollowCamera() => new()
     {
-        var cam = new Camera3D
-        {
-            Projection = Camera3D.ProjectionType.Perspective,
-            Fov = 60,                 // GDD §21.3
-            Near = 0.05f,
-            Far = 400f,
-        };
-        return cam;
-    }
+        Projection = Camera3D.ProjectionType.Perspective,
+        Fov = 60,                 // GDD §21.3
+        Near = 0.05f,
+        Far = 500f,
+    };
 
-    /// 让相机看向场景中央（入场/结算用）。
     public static void ResetLook(Godot.Vector3 at) { _lookAt = at; _init = false; }
 
-    /// 动作机位: 中点后上方，俯角 ~20°，随间距自适应（上限 13m）。
-    public static void Follow(Camera3D cam, Godot.Vector3 midpoint, float spread)
+    /// 越肩锁定机位：在玩家背后、朝敌人看；两人重叠时自动侧移错开。
+    public static void Follow(Camera3D cam, Godot.Vector3 player, Godot.Vector3 enemy)
     {
-        // 距离: 基础 4.2m（越肩基准 GDD）+ 随间距 0.5×，夹在 [5.2, 13]。
-        // 上限比旧实现低一半——宁可让远距的一方略微出框，也不把双方压成小棋子。
-        float back = Math.Clamp(4.2f + spread * 0.50f, 5.2f, 13f);
+        var flat = new Godot.Vector3(enemy.X - player.X, 0, enemy.Z - player.Z);
+        float dist = flat.Length();
+        if (dist < 0.01f) dist = 0.01f;
+        var dir = flat / dist;
 
-        // 俯角 ~20°：高度 = 水平后距 × tan(20°) ≈ 0.36，再抬到视线高度之上
-        var target = new Godot.Vector3(midpoint.X, 1.15f, midpoint.Z);
-        var want = target + new Godot.Vector3(0, back * 0.36f + 0.9f, -back);
+        // 距离: 越肩基准 4.2m（GDD）+ 随间距 0.4×；上限 11m（再远就把角色压成棋子）
+        float back = Mathf.Clamp(4.2f + dist * 0.40f, 4.2f, 11f);
 
-        // 镜头碰撞：不钻到地板以下（gl_compatibility 无合适遮挡查询，做高度下限即可）
-        if (want.Y < 0.6f) want.Y = 0.6f;
+        // 机位: 玩家背后，略微抬高并侧移一点（越肩构图，避免完全挡住玩家自己的角色）
+        var right = new Godot.Vector3(dir.Z, 0, -dir.X);   // 水平右向量
+        var focus = new Godot.Vector3(player.X, player.Y, player.Z);
+        var want = focus - dir * back + right * 0.55f + new Godot.Vector3(0, 2.0f + dist * 0.06f, 0);
+        if (want.Y < 0.8f) want.Y = 0.8f;
+
+        // 视线落点: 偏向敌人（不只是玩家），让敌人处于画面上部、双方都读得到
+        var target = new Godot.Vector3(
+            player.X + (enemy.X - player.X) * 0.62f,
+            1.25f,
+            player.Z + (enemy.Z - player.Z) * 0.62f);
 
         if (!_init) { cam.Position = want; _lookAt = target; _init = true; }
         else
@@ -59,14 +63,16 @@ public sealed class CameraFactory
         cam.LookAt(_lookAt, Godot.Vector3.Up);
     }
 
-    /// 入场演出: 从高远处缓降压到战斗机位（§1.7 镜头拉升——反向：开局先俯瞰再压近）。
-    public static void Intro(Camera3D cam, Godot.Vector3 midpoint, float spread, float t01)
+    /// 入场演出: 从高远处缓降压到战斗机位（§1.7 镜头拉升）。
+    public static void Intro(Camera3D cam, Godot.Vector3 player, Godot.Vector3 enemy, float t01)
     {
-        float e = 1f - MathF.Pow(1f - Math.Clamp(t01, 0f, 1f), 3f);   // ease-out cubic
-        float back = Mathf.Lerp(18f, Math.Clamp(4.2f + spread * 0.50f, 5.2f, 13f), e);
-        float height = Mathf.Lerp(11f, 0.36f * back + 0.9f, e);
-        var target = new Godot.Vector3(midpoint.X, Mathf.Lerp(0.4f, 1.15f, e), midpoint.Z);
-        cam.Position = target + new Godot.Vector3(0, height, -back);
+        float e = 1f - MathF.Pow(1f - Math.Clamp(t01, 0f, 1f), 3f);
+        var mid = (player + enemy) * 0.5f;
+        float dist = (enemy - player).Length();
+        float back = Mathf.Lerp(16f, Mathf.Clamp(4.2f + dist * 0.40f, 4.2f, 11f), e);
+        float h = Mathf.Lerp(10f, 2.0f + dist * 0.06f, e);
+        var target = new Godot.Vector3(mid.X, Mathf.Lerp(0.4f, 1.25f, e), mid.Z);
+        cam.Position = new Godot.Vector3(mid.X, h, mid.Z + back);
         cam.LookAt(target, Godot.Vector3.Up);
     }
 }
