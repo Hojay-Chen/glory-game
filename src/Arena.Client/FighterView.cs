@@ -41,6 +41,10 @@ public sealed partial class FighterView : Node3D
     private Tween? _swingTween;
     private float _flash;
     private bool _frozen;        // Hit Stop 表现冻结
+    private float _animTime;     // 表现层动画时钟（与 Sim tick 无关）
+    private long _lastSpeedRaw;  // 最近一次同步的速度（决定呼吸/奔跑步频）
+    private FighterState _lastState = FighterState.Normal;
+    private float _recoil;       // 受击后仰（命中反馈的身体层）
     private bool _tweenPaused;   // 冻结时暂停挥摆、解冻时恢复（只恢复自己暂停的那次）
 
     public FighterView(int id, byte team, FighterVisualProfile profile, string displayName = "")
@@ -88,12 +92,12 @@ public sealed partial class FighterView : Node3D
         _hpBarBg = BillboardQuad(0.96f, 0.10f, new Color(0.05f, 0.05f, 0.06f, 0.85f));
         _hpBarBg.Position = new Godot.Vector3(0, 2.16f, 0);
         AddChild(_hpBarBg);
-        _hpBarFill = BillboardQuad(0.92f, 0.07f, teamCol);
+        _hpBarFill = BillboardQuad(0.92f, 0.07f, teamCol, renderPriority: 1);
         _hpBarFill.Position = new Godot.Vector3(0, 2.16f, 0);
         AddChild(_hpBarFill);
     }
 
-    private static MeshInstance3D BillboardQuad(float w, float h, Color col) => new()
+    private static MeshInstance3D BillboardQuad(float w, float h, Color col, int renderPriority = 0) => new()
     {
         Mesh = new QuadMesh { Size = new Godot.Vector2(w, h) },
         MaterialOverride = new StandardMaterial3D
@@ -104,6 +108,8 @@ public sealed partial class FighterView : Node3D
             BillboardMode = BaseMaterial3D.BillboardModeEnum.Enabled,
             NoDepthTest = true,
             CullMode = BaseMaterial3D.CullModeEnum.Disabled,
+            // 底板与填充同位置同深度 → 必须显式排定绘制顺序，否则填充会被底板盖掉（实测黑条）
+            RenderPriority = renderPriority,
         },
     };
 
@@ -118,6 +124,8 @@ public sealed partial class FighterView : Node3D
             (float)(f.PosZ.Raw / 65536.0));
         Rotation = new Godot.Vector3(0, -(float)(f.HeadingQuantum / 65536.0 * Math.PI * 2), 0);
 
+        _lastSpeedRaw = Math.Abs(f.VelX.Raw) + Math.Abs(f.VelZ.Raw);
+        _lastState = f.State;
         var col = _team == 0 ? _profile.BodyColor0 : _profile.BodyColor1;
         switch (f.State)
         {
@@ -131,8 +139,7 @@ public sealed partial class FighterView : Node3D
         if (f.Hidden) col = new Color(0.35f, 0.35f, 0.45f);
         _bodyMat.AlbedoColor = col;
 
-        _bodyRig.RotationDegrees = f.State == FighterState.Down ? new Godot.Vector3(-90, 0, 0) : Godot.Vector3.Zero;
-        _bodyRig.Position = f.State == FighterState.Down ? new Godot.Vector3(0, 0.4f, 0) : Godot.Vector3.Zero;
+        // 身体姿态由 _Process 的 ApplyMotion 统一决定（含倒地），此处只投影权威位置/朝向
         _nameTag.Text = f.State == FighterState.Dead
             ? (_displayName.Length > 0 ? _displayName + "  KO" : "KO")
             : (_displayName.Length > 0 ? _displayName : $"P{_team}");
@@ -178,6 +185,7 @@ public sealed partial class FighterView : Node3D
     {
         // Hit Flash: 材质瞬时提亮（衰减在 _Process）
         _flash = 1.0f;
+        _recoil = Math.Min(1f, _recoil + 0.85f);   // 身体后仰（命中反馈的第三层：位置之外还有姿态）
         _bodyMat.Emission = new Color(_flash, _flash * 0.8f, _flash * 0.5f);
         SpawnSpark(pos, _profile.HitSparkColor, 10);
     }
@@ -228,10 +236,39 @@ public sealed partial class FighterView : Node3D
     }
 
     /// 每表现帧：尾迹采样 + Hit Flash 衰减（Hit Stop 冻结期整体跳过）
+    /// 程序化动作（表现层）: 站立呼吸 / 移动前倾+步频 / 受击后仰 / 倒地。
+    /// 全部是**加在权威投影之上的偏移**——Sync 决定"在哪"，本函数决定"什么姿态"，
+    /// 因此不影响 Sim（P3 表现-仿真分离）。
+    private void ApplyMotion(float delta)
+    {
+        _animTime += delta;
+        _recoil = Math.Max(0f, _recoil - delta * 3.2f);
+
+        float speed = _lastSpeedRaw / 65536f;           // m/s
+        float run = Math.Min(1f, speed / 6f);           // 0=站 1=全速
+        float freq = 2.2f + run * 6.5f;                  // 呼吸 2.2Hz → 奔跑 8.7Hz
+        float bob = MathF.Sin(_animTime * freq * 6.2831853f) * (0.012f + run * 0.035f);
+
+        float leanX = -run * 0.16f;                      // 移动前倾
+        float recoilX = _recoil * 0.42f;                 // 受击后仰（与前倾叠加）
+        float sway = MathF.Sin(_animTime * 1.4f) * 0.015f;   // 极轻的重心摆动
+
+        if (_lastState == FighterState.Down || _lastState == FighterState.Dead)
+        {
+            _bodyRig.Position = new Godot.Vector3(0, 0.4f, 0);
+            _bodyRig.Rotation = new Godot.Vector3(-Mathf.Pi / 2f, 0, 0);
+            return;
+        }
+
+        _bodyRig.Position = new Godot.Vector3(0, bob, 0);
+        _bodyRig.Rotation = new Godot.Vector3(leanX + recoilX, 0, sway);
+    }
+
     public override void _Process(double delta)
     {
         if (_frozen) return;
         _trail.Sample(delta);
+        ApplyMotion((float)delta);
 
         if (_flash <= 0) return;
         _flash = Math.Max(0, _flash - (float)delta * 6f);
