@@ -292,6 +292,22 @@ public class StatusRoutingTests
         return w.Events.All.Where(e => e.Kind == EventKind.Hit && e.VictimId == 1).Sum(e => e.DamageRaw);
     }
 
+    // ================= SR15: 嗜血奋战霸体窗数据修正（D13 / PATCH-021） =================
+
+    [Fact]
+    public void SR15_BerserkArmor_Covers_Full_Buff_Duration()
+    {
+        // GDD 两处均写「全程霸体」，该技 active = 20s → 霸体窗必须覆盖全程
+        // （原 CSV 为 24-244f ≈4.07s，差 5 倍，判为笔误）
+        var def = Def("BER_U_001");
+        Assert.NotNull(def.Armor);
+        var a = def.Armor!.Value;
+        Assert.Equal(24, a.StartTick);
+        Assert.Equal(1224, a.EndTick);          // 20s × 60 + 24
+        Assert.True(a.Covers(1200), "20s 末段仍应处于霸体");
+        Assert.False(a.Covers(1300), "窗口外不霸体");
+    }
+
     // ================= 测试世界 / 指令助手 =================
 
     private static SimWorld CreateWorld(int id0, string cls0, int id1, string cls1)

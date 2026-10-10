@@ -130,7 +130,7 @@ BER_T3_004,狂暴,BER,T3,buff,110,0,30,12,20s,14,-,none,-,-,0,none,-,0,0,-,none,
 BER_T4_001,怒血狂涛,BER,T4,active,170,0,55,34,-,30,-,box:2.0x2.5x6.0,6.0,-,2.77,phys,1,0,0,8.0,none,SSA:0-34f,-,0,0,0,none,0,起手很慢（原著）,巨大血刃斩下,70,job_change,AM_BER_T4_001,VX_BER_T4_001_HIT,SD_BER_T4_001_HIT
 BER_T4_002,绝地风暴,BER,T4,active,160,0,50,20,2.5s,24,15,circle:r3.5,3.5,-,0.28,phys,10,10,0,7.5,none,none,-,0,0,0,T4+,0,末段击飞7.5,75级,75,job_change,AM_BER_T4_002,VX_BER_T4_002_HIT,SD_BER_T4_002_HIT
 BER_T4_003,嗜血,BER,T4,buff,120,0,60,12,20s,14,-,none,-,-,0,none,-,0,0,-,none,none,-,0,0,0,any,0,吸取自身生命提升战力:ATK+20%:自身-1.5%/s,75级；三态互斥,75,job_change,AM_BER_T4_003,VX_BER_T4_003,SD_BER_T4_003
-BER_U_001,嗜血奋战,BER,U,buff,280,0,120,24,20s,26,-,none,-,-,0,none,-,0,0,-,none,SSA:24-244f,-,0,0,0,none,0,比狂暴强25%;正嗜血10%/反嗜血:ATK+8%:-1.5%/s,觉醒；与狂暴不可叠加（原著）,50,awakening,AM_BER_U_001,VX_BER_U_001,SD_BER_U_001
+BER_U_001,嗜血奋战,BER,U,buff,280,0,120,24,20s,26,-,none,-,-,0,none,-,0,0,-,none,SSA:24-1224f,-,0,0,0,none,0,比狂暴强25%;正嗜血10%/反嗜血:ATK+8%:-1.5%/s,觉醒；与狂暴不可叠加（原著）,50,awakening,AM_BER_U_001,VX_BER_U_001,SD_BER_U_001
 BER_PAS_001,血气唤醒,BER,PAS,passive,0,0,0,-,-,-,-,none,-,-,0,none,-,0,0,-,none,none,-,0,0,0,-,0,HP<50%:ATK+5%;<30%:+10%;<15%:+15%,转职被动（原著）,20,job_change,AM_BER_PAS_001,VX_BER_PAS_001,SD_BER_PAS_001
 SBL_BAS_001,魔剑一段,SBL,BAS,basic,0,0,0,9,3,13,-,fan:r2.4:a90,2.4,90,0.33,phys,1,12,0,-,none,none,-,0,0,0,any,0,-,GDD14.7.4,1,normal,AM_SBL_BAS_001,VX_SBL_BAS_001_HIT,SD_SBL_BAS_001_HIT
 SBL_BAS_002,魔剑二段,SBL,BAS,basic,0,0,0,10,3,13,-,fan:r2.4:a90,2.4,90,0.35,phys,1,12,0,-,none,none,-,0,0,0,any,0,-,-,1,normal,AM_SBL_BAS_002,VX_SBL_BAS_002_HIT,SD_SBL_BAS_002_HIT
