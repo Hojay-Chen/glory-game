@@ -11,7 +11,8 @@ public sealed record FighterVisualProfile(
     Color TeamA,        // 阵营 ①（本地玩家）
     Color TeamB,        // 阵营 ②（对手）
     Color Accent,       // 系别徽记色
-    BranchShape Shape)  // 剪影族（决定肩垫/背饰/腿长等变体件）
+    BranchShape Shape,  // 剪影族（决定肩垫/背饰/腿长等变体件）
+    string WeaponMesh)  // 武器家族网格名（assets/weapons.glb 内的节点）
 {
     /// 阵营色取自美术规格的**色盲安全对**（蓝 / 橙，非红绿），并配形状冗余
     public static readonly Color BlueTeam = new(0.18f, 0.49f, 1.00f);    // #2E7DFF
@@ -35,8 +36,9 @@ public sealed record FighterVisualProfile(
     public float WeaponWidth => 0.08f;
 
     /// 系别 → 剪影族 + 徽记色（class-base.csv 的 branch 字段为中文系别名）
-    public static FighterVisualProfile For(string classId, string branch) => new(
-        classId, branch, BlueTeam, OrangeTeam, AccentOf(branch), ShapeOf(branch));
+    public static FighterVisualProfile For(string classId, string branch, string weaponType = "") => new(
+        classId, branch, BlueTeam, OrangeTeam, AccentOf(branch), ShapeOf(branch),
+        WeaponFamily.Of(weaponType));
 
     private static Color AccentOf(string branch) => branch switch
     {

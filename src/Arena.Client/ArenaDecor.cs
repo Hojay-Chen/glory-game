@@ -19,7 +19,7 @@ public static class ArenaDecor
     private static readonly StandardMaterial3D GuideMat =
         Emissive(new Color(0.26f, 0.34f, 0.41f), 0.16f, 0.30f, 0.20f);   // 地面引导纹（暗青、低自发光）
     private static readonly StandardMaterial3D RimMat =
-        Emissive(new Color(0.62f, 0.48f, 0.20f), 0.28f, 0.35f, 0.25f);   // 擂台描边 / 顶灯（暖金）
+        Emissive(new Color(0.52f, 0.40f, 0.17f), 0.14f, 0.35f, 0.25f);   // 擂台描边 / 顶灯（暖金）
     private static readonly StandardMaterial3D StoneMat =
         new() { AlbedoColor = new Color(0.34f, 0.33f, 0.31f), Roughness = 0.72f, Metallic = 0.05f };  // 与立柱同族
     private static readonly StandardMaterial3D BleacherMat =
@@ -61,7 +61,7 @@ public static class ArenaDecor
         }
 
         // ============ 1. 擂台边缘高光描边（可见的近场焦点——暖金自发光环）============
-        AddTorus(parent, px, ph + 0.06f, pz, pr - 0.14f, pr + 0.14f, RimMat, flattenY: 1f, segments: 64);
+        AddTorus(parent, px, ph + 0.06f, pz, pr - 0.05f, pr + 0.05f, RimMat, flattenY: 1f, segments: 64);
         // 擂台基座轮廓线（地面上一圈冷色细线，把台体从地板上"切"出来）
         AddTorus(parent, px, 0.04f, pz, pr + 0.55f, pr + 0.75f, GuideMat, flattenY: 0.4f, segments: 64);
 

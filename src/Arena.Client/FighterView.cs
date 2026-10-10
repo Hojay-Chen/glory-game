@@ -23,7 +23,6 @@ public sealed partial class FighterView : Node3D
 
     // ---- Weapon ----
     private readonly Node3D _weaponPivot;
-    private readonly MeshInstance3D _weapon;
     private readonly StandardMaterial3D _weaponMat;
 
     // ---- EffectRoot ----
@@ -51,20 +50,15 @@ public sealed partial class FighterView : Node3D
 
         // Body —— 人形装配（14 件基本体 + 系别变体件；纯代码，零外部资产）
         _bodyRig = new Node3D();
-        _bodyMat = FighterMeshBuilder.Build(_bodyRig, _profile, teamCol);
+        _bodyMat = FighterMeshBuilder.Build(_bodyRig, _profile, teamCol, _team);
         AddChild(_bodyRig);
 
         // Weapon（右手侧竖持——AnimationDriver 挥摆）
         _weaponPivot = new Node3D { Position = new Godot.Vector3(0.45f, 1.1f, 0) };
         _weaponMat = new StandardMaterial3D { AlbedoColor = _profile.WeaponColor, Metallic = 0.6f, Roughness = 0.3f };
-        _weapon = new MeshInstance3D
-        {
-            Mesh = new BoxMesh { Size = new Godot.Vector3(_profile.WeaponWidth, _profile.WeaponLength, _profile.WeaponWidth) },
-            MaterialOverride = _weaponMat,
-            Position = new Godot.Vector3(0, _profile.WeaponLength / 2, 0),
-        };
-        _weaponPivot.AddChild(_weapon);
         AddChild(_weaponPivot);
+        // 武器来自 assets/weapons.glb 的**职业所属家族**（此前所有职业共用同一个 BoxMesh）
+        FighterMeshBuilder.BuildWeapon(_weaponPivot, _profile.WeaponMesh, _weaponMat);
 
         // Weapon Trail（尖端世界轨迹——挂在 FighterView 下随视图释放，TopLevel 用世界坐标）
         _trail = new WeaponTrail(_weaponPivot, _profile.WeaponLength, _profile.WeaponWidth * 1.5f, _profile.SlashColor);

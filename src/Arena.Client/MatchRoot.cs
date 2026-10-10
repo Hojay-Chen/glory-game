@@ -42,6 +42,7 @@ public partial class MatchRoot : Node
     private Camera3D? _camera;
     private int _restartCooldown;
     private Hud? _hud;
+    private readonly Arena.Client.Audio.AudioDirector _audio = new();
 
     // VS-7 表现调度（纯逻辑——只读 Sim 事件流，产出引擎无关的表现线索）
     private readonly PresentationDirector _director = new();
@@ -85,6 +86,7 @@ public partial class MatchRoot : Node
         var builder = new ArenaBuilder();
         builder.BuildEnvironment(_envRoot);
 
+        AddChild(_audio);          // 音效（程序化合成，零素材）
         _hud = new Hud();
         AddChild(_hud);
         _camera = CameraFactory.CreateFollowCamera();
@@ -227,6 +229,14 @@ public partial class MatchRoot : Node
 
     private string _resultText = "";
 
+    /// class_id → 武器类型（weapons.csv 的 type 列；用于选武器家族网格）
+    private string WeaponTypeOf(string classId)
+    {
+        foreach (var w in _weaponList)
+            if (w.ClassId == classId) return w.Type;
+        return "";
+    }
+
     /// class_id → 系别名（视觉档案的剪影族依据）
     private string BranchOf(string classId)
     {
@@ -278,8 +288,8 @@ public partial class MatchRoot : Node
         _director.Reset();   // 表现层态机清零（零残留——与 Restart 同语义）
 
         // 出生点标记
-        _spawnMarker(setup.Spawn0.X, setup.Spawn0.Z, new Color(0.2f, 0.4f, 1f));
-        _spawnMarker(setup.Spawn1.X, setup.Spawn1.Z, new Color(1f, 0.3f, 0.3f));
+        _spawnMarker(setup.Spawn0.X, setup.Spawn0.Z, Arena.Client.Visuals.FighterVisualProfile.BlueTeam);
+        _spawnMarker(setup.Spawn1.X, setup.Spawn1.Z, Arena.Client.Visuals.FighterVisualProfile.OrangeTeam);
 
         // FighterView
         foreach (var f in _world.Fighters)
@@ -287,7 +297,7 @@ public partial class MatchRoot : Node
             // 按职业取视觉档案（六系剪影 + 系别徽记色）——此前所有职业硬用同一套 Blade 档案
             string cls = f.Id == LocalPlayerId ? _playerClass : _enemyClass;
             var view = new FighterView(f.Id, f.Team,
-                Arena.Client.Visuals.FighterVisualProfile.For(cls, BranchOf(cls)));
+                Arena.Client.Visuals.FighterVisualProfile.For(cls, BranchOf(cls), WeaponTypeOf(cls)));
             _views[f.Id] = view;
             _matchRoot.AddChild(view);
         }
@@ -459,6 +469,7 @@ public partial class MatchRoot : Node
 
     private void DispatchCue(PresentationCue cue)
     {
+        _audio.PlayCue(cue);        // 声音与画面对齐：同一条表现线索驱动
         switch (cue.Kind)
         {
             case PresentationCueKind.WeaponSwing:

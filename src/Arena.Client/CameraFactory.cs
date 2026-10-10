@@ -14,7 +14,7 @@ public sealed class CameraFactory
         var cam = new Camera3D
         {
             Projection = Camera3D.ProjectionType.Perspective,
-            Fov = 50,
+            Fov = 38,            // 收窄视角=放大主体，而不必把相机怼近（圆台才不会占满画面）
         };
         return cam;
     }
@@ -22,8 +22,8 @@ public sealed class CameraFactory
     public static void Follow(Camera3D cam, Godot.Vector3 midpoint, float spread)
     {
         // 转播机位：足够远看清双方与擂台关系，俯角约 35°（太近会只剩地板、太陡会丢失纵深）
-        var back = Math.Clamp(7.5f + spread * 0.35f, 9f, 17f);
-        cam.Position = new Godot.Vector3(midpoint.X, midpoint.Y + back * 0.52f, midpoint.Z - back * 0.86f);
-        cam.LookAt(new Godot.Vector3(midpoint.X, 1f, midpoint.Z), Godot.Vector3.Up);
+        var back = Math.Clamp(6.5f + spread * 0.30f, 8f, 14f);
+        cam.Position = new Godot.Vector3(midpoint.X, midpoint.Y + back * 0.40f, midpoint.Z - back * 0.92f);
+        cam.LookAt(new Godot.Vector3(midpoint.X, 1.3f, midpoint.Z), Godot.Vector3.Up);
     }
 }
