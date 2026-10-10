@@ -123,6 +123,9 @@ public sealed class SkillRuntimeData
     /// **同时降攻又降防**的 token——攻击侧走 Weakness 状态，防御侧落到 BuffDefPct 域。
     public long TargetDefPctQ { get; init; }
     public int TargetDefTicks { get; init; }
+    /// 命中时强制旋转被击者朝向的量子数（ELE_T2_001 暗夜飞影「强制目标转身180°」）。
+    /// u16 朝向语义（0=+Z，顺时针）——即时效果，不产生持续状态，故不占 Snapshot。
+    public long ForcedTurnQuantum { get; init; }
     public bool IsDecoy { get; init; }            // 分身/假身——静置诱饵实体（吸引单位类攻击，NJA 影分身）
     // ---- Flight 原语数据（DDQ-B5-6 裁定方案 B: 时长数据化 4s+1s；触发入口仍 DDQ）----
     public int FlightBaseTicks { get; init; }     // 飞行基础时长（扫把掌握 飞行4s）

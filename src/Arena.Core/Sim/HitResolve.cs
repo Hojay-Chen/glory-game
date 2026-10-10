@@ -269,6 +269,10 @@ public static class HitResolve
             vic.BuffDefPctTicks = def.TargetDefTicks;
         }
 
+        // ---- 强制转身（ELE_T2_001 暗夜飞影）——即时改朝向，u16 环绕 ----
+        if (def.ForcedTurnQuantum != 0)
+            vic.HeadingQuantum = (vic.HeadingQuantum + def.ForcedTurnQuantum) & 0xFFFF;
+
         // ---- 受击反应（armored 时跳过硬直/浮空/击退——承伤不硬直） ----
         if (!armored)
         {

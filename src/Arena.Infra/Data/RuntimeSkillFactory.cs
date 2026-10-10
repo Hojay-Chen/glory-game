@@ -103,6 +103,7 @@ public static class RuntimeSkillFactory
             SuppressControlValue = statusParse.SuppressControlValue,
             TargetDefPctQ = statusParse.TargetDefPctQ,
             TargetDefTicks = statusParse.TargetDefTicks,
+            ForcedTurnQuantum = statusParse.ForcedTurnQuantum,
             IsDecoy = d.Special.Contains("假身") || d.Special.Contains("影分身"),
             Armor = armor,
             Invuln = invuln,
@@ -313,16 +314,18 @@ public static class RuntimeSkillFactory
     };
 
     private readonly record struct StatusParseResult(
-        StatusEffectDef[] Statuses, bool SuppressControlValue, long TargetDefPctQ, int TargetDefTicks);
+        StatusEffectDef[] Statuses, bool SuppressControlValue, long TargetDefPctQ, int TargetDefTicks,
+        long ForcedTurnQuantum);
 
     private static StatusParseResult ParseStatuses(SkillDef d, List<string> unrouted)
     {
         bool suppressControlValue = false;
         var raw = d.StatusRaw;
-        if (raw is "none" or "-" or "") return new StatusParseResult(Array.Empty<StatusEffectDef>(), false, 0, 0);
+        if (raw is "none" or "-" or "") return new StatusParseResult(Array.Empty<StatusEffectDef>(), false, 0, 0, 0);
         bool cleanse = false;
         long targetDefPct = 0;      // 锁喉类：命中时对被击者施加的 DEF 修正（负=降防）
         int targetDefTicks = 0;
+        long forcedTurnQuantum = 0; // 强制转身（forcespin）——命中即改朝向，非持续状态
         var tokens = raw.Split(';', StringSplitOptions.RemoveEmptyEntries);
         var list = new List<StatusEffectDef>();
         foreach (var tok in tokens)
@@ -474,6 +477,12 @@ public static class RuntimeSkillFactory
                     break;
                 case "压制":       // D3 ROG_T3_004——语义由 ForcedDown + Sweep 两个 flag 承载（工厂头部派生）
                     break;
+                case "forcespin":  // ELE_T2_001 暗夜飞影「forcespin:180°」——命中即强制目标转身
+                {
+                    int deg = seg.Length > 1 ? ParseInt(seg[1]) : 180;
+                    forcedTurnQuantum = (long)deg * 65536L / 360L;   // 度 → u16 朝向量子
+                    break;
+                }
                 case "出神":       // WRK_T4_001「出神:操作无效:1.2s」——GDD §7.3 操作无效=眩晕语义
                     list.Add(new StatusEffectDef(StatusKind.Stun, 0, ParseDuration(seg, 2, defaultSec: 1), chance));
                     break;
@@ -510,7 +519,8 @@ public static class RuntimeSkillFactory
             }
         }
         if (cleanse) list.Add(new StatusEffectDef(StatusKind.None, 0, 0, 0));   // Cleanse 记号（Sim 消费）
-        return new StatusParseResult(list.ToArray(), suppressControlValue, targetDefPct, targetDefTicks);
+        return new StatusParseResult(list.ToArray(), suppressControlValue, targetDefPct, targetDefTicks,
+            forcedTurnQuantum);
     }
 
     private static int ParseChance(string tok)

@@ -90,7 +90,6 @@ public class StatusRoutingTests
 
     private static readonly string[] ExpectedRemaining =
     {
-        "ELE_T2_001:status:forcespin:180°",
         "WIT_T2_003:status:dispel:1",
         "GBL_T3_004:status:weight:x2",
         "LAU_T1_003:status:三发:①击退②僵直③击倒",
@@ -356,6 +355,24 @@ public class StatusRoutingTests
         // 反证：倒地目标默认不可命中——若没置 Sweep，后续段会全部 Whiff(DownProtected)
         Assert.DoesNotContain(ev, e => e.Kind == EventKind.Whiff
                                     && e.ReasonByte == (byte)WhiffReason.DownProtected);
+    }
+
+    // ================= SR19: 强制转身（ELE_T2_001 暗夜飞影） =================
+
+    [Fact]
+    public void SR19_ForcedTurn_Flips_Target_Heading()
+    {
+        var def = Def("ELE_T2_001");
+        Assert.Equal(32768, def.ForcedTurnQuantum);       // 180° → u16 半圈
+
+        var w = CreateWorld(0, "ELE", 1, "BLA");
+        w.Fighters[1].PosZ = Fixed.FromInt(2);
+        w.Fighters[1].HeadingQuantum = 0;                 // 0 = 朝 +Z
+        w.Step(1, new[] { Skill(0, "ELE_T2_001") });
+        Run(w, 2, 60);
+
+        Assert.Contains(w.Events.All, e => e.Kind == EventKind.Hit && e.VictimId == 1);
+        Assert.Equal(32768, w.Fighters[1].HeadingQuantum);   // 朝向被强制翻转半圈
     }
 
     // ================= 测试世界 / 指令助手 =================
