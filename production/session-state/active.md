@@ -242,7 +242,31 @@
   - **但本机 headless 仍跑不了 C# 客户端（D-P0-2 仍然成立，已用官版 binary 复现）**: `--import` / `--build-solutions` / `--editor --quit` 均正常退出，运行时报
     `Cannot instantiate C# script because the associated class could not be found. Script: 'res://MatchRoot.cs'`。
     程序集确已生成（`.godot/mono/temp/bin/Debug/Arena.Client.dll`），手工补 `GodotSharp.dll` + `runtimeconfig.json` 后**仍然找不到类**；推断根因是 `.godot/mono/metadata/` 在 headless 下始终为空——脚本类注册依赖编辑器 GUI 首次加载脚本。
-  - **结论不变**: Godot 侧可玩性/手感验证必须在用户 Windows Godot 编辑器侧做；本机可玩性验证由 `Arena.Headless` MatchDriver 承担（本轮 4/4 seed VS-PASS）。
+  - ~~结论不变（Godot 侧只能在用户 Windows 侧验证）~~ → **当日即被推翻，见下节「VS-7b」**——那两个报错都是**工程自身配置缺陷**，与环境无关。
+
+## VS-7b 客户端运行时缺陷根因定位 + D-P0-2 正式解除（2026-10-10，本轮）
+
+- **D-P0-2 原诊断是错的**。原文结论「容器内 Godot 4.3 mono headless 无法加载任何 C# 程序集」经复核**不成立**：
+  把同一份工程搬到用户 Windows（官方 mono 编辑器构建）上跑，**报错逐字相同**——说明是工程问题，不是环境问题。
+- **两个真实缺陷（都在手写的工程配置里，Godot 自动生成时会写入、手写时漏了）**:
+  1. **`src/Arena.Client/project.godot`** — `dotnet/project/assembly_name="Arena.Client"` 被写在了 `[application]` 段里。
+     Godot 读的是**独立的 `[dotnet]` 段**，因此宿主根本不知道程序集叫什么名 → 加载 `Arena.Client.dll` 失败。
+     **修复**: 移入独立的 `[dotnet]` 段。
+  2. **`src/Arena.Client/Arena.Client.csproj`** 缺 `<EnableDynamicLoading>true</EnableDynamicLoading>`。
+     Godot 宿主通过 `hostfxr` **动态加载**程序集，需要构建产出 `Arena.Client.runtimeconfig.json` 并把相依 DLL
+     （`GodotSharp.dll` 等）复制到输出目录。**Godot.NET.Sdk 不会自动置位**（Godot 新建工程时由 GodotTools 写入 csproj）。
+     缺此属性 → 输出目录没有 runtimeconfig / GodotSharp → 运行时 `Failed to load project assembly`。
+- **定位手法（可复用）**: `godot-mono --headless --verbose` 才吐出关键行 `.NET: Failed to load project assembly`
+  （默认输出只有笼统的 `Cannot instantiate C# script ... 'res://MatchRoot.cs'`，极易误判为「引擎限制」）。
+- **解除验证（本机 Linux，官方 4.3 mono + 软件渲染）**:
+  - 客户端真跑通: `ARENA_AUTOPILOT=1 godot-mono --headless --path src/Arena.Client --quit-after 9000`
+    → `[VS] match over t=1882 result=BLUE WIN hits=67 hp0=1871 hp1=-477`，**两次干净重建后逐位一致**（确定性）。
+  - **真的渲染出来了**: `xvfb-run godot-mono --path src/Arena.Client --quit-after 400 --write-movie …` 录得 400 帧，
+    可见 HUD 血条/键位提示、双方胶囊、武器挥摆、以及**受击橙色（Hitstun 状态色）**——即 VS-7 表现接线在真机上生效。
+    证据帧已入库: `docs/architecture/vs7-client-frame-0118.png` / `-0360.png`。
+- **结论**: **Godot 侧验证现已可在本机完成**（headless 跑对局 + xvfb 渲染出帧 + 录帧），VS-7 的「只能靠用户手动在编辑器验证」限制**解除**。
+  用户 Windows 侧若要**打开编辑器**仍需装 .NET SDK（编辑器插件硬要求），但**跑游戏/回归验证不再需要**。
+- 顺带修正: `Arena.Client.csproj` 的手写性质是这两处缺陷的共同土壤——后续若新增 Godot 工程，务必对照 Godot 自动生成的 csproj/project.godot 模板。
 
 ## VS-6 完成后待做（用户裁定后）
 

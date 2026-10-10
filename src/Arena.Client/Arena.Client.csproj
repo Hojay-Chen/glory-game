@@ -5,6 +5,11 @@
     <LangVersion>12</LangVersion>
     <ImplicitUsings>disable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- Godot 宿主以 hostfxr 动态加载本程序集：必须生成 runtimeconfig.json 并把相依 DLL
+         （GodotSharp 等）复制到输出目录。Godot.NET.Sdk 不会自动置位，Godot 新建工程时
+         由 GodotTools 写入 csproj——本工程 csproj 为手写，缺此属性会导致运行时
+         「Failed to load project assembly」→ C# 脚本全部无法实例化。 -->
+    <EnableDynamicLoading>true</EnableDynamicLoading>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Arena.Infra.Godot\Arena.Infra.Godot.csproj" />

@@ -4,7 +4,10 @@ config_version=5
 config/name="Arena Client"
 run/main_scene="res://MainScene.tscn"
 config/features=PackedStringArray("4.3", "C#")
-dotnet/project/assembly_name="Arena.Client"
+
+[dotnet]
+
+project/assembly_name="Arena.Client"
 
 [display]
 window/size/viewport_width=1280
