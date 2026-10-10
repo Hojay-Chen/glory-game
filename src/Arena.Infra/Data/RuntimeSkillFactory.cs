@@ -93,7 +93,9 @@ public static class RuntimeSkillFactory
             Statuses = statuses,
             CleanseDebuffs = cleanseDebuffs,
             PullTowardOwnerM = ParsePullToward(d.StatusRaw),
-            ForceInterrupt = d.StatusRaw.Contains("打断攻击") || d.Special.Contains("打断吟唱"),
+            // ForceInterrupt: 「打断攻击」在 status 列、「打断吟唱」两列都可能出现（WRK_T3_001 在 status）
+            ForceInterrupt = d.StatusRaw.Contains("打断攻击") || d.StatusRaw.Contains("打断吟唱")
+                          || d.Special.Contains("打断吟唱"),
             IsDecoy = d.Special.Contains("假身") || d.Special.Contains("影分身"),
             Armor = armor,
             Invuln = invuln,
@@ -404,6 +406,23 @@ public static class RuntimeSkillFactory
                     break;
                 case "冻结值":   // EXO_T2_002「冻结值+50」→ 冻结效果（控制值注入语义 v1=冻结施加——DDQ 登记注入）
                     list.Add(new StatusEffectDef(StatusKind.Freeze, 0, ParseDuration(seg, 1, defaultSec: 1), chance));
+                    break;
+                // —— 批次 A 路由收口（2026-10-11）: 语义已由既有原语承载，token 不重复施加 ——
+                case "反射法术":   // WRK_T3_003 魔镜 / KNI_T3_003 法术反射——IsReflect 由 special∪技名承载
+                    break;
+                case "破霸体":     // ROG_T3_001——ArmorBreak 已由 special「破霸体」承载（GDD §6.4）
+                    break;
+                case "打断吟唱":   // WRK_T3_001——ForceInterrupt 由工厂头部统一提取（status ∪ special）
+                    break;
+                case "sleep":      // PRI_T2_003 催眠术——沉睡（GDD §7.3）；「受击即醒」由 HitResolve sleepWakeup 承载
+                    list.Add(new StatusEffectDef(StatusKind.Sleep, 0, ParseDuration(seg, 1, defaultSec: 2), chance));
+                    break;
+                case "驱散":       // GAN_T2_002 驱散——v1 全异常清除（Cleanse 原语）；
+                                   //   次数成长「初阶1个→满阶3个」数据缺失 → DDQ
+                    cleanse = true;
+                    break;
+                case "解除免疫挑衅/恐惧/混乱":   // KNI_T3_006——v1 全异常清除（与 EXO 静心符同款近似登记）
+                    cleanse = true;
                     break;
                 case "驱散全部异状态":   // PRI_T2_005 净化——友方异常清除（Cleanse 原语）
                 case "解除被嘲讽":       // EXO_T2_006 静心符——v1 全异常清除（单 cleanse 语义近似登记）
