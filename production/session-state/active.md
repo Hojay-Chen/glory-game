@@ -266,6 +266,12 @@
     证据帧已入库: `docs/architecture/vs7-client-frame-0118.png` / `-0360.png`。
 - **结论**: **Godot 侧验证现已可在本机完成**（headless 跑对局 + xvfb 渲染出帧 + 录帧），VS-7 的「只能靠用户手动在编辑器验证」限制**解除**。
   用户 Windows 侧若要**打开编辑器**仍需装 .NET SDK（编辑器插件硬要求），但**跑游戏/回归验证不再需要**。
+- **Windows 交叉验证（用户机 `ssh win`，RTX 5070 主机）**: 同一份修复后的工程在 Windows 上构建（0 警告 0 错误）+ 运行，
+  输出 **`[VS] match over t=1882 result=BLUE WIN hits=67 hp0=1871 hp1=-477`——与 Linux 逐位一致**。
+  即 **ADR-0001 确定性契约跨操作系统成立**（同数据版本+同种子+同指令流 ⇒ 同结果），这是此前从未验证过的一条。
+  环境: .NET SDK 8.0.425 用户级解到 `D:\luxera\dotnet\`（非管理员，不动 `C:\Program Files\dotnet`）+ Godot 4.3 mono 在 `D:\luxera\glory-game\tools\`。
+- **避免再走弯路**（供后续会话）: 报错默认只给笼统一句 `Cannot instantiate C# script … 'res://MatchRoot.cs'`，
+  **必须 `--headless --verbose` 才看得到 `.NET: Failed to load project assembly`**；据此别再把这类问题归因于环境。
 - 顺带修正: `Arena.Client.csproj` 的手写性质是这两处缺陷的共同土壤——后续若新增 Godot 工程，务必对照 Godot 自动生成的 csproj/project.godot 模板。
 
 ## VS-6 完成后待做（用户裁定后）
