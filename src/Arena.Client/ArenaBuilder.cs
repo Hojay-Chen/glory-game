@@ -1,67 +1,111 @@
-using System;
 using System.Collections.Generic;
-using System.Globalization;
+using System.IO;
 using Arena.Infra.Data;
 using Godot;
 
 // PRODUCTION - Arena.Client
-// arena.csv 对象 → 3D 占位网格（Vertical Slice 白盒视觉——GDD §28.2 灰盒标准）。
-// 地板=灰 Plane、边界墙=Box、平台=Cylinder、cover/pillar=Box；颜色按 kind 区分。
+// arena.csv 对象 → 3D 竞技场（Vertical Slice 美术层）。
+// 视觉规格: docs/art/art-bible-v1.md §5（三灯 / 地板色 / 背景 / 环境光）
+//        + docs/PRODUCTION-PLAN.md §2.3（材质区分 / 光照主次 / 构图可读）。
+// 本类只建**视觉网格**——Sim 地形独立来自 MatchAssembler（ArenaDefParser.BuildTerrain），
+// 因此改外观零影响判定（碰撞只认 arena.csv 的 TerrainBody）。装饰件由 ArenaDecor 追加。
 namespace Arena.Client;
 
 public sealed class ArenaBuilder
 {
-    // 配色与照明取自 docs/art/art-bible-v1.md §5（地板提亮以衬深色腿部；三灯把角色从背景抠出）
-    private static readonly Color FloorCol = new(0.290f, 0.310f, 0.349f);      // #4A4F59 中性中灰
-    private static readonly Color WallCol = new(0.34f, 0.37f, 0.43f);
-    private static readonly Color PlatformCol = new(0.46f, 0.44f, 0.38f);
-    private static readonly Color CoverCol = new(0.32f, 0.29f, 0.25f);
+    // ---- 材质分层（每类不同 Roughness/Metallic/Albedo，杜绝"一片同灰"——§2.3）----
+    // 共用实例（非每件 new）: gl_compatibility 对 draw call 敏感，材质复用便于批处理与降内存。
+    private static readonly StandardMaterial3D FloorMat =
+        Mat(new Color(0.290f, 0.310f, 0.349f), 0.85f, 0.00f);   // #4A4F59 哑光中灰（给深色靴/腿做对比）
+    private static readonly StandardMaterial3D WallMat =
+        Mat(new Color(0.227f, 0.247f, 0.290f), 0.70f, 0.10f);   // 结界墙 冷灰石（退让背景）
+    private static readonly StandardMaterial3D PlatformMat =
+        Mat(new Color(0.550f, 0.520f, 0.440f), 0.60f, 0.15f);   // 高台 略暖（高处=危险提示 §5.2）
+    private static readonly StandardMaterial3D RampMat =
+        Mat(new Color(0.450f, 0.425f, 0.360f), 0.72f, 0.08f);   // 坡道 同族压暗
+    private static readonly StandardMaterial3D CoverMat =
+        Mat(new Color(0.300f, 0.270f, 0.230f), 0.78f, 0.05f);   // 掩体墙 暖褐
+    private static readonly StandardMaterial3D PillarMat =
+        Mat(new Color(0.550f, 0.530f, 0.490f), 0.72f, 0.05f);   // 石柱 亮石
+    private static readonly StandardMaterial3D WoodMat =
+        Mat(new Color(0.350f, 0.260f, 0.160f), 0.88f, 0.00f);   // 木箱 暖棕
+    private static readonly StandardMaterial3D RockMat =
+        Mat(new Color(0.300f, 0.310f, 0.330f), 0.92f, 0.00f);   // 乱石 冷灰
+    private static readonly StandardMaterial3D PotMat =
+        Mat(new Color(0.420f, 0.300f, 0.220f), 0.80f, 0.00f);   // 陶罐 赤陶
 
-    /// 静态环境（光照/地板——与对局状态无关，只建一次）
+    private static StandardMaterial3D Mat(Color c, float rough, float metal) => new()
+    {
+        AlbedoColor = c,
+        Roughness = rough,
+        Metallic = metal,
+    };
+
+    /// 静态环境（光照 + 地板 + 地物 + 装饰——与对局状态无关，只建一次）。
+    /// 由 MatchRoot._Ready 调用；arena.csv 在此自行加载（MatchRoot 不再另建地物）。
     public void BuildEnvironment(Node parent)
     {
-        AddBox(parent, 0, 0, 58, 82, 0.2f, FloorCol);
+        var objects = LoadArenaObjects();
 
-        // 主光 Key：定义形体与投影方向
-        var key = new DirectionalLight3D
+        // 地板：顶面 y=0，与 Sim 地面/角色脚底对齐（原实现顶面在 0.2，角色脚陷进地面）。
+        // 尺寸外推至盖住界墙基座与观众席，避免装饰件悬空。
+        var (hw, hd) = BoundaryExtent(objects);
+        AddSlab(parent, hw + 6f, hd + 6f, FloorMat);
+
+        Build(parent, objects);
+        BuildLights(parent);
+        BuildEnvironmentSettings(parent);
+        ArenaDecor.Build(parent, objects);
+    }
+
+    // ---- 三灯方案（art-bible §5.1——转播可读性核心：主光造型 / 补光读姿态 / 轮廓光抠边）----
+
+    private static void BuildLights(Node parent)
+    {
+        // 主光 Key：定义形体与投影方向（开阴影）
+        parent.AddChild(new DirectionalLight3D
         {
             RotationDegrees = new Godot.Vector3(-50, 35, 0),
-            LightColor = new Color(1.0f, 0.965f, 0.910f),   // #FFF6E8
-            LightEnergy = 1.15f,
+            LightColor = new Color(1.000f, 0.965f, 0.910f),   // #FFF6E8
+            LightEnergy = 1.15f,                              // 规格 1.0–1.2
             ShadowEnabled = true,
-        };
-        parent.AddChild(key);
+        });
 
-        // 补光 Fill：抬暗面，避免纯黑（读姿态）
-        var fill = new DirectionalLight3D
+        // 补光 Fill：从相机侧低位抬暗面，避免纯黑（关阴影）
+        parent.AddChild(new DirectionalLight3D
         {
             RotationDegrees = new Godot.Vector3(-20, -140, 0),
-            LightColor = new Color(0.788f, 0.839f, 1.0f),   // #C9D6FF 冷调
-            LightEnergy = 0.30f,
+            LightColor = new Color(0.788f, 0.839f, 1.000f),   // #C9D6FF 冷调
+            LightEnergy = 0.30f,                              // 规格 0.25–0.35
             ShadowEnabled = false,
-        };
-        parent.AddChild(fill);
+        });
 
-        // 轮廓光 Rim：从背后打，把角色剪影从背景里抠出来
-        var rim = new DirectionalLight3D
+        // 轮廓光 Rim：从角色背后上方打，把剪影从背景里"抠"出来（关阴影）。
+        // 相机在 −Z 侧朝 +Z 看，故"背后"= +Z；低掠角（−16°）在头顶/背缘形成最亮边线。
+        parent.AddChild(new DirectionalLight3D
         {
-            RotationDegrees = new Godot.Vector3(18, 200, 0),
-            LightColor = new Color(0.85f, 0.90f, 1.0f),
-            LightEnergy = 0.60f,
+            RotationDegrees = new Godot.Vector3(-16, 0, 0),
+            LightColor = new Color(0.900f, 0.930f, 1.000f),   // 近白微冷
+            LightEnergy = 0.60f,                              // 规格 0.5–0.7
             ShadowEnabled = false,
-        };
-        parent.AddChild(rim);
+        });
+    }
 
-        var env = new Godot.Environment();
-        env.BackgroundMode = Godot.Environment.BGMode.Color;
-        env.BackgroundColor = new Color(0.078f, 0.090f, 0.118f);   // #14171E 去饱和
-        env.AmbientLightSource = Godot.Environment.AmbientSource.Color;
-        env.AmbientLightColor = new Color(0.549f, 0.588f, 0.671f); // #8C96AB
-        env.AmbientLightEnergy = 0.60f;
+    private static void BuildEnvironmentSettings(Node parent)
+    {
+        var env = new Godot.Environment
+        {
+            BackgroundMode = Godot.Environment.BGMode.Color,
+            BackgroundColor = new Color(0.086f, 0.098f, 0.129f),                 // #161A21 暗沉去饱和（§5.2 区间 #14171E~#1E2330）
+            AmbientLightSource = Godot.Environment.AmbientSource.Color,
+            AmbientLightColor = new Color(0.549f, 0.588f, 0.671f),               // #8C96AB
+            AmbientLightEnergy = 0.60f,                                          // 规格 0.5–0.7（比旧 0.8 略降以提对比）
+            FogEnabled = false,                                                  // §5.1: 关雾（否则吃掉 35m 外剪影）
+        };
         parent.AddChild(new WorldEnvironment { Environment = env });
     }
 
-    /// 地物网格（强类型 ArenaObjectKind 完整映射——Registry 集中语义，零散落 switch）
+    /// 地物网格（强类型 ArenaObjectKind 完整映射——Registry 集中语义，零散落 switch）。
     public void Build(Node parent, IReadOnlyList<ArenaDefParser.ArenaObject> objects)
     {
         foreach (var o in objects)
@@ -70,60 +114,99 @@ public sealed class ArenaBuilder
             switch (o.KindId)
             {
                 case ArenaObjectKind.Boundary:
-                    // 4 面结界墙（按 rect half_w/half_d 外推）
-                    AddBox(parent, o.X, o.Z - o.HalfD - 0.5m, o.HalfW * 2 + 2, 1, 4, WallCol);
-                    AddBox(parent, o.X, o.Z + o.HalfD + 0.5m, o.HalfW * 2 + 2, 1, 4, WallCol);
-                    AddBox(parent, o.X - o.HalfW - 0.5m, o.Z, 1, o.HalfD * 2 + 2, 4, WallCol);
-                    AddBox(parent, o.X + o.HalfW + 0.5m, o.Z, 1, o.HalfD * 2 + 2, 4, WallCol);
+                    // 4 面结界墙（按 rect half_w/half_d 外推；作背景退让）
+                    AddBox(parent, o.X, o.Z - o.HalfD - 0.5m, o.HalfW * 2 + 2, 1, 4, WallMat);
+                    AddBox(parent, o.X, o.Z + o.HalfD + 0.5m, o.HalfW * 2 + 2, 1, 4, WallMat);
+                    AddBox(parent, o.X - o.HalfW - 0.5m, o.Z, 1, o.HalfD * 2 + 2, 4, WallMat);
+                    AddBox(parent, o.X + o.HalfW + 0.5m, o.Z, 1, o.HalfD * 2 + 2, 4, WallMat);
                     break;
                 case ArenaObjectKind.Platform:
-                    AddCylinder(parent, o.X, o.Z, o.R, (float)o.Height, PlatformCol);
+                    // 圆台（中央擂台 r8）→ 圆柱；方台（南北高台）→ 立方
+                    // （旧实现无脑用 o.R，rect 平台 R=0 会退化为不可见；此处按 shape 分流修复）
+                    if (o.R > 0)
+                        AddCylinder(parent, o.X, o.Z, o.R, (float)o.Height, PlatformMat);
+                    else
+                        AddBox(parent, o.X, o.Z, o.HalfW * 2, o.HalfD * 2, (float)o.Height, PlatformMat);
                     break;
                 case ArenaObjectKind.Ramp:
                     // 坡道 v1: 斜置 Box 占位（30° 斜面碰撞由 Sim 高地带承载）
-                    var ramp = new MeshInstance3D
+                    parent.AddChild(new MeshInstance3D
                     {
                         Mesh = new BoxMesh { Size = new Godot.Vector3((float)(o.HalfW * 2), 0.4f, (float)(o.HalfD * 2)) },
-                        MaterialOverride = new StandardMaterial3D { AlbedoColor = PlatformCol.Darkened(0.15f) },
+                        MaterialOverride = RampMat,
                         Position = new Godot.Vector3((float)o.X, (float)(o.Height / 2), (float)o.Z),
                         RotationDegrees = new Godot.Vector3(-30, 0, 0),
-                    };
-                    parent.AddChild(ramp);
+                    });
                     break;
                 case ArenaObjectKind.CoverWall:
+                    AddBox(parent, o.X, o.Z, o.HalfW * 2, o.HalfD * 2, (float)o.Height, CoverMat);
+                    break;
                 case ArenaObjectKind.Pillar:
+                    AddCylinder(parent, o.X, o.Z, o.R, (float)o.Height, PillarMat);
+                    break;
                 case ArenaObjectKind.PropWood:
+                    AddBox(parent, o.X, o.Z, o.HalfW * 2, o.HalfD * 2, (float)o.Height, WoodMat);
+                    break;
                 case ArenaObjectKind.PropRock:
-                    var w = Math.Max(Math.Max(o.HalfW * 2, o.R * 2), 0.6m);
-                    var d = Math.Max(Math.Max(o.HalfD * 2, o.R * 2), 0.6m);
-                    var col = o.KindId switch
-                    {
-                        ArenaObjectKind.Pillar => new Color(0.62f, 0.60f, 0.56f),
-                        ArenaObjectKind.PropRock => new Color(0.42f, 0.42f, 0.44f),
-                        _ => CoverCol,
-                    };
-                    AddBox(parent, o.X, o.Z, w, d, (float)o.Height + 0.2f, col);
+                    AddBox(parent, o.X, o.Z, o.HalfW * 2, o.HalfD * 2, (float)o.Height, RockMat);
                     break;
                 case ArenaObjectKind.PropPot:
-                    AddCylinder(parent, o.X, o.Z, 0.4m, 0.5f, CoverCol);
+                    AddCylinder(parent, o.X, o.Z, 0.4m, 0.5f, PotMat);
                     break;
             }
         }
     }
 
-    private static void AddBox(Node parent, decimal x, decimal z, decimal w, decimal d, float h, Color col)
+    // ---- 装配辅助 ----
+
+    /// 地板板（顶面 y=0；与脚底/Sim 地面同高）
+    private static void AddSlab(Node parent, float halfW, float halfD, Material m)
     {
-        var mi = new MeshInstance3D { Mesh = new BoxMesh { Size = new Godot.Vector3((float)w, h, (float)d) } };
-        mi.MaterialOverride = new StandardMaterial3D { AlbedoColor = col };
-        mi.Position = new Godot.Vector3((float)x, h / 2, (float)z);
-        parent.AddChild(mi);
+        const float thick = 0.3f;
+        parent.AddChild(new MeshInstance3D
+        {
+            Mesh = new BoxMesh { Size = new Godot.Vector3(halfW * 2, thick, halfD * 2) },
+            MaterialOverride = m,
+            Position = new Godot.Vector3(0, -thick / 2f, 0),   // 顶面 = 0
+        });
     }
 
-    private static void AddCylinder(Node parent, decimal x, decimal z, decimal r, float h, Color col)
+    private static void AddBox(Node parent, decimal x, decimal z, decimal w, decimal d, float h, Material m)
     {
-        var mi = new MeshInstance3D { Mesh = new CylinderMesh { TopRadius = (float)r, BottomRadius = (float)r, Height = h } };
-        mi.MaterialOverride = new StandardMaterial3D { AlbedoColor = col };
-        mi.Position = new Godot.Vector3((float)x, h / 2, (float)z);
-        parent.AddChild(mi);
+        parent.AddChild(new MeshInstance3D
+        {
+            Mesh = new BoxMesh { Size = new Godot.Vector3((float)w, h, (float)d) },
+            MaterialOverride = m,
+            Position = new Godot.Vector3((float)x, h / 2f, (float)z),
+        });
+    }
+
+    private static void AddCylinder(Node parent, decimal x, decimal z, decimal r, float h, Material m)
+    {
+        parent.AddChild(new MeshInstance3D
+        {
+            Mesh = new CylinderMesh { TopRadius = (float)r, BottomRadius = (float)r, Height = h },
+            MaterialOverride = m,
+            Position = new Godot.Vector3((float)x, h / 2f, (float)z),
+        });
+    }
+
+    // ---- arena.csv 加载（从 cwd 向上找仓库根——与 MatchRoot.FindRepoRoot 同策略）----
+
+    private static List<ArenaDefParser.ArenaObject> LoadArenaObjects()
+    {
+        var dir = Directory.GetCurrentDirectory();
+        while (dir is not null && !File.Exists(Path.Combine(dir, "docs/balance-sheet/arena.csv")))
+            dir = Path.GetDirectoryName(dir);
+        return dir is null ? new List<ArenaDefParser.ArenaObject>()
+                           : ArenaDefParser.Parse(Path.Combine(dir, "docs/balance-sheet/arena.csv"));
+    }
+
+    private static (float hw, float hd) BoundaryExtent(IReadOnlyList<ArenaDefParser.ArenaObject> objects)
+    {
+        foreach (var o in objects)
+            if (o.KindId == ArenaObjectKind.Boundary)
+                return ((float)o.HalfW, (float)o.HalfD);
+        return (30f, 42f);
     }
 }

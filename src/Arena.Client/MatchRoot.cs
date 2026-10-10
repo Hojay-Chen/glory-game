@@ -54,12 +54,26 @@ public partial class MatchRoot : Node
     private const float ShakeWorldScale = 8f;   // trauma² 偏移 → 世界米（白盒手感）
     private static readonly Godot.Vector3 FallbackDir = new(0, 0, 1);
 
-    // VS-9 选人: 双方职业（默认剑客；由选人界面写入）
+    // ---- 菜单流状态 ----
+    private enum AppState { Menu, Selecting, Playing, Paused, Result }
+    private AppState _state = AppState.Menu;
+
     private string _playerClass = "BLA";
     private string _enemyClass = "BLA";
+    private string _playerWeapon = "";
+    private string _enemyWeapon = "";
     private List<ClassDefParser.ClassEntry> _classList = new();
+    private List<WeaponCatalogParser.WeaponEntry> _weaponList = new();
     private ClassSelectScreen? _select;
-    private bool Selecting => _select is { Visible: true };
+    private WeaponSelectScreen? _weaponSelect;
+    private MainMenuScreen? _menu;
+    private PauseScreen? _pause;
+    private ResultScreen? _result;
+
+    /// 结算统计（只读自 Sim 事件流；StartMatch 清零）
+    private int _statDealt, _statTaken, _statHits, _statMaxCombo;
+
+    private bool Selecting => _state is AppState.Menu or AppState.Selecting or AppState.Paused or AppState.Result;
 
     public override void _Ready()
     {
@@ -91,17 +105,124 @@ public partial class MatchRoot : Node
             return;
         }
 
-        if (_autopilot) { StartMatch(); return; }
+        if (_autopilot) { _hud.Visible = true; _state = AppState.Playing; StartMatch(); return; }
 
-        _hud.Visible = false;                   // 选人时藏起血条（对局可能都还没开始）
-        _select = new ClassSelectScreen(_classList, (player, enemy) =>
-        {
-            _playerClass = player;
-            _enemyClass = enemy;
-            StartMatch();
-        });
+        _hud.Visible = false;                   // 菜单期间藏起战斗 HUD
+        ShowMainMenu();
+    }
+
+    // ================= 菜单流（主菜单 → 选职业 → 选武器 → 对战 → 暂停 → 结算） =================
+
+    /// 菜单/选人期间隐藏 3D 场景（没有对局就没什么可看的；避免几何透到界面背后）
+    private void SetWorldVisible(bool v)
+    {
+        _envRoot.Visible = v;
+        _matchRoot.Visible = v;
+    }
+
+    private void ShowMainMenu()
+    {
+        _state = AppState.Menu;
+        SetWorldVisible(false);
+        _menu ??= new MainMenuScreen(OnMenuStart, OnMenuSettings, () => GetTree().Quit(0));
+        if (_menu.GetParent() is null) AddChild(_menu);   // 首次需入树（CanvasLayer 不入树不渲染）
+        _menu.Visible = true;
+        if (_hud is not null) _hud.Visible = false;
+    }
+
+    private void OnMenuStart()
+    {
+        if (_menu is not null) _menu.Visible = false;
+        _menu = null;
+        _state = AppState.Selecting;
+        SetWorldVisible(false);
+        _select = new ClassSelectScreen(_classList, OnClassesChosen);
         AddChild(_select);
     }
+
+    /// 设置面板尚未实现（登记于 OPEN-ISSUES UI-05）——此处只在控制台留痕，不做假界面
+    private void OnMenuSettings() => Console.WriteLine("[UI] 设置面板未实现（OPEN-ISSUES UI-05）");
+
+    private void OnClassesChosen(string player, string enemy)
+    {
+        _playerClass = player;
+        _enemyClass = enemy;
+        _select?.QueueFree();
+        _select = null;
+        _weaponSelect = new WeaponSelectScreen(player, ClassNameOf(player), _weaponList, OnWeaponChosen);
+        AddChild(_weaponSelect);
+    }
+
+    private void OnWeaponChosen(string weaponId)
+    {
+        _playerWeapon = weaponId;
+        // 对手武器：从对手职业的武器表里随机（未做「对手选武器」界面——登记 OPEN-ISSUES）
+        var picks = _weaponList.Where(w => w.ClassId == _enemyClass).ToList();
+        _enemyWeapon = picks.Count > 0 ? picks[Random.Shared.Next(picks.Count)].WeaponId : "";
+        _weaponSelect?.QueueFree();
+        _weaponSelect = null;
+        _state = AppState.Playing;
+        StartMatch();
+    }
+
+    private void OpenPause()
+    {
+        if (_state != AppState.Playing) return;
+        _state = AppState.Paused;
+        _pause = new PauseScreen(ClassNameOf(_playerClass), ClassNameOf(_enemyClass),
+            onResume: () => { _pause?.QueueFree(); _pause = null; _state = AppState.Playing; },
+            onRestart: () => { _pause?.QueueFree(); _pause = null; _state = AppState.Playing; RestartMatch(); },
+            onSwitchClass: () => { _pause?.QueueFree(); _pause = null; ReturnToClassSelect(); },
+            onMainMenu: () => { _pause?.QueueFree(); _pause = null; ReturnToMainMenu(); });
+        AddChild(_pause);
+    }
+
+    private void ReturnToClassSelect()
+    {
+        ClearMatch();
+        SetWorldVisible(false);
+        _state = AppState.Selecting;
+        _select = new ClassSelectScreen(_classList, OnClassesChosen);
+        AddChild(_select);
+    }
+
+    private void ReturnToMainMenu()
+    {
+        ClearMatch();
+        ShowMainMenu();
+    }
+
+    /// 拆掉本局动态节点（回菜单/回选人时用——避免残影与残留输入）
+    private void ClearMatch()
+    {
+        _views.Clear();
+        foreach (var child in _matchRoot.GetChildren()) child.QueueFree();
+        _matchRoot = new Node3D();
+        AddChild(_matchRoot);
+        _world = null; _setup = null; _bot = null; _botP0 = null; _inputMapper = null;
+        _director.Reset();
+        if (_hud is not null) _hud.Visible = false;
+    }
+
+    private void ShowResultScreen()
+    {
+        _state = AppState.Result;
+        var outcome = _resultText switch
+        {
+            "DRAW" => MatchOutcome.Draw,
+            "BLUE WIN" => MatchOutcome.Win,     // 玩家恒为 0 号位（蓝）
+            _ => MatchOutcome.Lose,
+        };
+        var stats = new MatchStats(_statDealt, _statTaken, _statMaxCombo, _statHits, _tick);
+        _result = new ResultScreen(outcome, ClassNameOf(_playerClass), ClassNameOf(_enemyClass), stats,
+            onRematch: () => { _result?.QueueFree(); _result = null; _state = AppState.Playing; RestartMatch(); },
+            onSwitchClass: () => { _result?.QueueFree(); _result = null; ReturnToClassSelect(); },
+            onMainMenu: () => { _result?.QueueFree(); _result = null; ReturnToMainMenu(); });
+        AddChild(_result);
+        if (_hud is not null) _hud.Visible = false;
+    }
+
+    private string _resultText = "";
 
     /// class_id → 系别名（视觉档案的剪影族依据）
     private string BranchOf(string classId)
@@ -119,14 +240,6 @@ public partial class MatchRoot : Node
         return classId;
     }
 
-    /// Esc（终局画面）→ 回到选人界面重新选职业
-    private void OpenClassSelect()
-    {
-        if (_select is null) return;
-        _matchOver = true;              // 冻结对局循环（不再步进 Sim）
-        _select.Visible = true;
-        _director.Reset();
-    }
 
     private static string FindRepoRoot()
     {
@@ -149,12 +262,16 @@ public partial class MatchRoot : Node
     private void StartMatch()
     {
         var setup = MatchAssembler.Assemble(0x5EED_0001L, FindRepoRoot(),
-            playerClass: _playerClass, enemyClass: _enemyClass);
+            playerClass: _playerClass, enemyClass: _enemyClass,
+            playerWeapon: _playerWeapon, enemyWeapon: _enemyWeapon);
         _setup = setup;
         _world = setup.World;
         _catalog = setup.Catalog;
         _tick = 0;
         _matchOver = false;
+        _resultText = "";
+        _statDealt = _statTaken = _statHits = _statMaxCombo = 0;
+        SetWorldVisible(true);
         _director.Reset();   // 表现层态机清零（零残留——与 Restart 同语义）
 
         // 出生点标记
@@ -211,32 +328,35 @@ public partial class MatchRoot : Node
 
     public override void _PhysicsProcess(double delta)
     {
-        if (Selecting) return;          // 选人界面期间不步进任何东西
         if (_restartCooldown > 0) _restartCooldown--;
-        if (_world is null || _matchOver)
+
+        // 非对战中（菜单/选人/暂停/结算）: 不步进 Sim；只让表现层收尾，并处理全局键
+        if (_state is not AppState.Playing)
         {
-            // 终局后表现收尾: 相机 trauma 衰减 + 跟随重建（Sim 已停步，表现层自转）
             if (_camera is not null && _lastSpread > 0)
             {
                 _director.Camera.Tick(delta);
                 CameraFactory.Follow(_camera, _lastMid, _lastSpread);
                 ApplyCameraShake();
             }
-            // 胜负已分: R 重开（同职业再打一场）；Esc 回选人界面换职业
-            if (_restartCooldown > 0) { return; }
-            if (Input.IsKeyPressed(Key.Escape))
-            {
-                _restartCooldown = 60;
-                OpenClassSelect();
-                return;
-            }
-            if (Input.IsKeyPressed(Key.R))
-            {
-                _restartCooldown = 60;
-                RestartMatch();
-            }
             return;
         }
+
+        // 对战中: Esc 暂停 / R 快速重开
+        if (_restartCooldown == 0 && Input.IsKeyPressed(Key.Escape))
+        {
+            _restartCooldown = 30;
+            OpenPause();
+            return;
+        }
+        if (_restartCooldown == 0 && Input.IsKeyPressed(Key.R))
+        {
+            _restartCooldown = 30;
+            RestartMatch();
+            return;
+        }
+        if (_matchOver || _world is null || _catalog is null) return;   // 装配未就绪/已终局
+
         _tick++;
 
         // 指令收集: 玩家（Press/Held/Release 语义）+ AI（同权 Command——共用 SimWorld 权威链路）
@@ -270,6 +390,8 @@ public partial class MatchRoot : Node
                 if (_views.TryGetValue(f.Id, out var view)) view.Sync(f);
         }
         _hud?.Sync(_world, _tick);
+        if (_world.Fighters.Count >= 2 && _world.Fighters[1].HitstunCount > _statMaxCombo)
+            _statMaxCombo = _world.Fighters[1].HitstunCount;
 
         if (_camera is not null && _world.Fighters.Count >= 2)
         {
@@ -295,8 +417,10 @@ public partial class MatchRoot : Node
             {
                 _matchOver = true;
                 _director.FlagMatchEnd();   // 终局闸断战斗表现（Died 路径由 Bridge 自动置位）
-                var result = !alive0 && !alive1 ? "DRAW" : alive0 ? "BLUE WIN" : "RED WIN";
+                _resultText = !alive0 && !alive1 ? "DRAW" : alive0 ? "BLUE WIN" : "RED WIN";
+                var result = _resultText;
                 _hud?.ShowResult(result, _tick);
+                if (!_autopilot) ShowResultScreen();   // 真人局弹结算界面；autopilot 只打印
                 if (_autopilot)
                 {
                     var hits = _world.Events.All.Count(e => e.Kind == EventKind.Hit);
@@ -338,6 +462,8 @@ public partial class MatchRoot : Node
                 if (_views.TryGetValue(cue.VictimId, out var vFlash)) vFlash.OnHitFlash(CuePoint(cue));
                 // 飘伤害数字（第三层命中反馈: 顿帧 → 火花 → 数字）
                 DamagePopup.Spawn(_matchRoot, CuePoint(cue), cue.Damage, isCrit: cue.Damage >= 2000);
+                if (cue.VictimId == EnemyId) { _statDealt += (int)cue.Damage; _statHits++; }
+                else if (cue.VictimId == LocalPlayerId) _statTaken += (int)cue.Damage;
                 break;
             case PresentationCueKind.GuardSpark:
                 if (_views.TryGetValue(cue.VictimId, out var vGuard)) vGuard.OnGuard(CuePoint(cue));
