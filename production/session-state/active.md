@@ -236,7 +236,13 @@
 - **`FighterView` 扩展**: `OnHitSpark`（无伤害接触）/ `OnGuard` / `OnParry`；`FighterVisualProfile` 新增 `GuardSparkColor` / `ParrySparkColor`。
 - **架构约束保持**: 判定全在 `Arena.Infra`（可测），Godot 层只做 cue → 节点操作；表现层零写回 Sim。
 - **测试 217/217**（+PD01–PD07 共 18 项: 事件→线索映射 / Hit 伤害分流 / 只读 Sim 逐位一致 / MatchEnd 闸断 / Reset 清零 / 相机 trauma 衰减 / 消费游标不泄漏）；三门禁 PASS（math_ban / deps / balance_audit 399-396-0）。
-- **环境（D-P0-2 复核）**: `godot-mono` 符号链接指向 `/tmp`（被系统清理）→ 本机 headless C# 验证不可用（非 mono 版 godot 报 `No loader found for resource: MatchRoot.cs`）。已重新下载 mono 版并改落 **/var/tmp**（持久落点纪律），符号链接已修复。
+- **环境（D-P0-2 复核 + 精化）**:
+  - `godot-mono` 符号链接原指向 `/tmp`（被系统清理）→ 已重新下载官版 **4.3-stable mono** 到 `/var/tmp/Godot_v4.3-stable_mono_linux_x86_64/` 并修好 `/usr/local/bin/godot-mono`（持久落点纪律）。`--version` 正常。
+  - **下载教训**: GitHub release 资产**直连极慢（~22 KB/s）**，走本机 mihomo 代理 `curl -x http://127.0.0.1:7890` 约 **1.7 MB/s（快 ~75×）**——以后取 GitHub 大文件一律挂代理。
+  - **但本机 headless 仍跑不了 C# 客户端（D-P0-2 仍然成立，已用官版 binary 复现）**: `--import` / `--build-solutions` / `--editor --quit` 均正常退出，运行时报
+    `Cannot instantiate C# script because the associated class could not be found. Script: 'res://MatchRoot.cs'`。
+    程序集确已生成（`.godot/mono/temp/bin/Debug/Arena.Client.dll`），手工补 `GodotSharp.dll` + `runtimeconfig.json` 后**仍然找不到类**；推断根因是 `.godot/mono/metadata/` 在 headless 下始终为空——脚本类注册依赖编辑器 GUI 首次加载脚本。
+  - **结论不变**: Godot 侧可玩性/手感验证必须在用户 Windows Godot 编辑器侧做；本机可玩性验证由 `Arena.Headless` MatchDriver 承担（本轮 4/4 seed VS-PASS）。
 
 ## VS-6 完成后待做（用户裁定后）
 
