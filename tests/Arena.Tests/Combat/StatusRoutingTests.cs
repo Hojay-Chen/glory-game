@@ -98,7 +98,6 @@ public class StatusRoutingTests
         "MEH_T4_001:status:amplify:下一击×2",
         "GRP_T1_001:status:震地波:r2.5:0.30",
         "GRP_U_001:status:落点AOE:r3.0",
-        "ROG_T2_001:status:锁喉:目标攻防-50%",
         "ROG_T3_004:status:压制:目标倒地期间持续",
         "WRK_T2_003:status:吸血:治疗自身×1.1",
         "WRK_T3_004:status:操纵目标移动",
@@ -233,6 +232,64 @@ public class StatusRoutingTests
         var vic = w.Fighters[1];
         foreach (var st in def.Statuses) w.ApplyStatus(vic, st, 0, def.RuntimeId, addControlValue);
         return vic;
+    }
+
+    // ================= SR12–SR14: 虚弱缺陷修复 + 锁喉（裁定落地 C1b） =================
+
+    [Fact]
+    public void SR12_Weakness_Value_Is_No_Longer_Dropped()
+    {
+        // 「虚弱:ATK-20%:8s」的数值原先被丢弃（Potency 恒 0）——现在必须取到
+        var w = Def("ROG_T3_003").Statuses.First(s => s.Kind == StatusKind.Weakness);
+        Assert.Equal(FixedM(0.20m), w.PotencyQ);
+        Assert.Equal(8 * 60, w.DurationTicks);
+    }
+
+    [Fact]
+    public void SR13_Weakness_Actually_Reduces_Outgoing_Damage()
+    {
+        // 修复前 AtkMultQ 全项目无人调用 —— 虚弱对攻击毫无影响。这里用行为锁死。
+        long plain = DamageFrom(weakened: false);
+        long weak = DamageFrom(weakened: true);
+        Assert.True(plain > 0, "基线必须真的命中");
+        Assert.InRange((double)weak / plain, 0.78, 0.82);   // GDD §7.3: ATK −20%
+    }
+
+    private static long DamageFrom(bool weakened)
+    {
+        var w = CreateWorld(0, "BLA", 1, "BLA");
+        w.Fighters[1].PosZ = Fixed.FromInt(1);
+        if (weakened) w.ApplyStatus(w.Fighters[0], new StatusEffectDef(StatusKind.Weakness, 0, 600, 0), 1, 0);
+        w.Step(1, new[] { Skill(0, "BLA_T1_001") });
+        Run(w, 2, 60);
+        return w.Events.All.Where(e => e.Kind == EventKind.Hit && e.VictimId == 1).Sum(e => e.DamageRaw);
+    }
+
+    [Fact]
+    public void SR14_ThroatLock_Lowers_Both_Attack_And_Defense()
+    {
+        var def = Def("ROG_T2_001");                                        // 「锁喉:目标攻防-50%」
+        Assert.Equal(FixedM(0.50m), def.Statuses.First(s => s.Kind == StatusKind.Weakness).PotencyQ);  // 攻 −50%
+        Assert.Equal(-FixedM(0.50m), def.TargetDefPctQ);                                               // 防 −50%
+
+        long normal = DamageOnto(defenseDown: false);
+        long down = DamageOnto(defenseDown: true);
+        Assert.True(normal > 0, "基线必须真的命中");
+        Assert.True(down > normal, $"降防应提高所受伤害: {normal} → {down}");
+    }
+
+    private static long DamageOnto(bool defenseDown)
+    {
+        var w = CreateWorld(0, "BLA", 1, "BLA");
+        w.Fighters[1].PosZ = Fixed.FromInt(1);
+        if (defenseDown)
+        {
+            w.Fighters[1].BuffDefPctQ = -FixedM(0.50m);   // 与锁喉命中时落到 BuffDefPct 的路径同值
+            w.Fighters[1].BuffDefPctTicks = 600;
+        }
+        w.Step(1, new[] { Skill(0, "BLA_T1_001") });
+        Run(w, 2, 60);
+        return w.Events.All.Where(e => e.Kind == EventKind.Hit && e.VictimId == 1).Sum(e => e.DamageRaw);
     }
 
     // ================= 测试世界 / 指令助手 =================

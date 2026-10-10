@@ -46,7 +46,8 @@ public static class RuntimeSkillFactory
 
         var geo = ParseHitbox(d, unroutedHitbox);
         var hbRawKind = d.HitboxRaw.Split(':')[0];
-        var allStatuses = ParseStatuses(d, unroutedStatus, out bool suppressControlValue);
+        var statusParse = ParseStatuses(d, unroutedStatus);
+        var allStatuses = statusParse.Statuses;
         bool cleanseDebuffs = allStatuses.Any(st => st.Kind == StatusKind.None);   // Cleanse 记号
         var statuses = allStatuses.Where(st => st.Kind != StatusKind.None).ToArray();
         var armor = ParseArmor(d);
@@ -97,7 +98,9 @@ public static class RuntimeSkillFactory
             // WRK_T4_001 出神只写「可打断任何动作（不只是吟唱）」——最强打断，同样置位
             ForceInterrupt = d.StatusRaw.Contains("打断攻击") || d.StatusRaw.Contains("打断吟唱")
                           || d.Special.Contains("打断吟唱") || d.Special.Contains("可打断"),
-            SuppressControlValue = suppressControlValue,
+            SuppressControlValue = statusParse.SuppressControlValue,
+            TargetDefPctQ = statusParse.TargetDefPctQ,
+            TargetDefTicks = statusParse.TargetDefTicks,
             IsDecoy = d.Special.Contains("假身") || d.Special.Contains("影分身"),
             Armor = armor,
             Invuln = invuln,
@@ -307,12 +310,17 @@ public static class RuntimeSkillFactory
         (StatusKind.Confuse, 3, 0), (StatusKind.Curse, 4, 0),
     };
 
-    private static StatusEffectDef[] ParseStatuses(SkillDef d, List<string> unrouted, out bool suppressControlValue)
+    private readonly record struct StatusParseResult(
+        StatusEffectDef[] Statuses, bool SuppressControlValue, long TargetDefPctQ, int TargetDefTicks);
+
+    private static StatusParseResult ParseStatuses(SkillDef d, List<string> unrouted)
     {
-        suppressControlValue = false;
+        bool suppressControlValue = false;
         var raw = d.StatusRaw;
-        if (raw is "none" or "-" or "") return Array.Empty<StatusEffectDef>();
+        if (raw is "none" or "-" or "") return new StatusParseResult(Array.Empty<StatusEffectDef>(), false, 0, 0);
         bool cleanse = false;
+        long targetDefPct = 0;      // 锁喉类：命中时对被击者施加的 DEF 修正（负=降防）
+        int targetDefTicks = 0;
         var tokens = raw.Split(';', StringSplitOptions.RemoveEmptyEntries);
         var list = new List<StatusEffectDef>();
         foreach (var tok in tokens)
@@ -376,9 +384,23 @@ public static class RuntimeSkillFactory
                     list.Add(new StatusEffectDef(kind, Quantify(dps), dur, chance));
                     break;
                 }
-                case "虚弱":
-                    list.Add(new StatusEffectDef(StatusKind.Weakness, 0, ParseDuration(seg, 1, defaultSec: 6), chance));
+                case "虚弱":   // ROG_T3_003 恐吓「虚弱:ATK-20%:8s」——数值在第二段，此前被丢弃（Potency 恒 0）
+                {
+                    long pct = seg.Length > 1 ? ParsePercentAnywhere(seg[1]) : 0;
+                    list.Add(new StatusEffectDef(StatusKind.Weakness, pct,
+                        ParseDuration(seg, seg.Length > 2 ? 2 : 1, defaultSec: 6), chance));
                     break;
+                }
+                case "锁喉":   // 裁定 D-锁喉: ROG_T2_001「锁喉:目标攻防-50%」——ATK 与 DEF 双降
+                {
+                    long pct = seg.Length > 1 ? ParsePercentAnywhere(seg[1]) : 0;
+                    if (pct == 0) pct = Quantify(0.50m);          // 数据缺省时用 token 语义的 50%
+                    int ticks = ParseDuration(seg, 2, defaultSec: 6);   // 时长未给——取 GDD §7.3 虚弱带下限 6s
+                    list.Add(new StatusEffectDef(StatusKind.Weakness, pct, ticks, chance));
+                    targetDefPct = -pct;                          // DEF 侧（负值 = 降防，交由 HitResolve 落到 BuffDefPct）
+                    targetDefTicks = ticks;
+                    break;
+                }
                 case "破防":
                     list.Add(new StatusEffectDef(StatusKind.GuardBreak, 0, 5 * (int)RuntimeConstants.TICK_RATE, chance));
                     break;
@@ -484,7 +506,7 @@ public static class RuntimeSkillFactory
             }
         }
         if (cleanse) list.Add(new StatusEffectDef(StatusKind.None, 0, 0, 0));   // Cleanse 记号（Sim 消费）
-        return list.ToArray();
+        return new StatusParseResult(list.ToArray(), suppressControlValue, targetDefPct, targetDefTicks);
     }
 
     private static int ParseChance(string tok)
@@ -509,6 +531,19 @@ public static class RuntimeSkillFactory
                 return (int)Math.Round(v * RuntimeConstants.TICK_RATE, MidpointRounding.ToEven);
         }
         return defaultSec * (int)RuntimeConstants.TICK_RATE;
+    }
+
+    /// 从任意位置取百分比的**绝对值**为 Q32.16 比例：「ATK-20%」→ 0.20、「目标攻防-50%」→ 0.50。
+    /// （记号由调用方决定方向，这里只取量值。）
+    private static long ParsePercentAnywhere(string s)
+    {
+        int pct = s.IndexOf('%');
+        if (pct < 0) return 0;
+        int j = pct - 1;
+        while (j >= 0 && (char.IsDigit(s[j]) || s[j] == '.')) j--;
+        int start = (j >= 0 && (s[j] == '-' || s[j] == '+')) ? j : j + 1;
+        return decimal.TryParse(s[start..pct], NumberStyles.Float, CultureInfo.InvariantCulture, out var v)
+            ? Quantify(Math.Abs(v) / 100m) : 0;
     }
 
     /// 「…+30%」→ Q32.16 比例（0.30）。kindStr 处已把 '+' 之后剥离（供「冻结值+50」类 token 归一），

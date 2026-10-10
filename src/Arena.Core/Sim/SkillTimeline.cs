@@ -119,6 +119,10 @@ public sealed class SkillRuntimeData
     /// 控制值是累积量，满 100 触发 Break（解除一切控制 + 1.5s 免控），
     /// 若按常规注入，14 类增量合计 315 会让目标**反而免控**——与本技意图相反。
     public bool SuppressControlValue { get; init; }
+    /// 命中时对被击者施加的 DEF 修正（负=降防，Q32.16）。用于「锁喉:目标攻防-50%」这类
+    /// **同时降攻又降防**的 token——攻击侧走 Weakness 状态，防御侧落到 BuffDefPct 域。
+    public long TargetDefPctQ { get; init; }
+    public int TargetDefTicks { get; init; }
     public bool IsDecoy { get; init; }            // 分身/假身——静置诱饵实体（吸引单位类攻击，NJA 影分身）
     // ---- Flight 原语数据（DDQ-B5-6 裁定方案 B: 时长数据化 4s+1s；触发入口仍 DDQ）----
     public int FlightBaseTicks { get; init; }     // 飞行基础时长（扫把掌握 飞行4s）

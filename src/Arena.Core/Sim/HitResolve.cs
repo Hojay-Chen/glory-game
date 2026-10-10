@@ -92,6 +92,7 @@ public static class HitResolve
         long effAtk = atk.Atk;
         if (atk.BuffAtkPctTicks > 0 && atk.BuffAtkPctQ > 0)
             effAtk += DeterministicMath.MulShift(atk.Atk, atk.BuffAtkPctQ);   // 阵内 ATK+5% 增益乘区
+        effAtk = DeterministicMath.MulShift(effAtk, StatusSystem.AtkMultQ(atk));   // 虚弱（§7.3 ATK−20%）
         dmg = DeterministicMath.MulShift(dmg, effAtk);                    // × ATK → 点数域
         long effDef = vic.Def;
         if (vic.BuffDefPctTicks > 0 && vic.BuffDefPctQ != 0)
@@ -259,6 +260,13 @@ public static class HitResolve
                 if (roll >= eff.ChancePercent) continue;
             }
             w.ApplyStatus(vic, eff, atk.Id, def.RuntimeId, addControlValue: !def.SuppressControlValue);
+        }
+
+        // ---- 目标 DEF 修正（「锁喉:目标攻防-50%」的防御侧；攻击侧已由 Weakness 状态承载） ----
+        if (def.TargetDefPctQ != 0)
+        {
+            vic.BuffDefPctQ = def.TargetDefPctQ;
+            vic.BuffDefPctTicks = def.TargetDefTicks;
         }
 
         // ---- 受击反应（armored 时跳过硬直/浮空/击退——承伤不硬直） ----

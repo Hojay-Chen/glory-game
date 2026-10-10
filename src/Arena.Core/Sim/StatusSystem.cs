@@ -138,10 +138,15 @@ public static class StatusSystem
         return mult;
     }
 
-    /// 攻击乘区（Weakness: ATK −20%）
+    /// 攻击乘区（Weakness）。PotencyQ 有效时按数据取值（如「锁喉:目标攻防-50%」→ −50%）；
+    /// 缺省回落到 GDD §7.3 基准 −20%（幂等：potency==0 即用基准，老数据无需逐条补值）。
     public static long AtkMultQ(FighterStateData f)
     {
         ref readonly var weak = ref f.Statuses[(int)StatusKind.Weakness];
-        return weak.Active ? DeterministicMath.DivRoundHalfEven(80 * Fixed.ONE, 100) : Fixed.ONE;
+        if (!weak.Active) return Fixed.ONE;
+        long pct = weak.PotencyQ > 0
+            ? Math.Min(weak.PotencyQ, Fixed.ONE)
+            : DeterministicMath.DivRoundHalfEven(20 * Fixed.ONE, 100);   // §7.3 基准
+        return Fixed.ONE - pct;
     }
 }
