@@ -101,7 +101,6 @@ public class StatusRoutingTests
         "ROG_T3_004:status:压制:目标倒地期间持续",
         "WRK_T2_003:status:吸血:治疗自身×1.1",
         "WRK_T3_004:status:操纵目标移动",
-        "WRK_T3_006:status:附身DoT",
         "WRK_T4_002:status:拉拽入门内",
         "KNI_T3_004:status:反噬:伤害+效果",
         "KNI_T3_007:status:免疫挑衅/吼叫",
@@ -306,6 +305,35 @@ public class StatusRoutingTests
         Assert.Equal(1224, a.EndTick);          // 20s × 60 + 24
         Assert.True(a.Covers(1200), "20s 末段仍应处于霸体");
         Assert.False(a.Covers(1300), "窗口外不霸体");
+    }
+
+    // ================= SR16–SR17: D5/D7 数值落地（PATCH-022/023） =================
+
+    [Fact]
+    public void SR16_GhostHaunt_DoT_Value_Landed()
+    {
+        // 「附身DoT」原先只是个名字、无数值 → 现按 §7.3 DoT 带取 45/s、时长=该技 active 6s
+        var dot = Def("WRK_T3_006").Statuses.FirstOrDefault(s => s.Kind == StatusKind.Poison);
+        Assert.Equal(StatusKind.Poison, dot.Kind);
+        Assert.Equal(FixedM(45m), dot.PotencyQ);      // 每秒 45 点（doT dps 以点数 × ONE 存储）
+        Assert.Equal(6 * 60, dot.DurationTicks);
+    }
+
+    [Fact]
+    public void SR17_SoulEntangle_Slow_Value_Actually_Slows()
+    {
+        var def = Def("WRK_T4_003");
+        var slow = def.Statuses.First(s => s.Kind == StatusKind.Slow);
+        Assert.Equal(FixedM(0.50m), slow.PotencyQ);   // §7.3 减速两档的强档 −50%（原著「极强烈」）
+        Assert.Equal(8 * 60, slow.DurationTicks);
+
+        // 行为：消费点确实按该值生效（修复前 `slow:强` 解析失败 → Potency 0 → 完全不减速）
+        var w = CreateWorld(0, "WRK", 1, "BLA");
+        var f = w.Fighters[1];
+        Assert.Equal(Fixed.ONE, StatusSystem.MoveSpeedMultQ(f));          // 未受减速
+        w.ApplyStatus(f, slow, 0, def.RuntimeId);
+        Assert.Equal(DeterministicMath.DivRoundHalfEven(50 * Fixed.ONE, 100),
+                     StatusSystem.MoveSpeedMultQ(f));                       // ×0.50
     }
 
     // ================= 测试世界 / 指令助手 =================

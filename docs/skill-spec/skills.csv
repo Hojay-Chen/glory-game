@@ -404,10 +404,10 @@ WRK_T3_002,混乱之雨,WRK,T3,active,95,0,24,18,-,14,-,circle:r3.5,3.5,-,0.55,d
 WRK_T3_003,魔镜,WRK,T3,deploy,95,0,25,14,8s,12,-,deploy:r1.5:悬浮:HP300,10.0,-,0,none,-,0,0,-,反射法术,none,none,0,0,0,-,0,反弹所有法术攻击效果,可由施术者移动悬浮,35,job_change,AM_WRK_T3_003,VX_WRK_T3_003,SD_WRK_T3_003
 WRK_T3_004,操纵术,WRK,T3,active,100,0,25,14,hold,12,-,proj:锁链:16m,16.0,-,0,none,-,0,0,-,操纵目标移动,none,none,0,0,1,T3+,0,活物加成;牵连可被攻击斩断;持续耗蓝,傀儡师玩法,40,job_change,AM_WRK_T3_004,VX_WRK_T3_004,SD_WRK_T3_004
 WRK_T3_005,黑暗之爪,WRK,T3,grab,90,0,22,14,-,16,-,box:1.0x1.0x2.0,2.0,-,0.95,dark,1,0,0,-,none,none,-,0,0,0,T3+,0,强制抓取;混乱状态目标几率被撞出,-,35,job_change,AM_WRK_T3_005,VX_WRK_T3_005_HIT,SD_WRK_T3_005_HIT
-WRK_T3_006,鬼影缠身,WRK,T3,active,95,0,24,16,6s,14,20,proj:26m/s:16m,16,-,1.50,dark,-,10,0,-,附身DoT,none,none,0,0,1,T3+,0,结束后33%伤害补充为术士生命,攻防一体,40,job_change,AM_WRK_T3_006,VX_WRK_T3_006_HIT,SD_WRK_T3_006_HIT
+WRK_T3_006,鬼影缠身,WRK,T3,active,95,0,24,16,6s,14,20,proj:26m/s:16m,16,-,1.50,dark,-,10,0,-,poison:45:6s,none,none,0,0,1,T3+,0,结束后33%伤害补充为术士生命,攻防一体,40,job_change,AM_WRK_T3_006,VX_WRK_T3_006_HIT,SD_WRK_T3_006_HIT
 WRK_T4_001,击魂术,WRK,T4,active,120,0,45,18,-,14,-,proj:30m/s:18m,18,-,2.34,dark,1,0,0,-,出神:操作无效:1.2s,none,none,0,0,1,T4+,0,可打断任何动作（不只是吟唱）,强打断,50,job_change,AM_WRK_T4_001,VX_WRK_T4_001_HIT,SD_WRK_T4_001_HIT
 WRK_T4_002,死亡之门,WRK,T4,active,160,0,55,20,-,20,-,portal:r3.0:触手18身位,18.0,-,2.49,dark,1,25,0,-,拉拽入门内,none,none,0,0,0,T4+,0,自动追击方圆18身位,70级,70,job_change,AM_WRK_T4_002,VX_WRK_T4_002_HIT,SD_WRK_T4_002_HIT
-WRK_T4_003,幽魂缠绕,WRK,T4,deploy,165,0,55,18,8s,16,-,zone:r6.0:8s,6.0,-,2.30,dark,-,10,0,-,slow:强;禁闪现,none,none,0,0,0,T4+,0,瞬移/影分身/机械旋翼等全部被打断扯住,75级,75,job_change,AM_WRK_T4_003,VX_WRK_T4_003_HIT,SD_WRK_T4_003_HIT
+WRK_T4_003,幽魂缠绕,WRK,T4,deploy,165,0,55,18,8s,16,-,zone:r6.0:8s,6.0,-,2.30,dark,-,10,0,-,slow:50%:8s;禁闪现,none,none,0,0,0,T4+,0,瞬移/影分身/机械旋翼等全部被打断扯住,75级,75,job_change,AM_WRK_T4_003,VX_WRK_T4_003_HIT,SD_WRK_T4_003_HIT
 WRK_U_001,六星光牢,WRK,U,active,280,0,150,26,3.5s,24,-,circle:r2.0,16.0,-,0,dark,-,0,0,-,禁足:完全禁足3.5s:无法解除,none,none,0,0,0,none,0,荣耀第一禁足技能;击杀施术者也不消失,每场1次（原著）,70,job_change,AM_WRK_U_001,VX_WRK_U_001,SD_WRK_U_001
 PRI_BAS_001,圣光弹,PRI,BAS,basic,0,0,0,9,1,10,-,proj:28m/s:16m,16,-,0.30,light,1,10,0,-,none,none,-,0,1,0,any,0,-,Skill-Spec补全:GDD缺普攻链行,1,normal,AM_PRI_BAS_001,VX_PRI_BAS_001_HIT,SD_PRI_BAS_001_HIT
 PRI_T1_001,圣光惩击,PRI,T1,active,40,0,6,10,-,12,-,proj:30m/s:16m,16,-,0.88,light,1,12,0,-,none,none,-,0,1,0,T1+,0,主输出手段,-,25,job_change,AM_PRI_T1_001,VX_PRI_T1_001_HIT,SD_PRI_T1_001_HIT
