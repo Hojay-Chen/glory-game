@@ -22,7 +22,8 @@ public sealed class CameraFactory
     public static void Follow(Camera3D cam, Godot.Vector3 midpoint, float spread)
     {
         // 转播机位：足够远看清双方与擂台关系，俯角约 35°（太近会只剩地板、太陡会丢失纵深）
-        var back = Math.Clamp(6.5f + spread * 0.30f, 8f, 14f);
+        // 半宽 ≈ 0.6·back（FOV38 + 16:9）→ 要容下间距 spread，back 至少 spread/1.2；再留 2m 余量
+        var back = Math.Clamp(2f + spread * 0.85f, 8f, 26f);
         cam.Position = new Godot.Vector3(midpoint.X, midpoint.Y + back * 0.40f, midpoint.Z - back * 0.92f);
         cam.LookAt(new Godot.Vector3(midpoint.X, 1.3f, midpoint.Z), Godot.Vector3.Up);
     }

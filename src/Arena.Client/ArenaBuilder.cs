@@ -16,11 +16,11 @@ public sealed class ArenaBuilder
     // ---- 材质分层（每类不同 Roughness/Metallic/Albedo，杜绝"一片同灰"——§2.3）----
     // 共用实例（非每件 new）: gl_compatibility 对 draw call 敏感，材质复用便于批处理与降内存。
     private static readonly StandardMaterial3D FloorMat =
-        Mat(new Color(0.290f, 0.310f, 0.349f), 0.85f, 0.00f);   // #4A4F59 哑光中灰（给深色靴/腿做对比）
+        Mat(new Color(0.175f, 0.190f, 0.215f), 0.88f, 0.00f);   // #4A4F59 哑光中灰（给深色靴/腿做对比）
     private static readonly StandardMaterial3D WallMat =
         Mat(new Color(0.227f, 0.247f, 0.290f), 0.70f, 0.10f);   // 结界墙 冷灰石（退让背景）
     private static readonly StandardMaterial3D PlatformMat =
-        Mat(new Color(0.335f, 0.315f, 0.265f), 0.60f, 0.15f);   // 高台 略暖（高处=危险提示 §5.2）
+        Mat(new Color(0.235f, 0.220f, 0.185f), 0.62f, 0.12f);   // 高台 略暖（高处=危险提示 §5.2）
     private static readonly StandardMaterial3D RampMat =
         Mat(new Color(0.295f, 0.278f, 0.235f), 0.72f, 0.08f);   // 坡道 同族压暗
     private static readonly StandardMaterial3D CoverMat =
@@ -67,7 +67,7 @@ public sealed class ArenaBuilder
         {
             RotationDegrees = new Godot.Vector3(-50, 35, 0),
             LightColor = new Color(1.000f, 0.965f, 0.910f),   // #FFF6E8
-            LightEnergy = 0.70f,                              // 规格 1.0–1.2
+            LightEnergy = 0.78f,                              // 规格 1.0–1.2
             ShadowEnabled = true,
         });
 
@@ -76,7 +76,7 @@ public sealed class ArenaBuilder
         {
             RotationDegrees = new Godot.Vector3(-20, -140, 0),
             LightColor = new Color(0.788f, 0.839f, 1.000f),   // #C9D6FF 冷调
-            LightEnergy = 0.15f,                              // 规格 0.25–0.35
+            LightEnergy = 0.20f,                              // 规格 0.25–0.35
             ShadowEnabled = false,
         });
 
@@ -86,7 +86,7 @@ public sealed class ArenaBuilder
         {
             RotationDegrees = new Godot.Vector3(-16, 0, 0),
             LightColor = new Color(0.900f, 0.930f, 1.000f),   // 近白微冷
-            LightEnergy = 0.25f,                              // 规格 0.5–0.7，但无色调映射需再压
+            LightEnergy = 0.38f,                              // art-bible 规格在无色调用映射时需下调
             ShadowEnabled = false,
         });
     }
@@ -99,9 +99,10 @@ public sealed class ArenaBuilder
             BackgroundColor = new Color(0.086f, 0.098f, 0.129f),                 // #161A21 暗沉去饱和（§5.2 区间 #14171E~#1E2330）
             AmbientLightSource = Godot.Environment.AmbientSource.Color,
             AmbientLightColor = new Color(0.549f, 0.588f, 0.671f),               // #8C96AB
-            AmbientLightEnergy = 0.26f,                                          // 规格 0.5–0.7；Compat 渲染器无色调映射，压低防过曝
+            AmbientLightEnergy = 0.34f,                                          // 规格 0.5–0.7；Compat 渲染器无色调映射，压低防过曝
             FogEnabled = false,                                                  // §5.1: 关雾（否则吃掉 35m 外剪影）
         };
+        // 注: Compatibility 渲染器不支持色调映射（已实测 tonemap_mode 无效果）→ 只能靠灯光/材质控制曝光
         parent.AddChild(new WorldEnvironment { Environment = env });
     }
 

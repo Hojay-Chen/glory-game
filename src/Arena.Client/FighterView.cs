@@ -16,6 +16,7 @@ public sealed partial class FighterView : Node3D
     private readonly int _id;
     private readonly byte _team;
     private readonly FighterVisualProfile _profile;
+    private readonly string _displayName;
 
     // ---- Body ----
     private readonly Node3D _bodyRig;          // 人形装配根（取代原单胶囊）
@@ -30,6 +31,8 @@ public sealed partial class FighterView : Node3D
 
     // ---- StateVisual ----
     private readonly Label3D _nameTag;
+    private MeshInstance3D _hpBarBg = null!;
+    private MeshInstance3D _hpBarFill = null!;
 
     // ---- Weapon Trail（VS-8）----
     private readonly WeaponTrail _trail;
@@ -40,11 +43,12 @@ public sealed partial class FighterView : Node3D
     private bool _frozen;        // Hit Stop 表现冻结
     private bool _tweenPaused;   // 冻结时暂停挥摆、解冻时恢复（只恢复自己暂停的那次）
 
-    public FighterView(int id, byte team, FighterVisualProfile profile)
+    public FighterView(int id, byte team, FighterVisualProfile profile, string displayName = "")
     {
         _id = id;
         _team = team;
         _profile = profile;
+        _displayName = displayName;
 
         var teamCol = team == 0 ? _profile.BodyColor0 : _profile.BodyColor1;
 
@@ -71,12 +75,37 @@ public sealed partial class FighterView : Node3D
         // StateVisual（名牌）
         _nameTag = new Label3D
         {
-            FontSize = 40,
-            Position = new Godot.Vector3(0, 2.1f, 0),
+            FontSize = 34,
+            Position = new Godot.Vector3(0, 2.34f, 0),
             Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
+            NoDepthTest = true,
+            OutlineSize = 8,
+            OutlineModulate = new Color(0f, 0f, 0f, 0.85f),
         };
         AddChild(_nameTag);
+
+        // 世界空间血条（Billboard 四边形，永远面向相机）——远处也能一眼看出谁快死了
+        _hpBarBg = BillboardQuad(0.96f, 0.10f, new Color(0.05f, 0.05f, 0.06f, 0.85f));
+        _hpBarBg.Position = new Godot.Vector3(0, 2.16f, 0);
+        AddChild(_hpBarBg);
+        _hpBarFill = BillboardQuad(0.92f, 0.07f, teamCol);
+        _hpBarFill.Position = new Godot.Vector3(0, 2.16f, 0);
+        AddChild(_hpBarFill);
     }
+
+    private static MeshInstance3D BillboardQuad(float w, float h, Color col) => new()
+    {
+        Mesh = new QuadMesh { Size = new Godot.Vector2(w, h) },
+        MaterialOverride = new StandardMaterial3D
+        {
+            AlbedoColor = col,
+            ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+            Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
+            BillboardMode = BaseMaterial3D.BillboardModeEnum.Enabled,
+            NoDepthTest = true,
+            CullMode = BaseMaterial3D.CullModeEnum.Disabled,
+        },
+    };
 
     public int Id => _id;
 
@@ -104,7 +133,13 @@ public sealed partial class FighterView : Node3D
 
         _bodyRig.RotationDegrees = f.State == FighterState.Down ? new Godot.Vector3(-90, 0, 0) : Godot.Vector3.Zero;
         _bodyRig.Position = f.State == FighterState.Down ? new Godot.Vector3(0, 0.4f, 0) : Godot.Vector3.Zero;
-        _nameTag.Text = f.State == FighterState.Dead ? "KO" : _team == 0 ? $"P1 {f.Hp / 100}" : $"BOT {f.Hp / 100}";
+        _nameTag.Text = f.State == FighterState.Dead
+            ? (_displayName.Length > 0 ? _displayName + "  KO" : "KO")
+            : (_displayName.Length > 0 ? _displayName : $"P{_team}");
+        float ratio = f.HpMax <= 0 ? 0f : (float)f.Hp / f.HpMax;
+        if (ratio < 0f) ratio = 0f; else if (ratio > 1f) ratio = 1f;
+        _hpBarFill.Scale = new Godot.Vector3(ratio, 1f, 1f);
+        _hpBarFill.Position = new Godot.Vector3(-(1f - ratio) * 0.46f, 2.16f, 0f);
     }
 
     // ================= AnimationDriver（PresentationEvent 驱动） =================

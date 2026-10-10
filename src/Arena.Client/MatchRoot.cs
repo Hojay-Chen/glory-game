@@ -316,7 +316,8 @@ public partial class MatchRoot : Node
             // 按职业取视觉档案（六系剪影 + 系别徽记色）——此前所有职业硬用同一套 Blade 档案
             string cls = f.Id == LocalPlayerId ? _playerClass : _enemyClass;
             var view = new FighterView(f.Id, f.Team,
-                Arena.Client.Visuals.FighterVisualProfile.For(cls, BranchOf(cls), WeaponTypeOf(cls)));
+                Arena.Client.Visuals.FighterVisualProfile.For(cls, BranchOf(cls), WeaponTypeOf(cls)),
+                ClassNameOf(cls));
             _views[f.Id] = view;
             _matchRoot.AddChild(view);
         }
