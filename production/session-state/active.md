@@ -317,6 +317,15 @@
 - **测试 234/234**（+`StatusRoutingTests` SR01–SR06）: 断言真实解析结果（`ForceInterrupt`/状态表时长 150T/`CleanseDebuffs`/`IsReflect`），并把**剩余未路由集合逐字固化**（新出现未路由即失败）；三门禁 PASS；客户端权威结果未变（t=1882）。
 - **未路由 31 → 24**。
 
+### 批次 B1a（2026-10-11，同一轮继续）：两个新状态域
+
+- **`StatusKind.HealBlock`**（ASN_T4_002「禁疗:10s」）+ **`StatusKind.DamageTakenUp`**（PRI_T4_001「目标所受伤害+30%」，PotencyQ 承载百分比）。
+- **零快照改动**：`FighterStateData.Statuses` 本就固定 `new StatusInstance[32]`，而 StatusKind 只用到 18 → **新状态号追加在枚举尾部即可**，快照布局/序列化完全不动（PotencyQ 已在快照域内）；`StatusRules` 默认分支已正确处理（不记控制值/不阻断/不互斥）。
+- **消费点（各一处）**：`HitResolve` 易伤乘区（紧邻 DEF 结算；PotencyQ=0 时乘数退化为 1）+ `SimWorld.ApplyHeal/ApplyHealSelf` 禁疗闸门（含封锁吸血/自愈）。
+- **测试 237/237**（+SR07 域产出 / **SR08 行为：伤害真的 ×1.30** / **SR09 行为：禁疗真的回不了血**）；SR06 白名单闸门如预期拦下未同步条目（它自己抓到了我漏改的过期项）。
+- **未路由 24 → 22**；三门禁 PASS；客户端权威结果未变（t=1882）。
+- **新发现的数据缺口（登记，不猜）**：`MEH_T3_001 weight:x1.5` 的 special 只写「范围内负重成倍增加」，**没给移速/击退的影响数值**（对比 GBL_T3_004 写了「移速-20%击退+50%」）→ 该行无法如实落地，计入 §3 裁定表。
+
 ### 剩余 24 行分类与裁定表 → `docs/architecture/status-routing-triage-v1.md`
 
 - **B 类 17 行**（需新增一个状态域，机械但有量）: 负重×2/×1.5、下一击×2、禁疗、易伤、强制转身、免疫、反噬、指定技能封禁、全异常满值、驱散增益、锁喉、三发序列、吸血、出神、禁足不可解除。
