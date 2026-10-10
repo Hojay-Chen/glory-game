@@ -65,6 +65,11 @@ public sealed class InputMapper
                     case "skill":
                         if (skillUid != 0) cmds.Add(new Command(_fighterId, CmdKind.Skill, skillUid, 0, 0, 0));
                         break;
+                    case "guard":
+                        // 格挡=按住型姿态技（数据列的 IsHold 技）。此前该键绑定 skillUid=0 且无本分支，
+                        // 按下什么都不发生——而 HUD 上写着「U 格挡」，属界面承诺了但没实现。
+                        if (skillUid != 0) cmds.Add(new Command(_fighterId, CmdKind.Skill, skillUid, 0, 0, 0));
+                        break;
                 }
             }
             else if (!down && was)   // Release 沿
@@ -89,7 +94,7 @@ public sealed class InputMapper
     public static class KeyIds
     {
         public const int W = 87, A = 65, S = 83, D = 68;
-        public const int Space = 32, Shift = 4194325, J = 74, K = 75, L = 76, U = 85, I = 73, O = 79;
+        public const int Space = 32, Shift = 4194325, J = 74, K = 75, L = 76, U = 85, I = 73, O = 79, P = 80;
     }
 
     private static byte DirIndex(int dx, int dz) => (dx, dz) switch

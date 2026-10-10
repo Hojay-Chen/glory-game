@@ -54,6 +54,13 @@ public partial class MatchRoot : Node
     private const float ShakeWorldScale = 8f;   // trauma² 偏移 → 世界米（白盒手感）
     private static readonly Godot.Vector3 FallbackDir = new(0, 0, 1);
 
+    // VS-9 选人: 双方职业（默认剑客；由选人界面写入）
+    private string _playerClass = "BLA";
+    private string _enemyClass = "BLA";
+    private List<ClassDefParser.ClassEntry> _classList = new();
+    private ClassSelectScreen? _select;
+    private bool Selecting => _select is { Visible: true };
+
     public override void _Ready()
     {
         _autopilot = Godot.OS.GetEnvironment("ARENA_AUTOPILOT") == "1";
@@ -69,7 +76,48 @@ public partial class MatchRoot : Node
         _camera = CameraFactory.CreateFollowCamera();
         AddChild(_camera);
 
-        StartMatch();
+        // 非 autopilot（真人）才走选人界面；autopilot 是自动化验证，直接按默认职业开打
+        _classList = ClassDefParser.Parse(
+            Path.Combine(FindRepoRoot(), "docs/balance-sheet/class-base.csv"));
+
+        // ARENA_P0 / ARENA_P1 指定双方职业并跳过选人界面（渲染验证 / 快速开打用）
+        var p0 = Godot.OS.GetEnvironment("ARENA_P0");
+        if (p0.Length > 0)
+        {
+            _playerClass = p0;
+            var p1 = Godot.OS.GetEnvironment("ARENA_P1");
+            _enemyClass = p1.Length > 0 ? p1 : "BLA";
+            StartMatch();
+            return;
+        }
+
+        if (_autopilot) { StartMatch(); return; }
+
+        _hud.Visible = false;                   // 选人时藏起血条（对局可能都还没开始）
+        _select = new ClassSelectScreen(_classList, (player, enemy) =>
+        {
+            _playerClass = player;
+            _enemyClass = enemy;
+            StartMatch();
+        });
+        AddChild(_select);
+    }
+
+    /// class_id → 中文名（选人界面与 HUD 显示用）
+    private string ClassNameOf(string classId)
+    {
+        foreach (var c in _classList)
+            if (c.ClassId == classId) return c.Name;
+        return classId;
+    }
+
+    /// Esc（终局画面）→ 回到选人界面重新选职业
+    private void OpenClassSelect()
+    {
+        if (_select is null) return;
+        _matchOver = true;              // 冻结对局循环（不再步进 Sim）
+        _select.Visible = true;
+        _director.Reset();
     }
 
     private static string FindRepoRoot()
@@ -92,7 +140,8 @@ public partial class MatchRoot : Node
 
     private void StartMatch()
     {
-        var setup = MatchAssembler.Assemble(0x5EED_0001L, FindRepoRoot());
+        var setup = MatchAssembler.Assemble(0x5EED_0001L, FindRepoRoot(),
+            playerClass: _playerClass, enemyClass: _enemyClass);
         _setup = setup;
         _world = setup.World;
         _catalog = setup.Catalog;
@@ -120,7 +169,8 @@ public partial class MatchRoot : Node
         if (_autopilot)
             _botP0 = new AiBot(LocalPlayerId, EnemyId, seed: 0xA2_0002, aggression: 0.7);   // autopilot: 玩家位 AI
 
-        _hud?.Reset();
+        _hud?.Reset(_catalog, _playerClass, ClassNameOf(_playerClass), ClassNameOf(_enemyClass));
+        if (_hud is not null) _hud.Visible = true;
     }
 
     /// R 重开（用户裁定: 重新装配 SimWorld/清理表现节点，零隐式状态残留）
@@ -150,6 +200,7 @@ public partial class MatchRoot : Node
 
     public override void _PhysicsProcess(double delta)
     {
+        if (Selecting) return;          // 选人界面期间不步进任何东西
         if (_restartCooldown > 0) _restartCooldown--;
         if (_world is null || _matchOver)
         {
@@ -160,8 +211,14 @@ public partial class MatchRoot : Node
                 CameraFactory.Follow(_camera, _lastMid, _lastSpread);
                 ApplyCameraShake();
             }
-            // 胜负已分: R 重开（Press——冷却 60T 防按住连触发）
+            // 胜负已分: R 重开（同职业再打一场）；Esc 回选人界面换职业
             if (_restartCooldown > 0) { return; }
+            if (Input.IsKeyPressed(Key.Escape))
+            {
+                _restartCooldown = 60;
+                OpenClassSelect();
+                return;
+            }
             if (Input.IsKeyPressed(Key.R))
             {
                 _restartCooldown = 60;
@@ -180,7 +237,7 @@ public partial class MatchRoot : Node
         }
         else
         {
-            cmds.AddRange(_inputMapper!.Collect(InputTranslator.Bindings(_catalog!)));
+            cmds.AddRange(_inputMapper!.Collect(InputTranslator.Bindings(_catalog!, _playerClass)));
             if (_bot is { } bot)
                 cmds.AddRange(bot.Produce(_tick, _world, _catalog!));
         }

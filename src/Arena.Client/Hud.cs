@@ -1,9 +1,12 @@
+using System.Linq;
 using Arena.Core;
 using Arena.Core.Sim;
+using Arena.Infra.Data;
 using Godot;
 
 // PRODUCTION - Arena.Client
-// HUD（Vertical Slice 占位）: HP/MP/耐力条 ×2 + tick/结果标签。
+// HUD: HP/MP 条 ×2 + 双方职业 + **按键对应的真实技能名**（VS-9 起按职业动态生成——
+// 此前提示是写死的剑客键位，换职业后完全对不上）。
 namespace Arena.Client;
 
 public sealed partial class Hud : CanvasLayer
@@ -16,6 +19,9 @@ public sealed partial class Hud : CanvasLayer
     private readonly ColorRect _hp1Ghost = new() { Color = new Color(0.1f, 0.1f, 0.1f) };
     private readonly Label _info = new();
     private readonly Label _result = new();
+    private string _keyHints = "";
+    private string _playerName = "";
+    private string _enemyName = "";
 
     public Hud()
     {
@@ -45,12 +51,19 @@ public sealed partial class Hud : CanvasLayer
         _hp1.Size = new Godot.Vector2(400f * f1.Hp / f1.HpMax, 22);
         _mp0.Size = new Godot.Vector2(400f * f0.Mp / f0.MpMax, 10);
         _mp1.Size = new Godot.Vector2(400f * f1.Mp / f1.MpMax, 10);
-        _info.Text = $"tick {tick}  stamina {f0.Stamina}  [WASD move | Space jump | Shift roll | J basic | K 上挑 | L 三段斩 | U 格挡 | I 仙人指路 | O 拔刀斩]";
+        _info.Text =
+            $"[你] {_playerName}  vs  [对手] {_enemyName}" +
+            $"     tick {tick}   stamina {f0.Stamina}\n{_keyHints}";
     }
 
-    public void Reset()
+    /// 每局重设（换职业 → 重算键位提示；提示里的技能名来自 catalog 的真实数据，不是写死的）
+    public void Reset(RuntimeCatalog catalog, string playerClass, string playerName, string enemyName)
     {
         _result.Visible = false;
+        _playerName = playerName;
+        _enemyName = enemyName;
+        _keyHints = string.Join("   ", InputTranslator.KeyHints(catalog, playerClass)
+            .Select(h => $"{h.Key} {h.Label}"));
         _info.Text = "";
     }
 
@@ -58,6 +71,6 @@ public sealed partial class Hud : CanvasLayer
     {
         _result.Text = result;
         _result.Visible = true;
-        _info.Text = $"tick {tick} — 按 R 重开";
+        _info.Text = $"tick {tick} — R 重开（同职业）　Esc 换职业";
     }
 }
