@@ -9,6 +9,8 @@ public sealed record FighterVisualProfile(
     Color WeaponColor,
     Color SlashColor,
     Color HitSparkColor,
+    Color GuardSparkColor,
+    Color ParrySparkColor,
     float BodyRadius, float BodyHeight,
     float WeaponLength, float WeaponWidth)
 {
@@ -18,6 +20,8 @@ public sealed record FighterVisualProfile(
         WeaponColor: new Color(0.85f, 0.88f, 0.95f),
         SlashColor: new Color(0.7f, 0.9f, 1f),
         HitSparkColor: new Color(1f, 0.8f, 0.3f),
+        GuardSparkColor: new Color(0.55f, 0.8f, 1f),
+        ParrySparkColor: new Color(1f, 1f, 0.85f),
         BodyRadius: 0.4f, BodyHeight: 1.6f,
         WeaponLength: 0.9f, WeaponWidth: 0.08f);
 }

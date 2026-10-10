@@ -132,6 +132,15 @@ public sealed partial class FighterView : Node3D
         SpawnSpark(pos, _profile.HitSparkColor, 10);
     }
 
+    /// 判定命中但无伤害（纯接触）——仅火花，不闪白
+    public void OnHitSpark(Godot.Vector3 pos) => SpawnSpark(pos, _profile.HitSparkColor, 6);
+
+    /// 格挡化解——钢青色火花
+    public void OnGuard(Godot.Vector3 pos) => SpawnSpark(pos, _profile.GuardSparkColor, 8);
+
+    /// 完美格挡 / 弹刀——明亮火花
+    public void OnParry(Godot.Vector3 pos) => SpawnSpark(pos, _profile.ParrySparkColor, 14);
+
     public void OnLaunched() { /* 击飞表现: Sync 已覆盖 Launch 提亮 + 抬升姿态 */ }
 
     public void OnDown() { /* 倒地姿态由 Sync 覆盖 */ }

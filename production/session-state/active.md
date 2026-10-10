@@ -227,9 +227,20 @@
 - **测试 199/199**（+PE01-07 七项纯逻辑探针）；三门禁 PASS；Determinism/Replay/Restart 无退化（PE02/PE05 验证）
 - **踩坑**: Arena.Infra 无 ImplicitUsings（新文件须手动 using System/System.IO）；CPUParticles3D 不存在于 Godot 4.3 C#（改用 SphereMesh tween 扩散渐隐）；/tmp 中间产物被系统清理——持久文件一律 /var/tmp
 
+## VS-7 Presentation Director + Godot 客户端接线（2026-10-10，本轮）
+
+- **背景**: VS-6 产出 PresentationEventBridge / HitStopController / CameraPresenter 纯逻辑三件套，但**客户端无消费者**——游戏内零命中反馈（桥接层空转）。本轮补齐「代码就绪 → 真正接线」。
+- **修真实缺陷（桥接层空转的根因）**: `PresentationEvent.From` 原先把**所有** Hit 映射为 AttackHit，`DamageApplied` **永不产生** → HitStop / 闪白 / 受击相机震动全部静默失效（PE02/PE05 因事件恒不触发而**空转通过**，属假阳性）。改为按 `DamageRaw > 0` 分流: 有伤害 → DamageApplied，无伤害 → AttackHit，仍保持「1 SimEvent → 1 PresentationEvent」1:1 不变式（PE01/PE04 不受影响）。
+- **PresentationDirector（新，`Arena.Infra.Presentation`，纯逻辑零引擎依赖）**: 表现层唯一总调度——`Advance(SimEvent[], delta)` 消费桥接输出，产出引擎无关的 `PresentationCue`（11 种 Kind）+ 驱动 HitStop / Camera 两个表现态机；`Reset()`（Restart 清零）/ `FlagMatchEnd()`。
+- **Godot 客户端接线（`MatchRoot`）**: 步进后 `_director.Advance(_world.Events.All, delta)` → `DispatchCue` 翻译为节点动作（挥摆/火花/闪白/格挡/弹刀/浮空/倒地/阵亡）；**Hit Stop 冻结期跳过 `view.Sync`**（表现冻结，Sim 照常步进）；相机 `Follow` 后叠加 trauma² shake 偏移；终局 `FlagMatchEnd` + 相机收尾自转。
+- **`FighterView` 扩展**: `OnHitSpark`（无伤害接触）/ `OnGuard` / `OnParry`；`FighterVisualProfile` 新增 `GuardSparkColor` / `ParrySparkColor`。
+- **架构约束保持**: 判定全在 `Arena.Infra`（可测），Godot 层只做 cue → 节点操作；表现层零写回 Sim。
+- **测试 217/217**（+PD01–PD07 共 18 项: 事件→线索映射 / Hit 伤害分流 / 只读 Sim 逐位一致 / MatchEnd 闸断 / Reset 清零 / 相机 trauma 衰减 / 消费游标不泄漏）；三门禁 PASS（math_ban / deps / balance_audit 399-396-0）。
+- **环境（D-P0-2 复核）**: `godot-mono` 符号链接指向 `/tmp`（被系统清理）→ 本机 headless C# 验证不可用（非 mono 版 godot 报 `No loader found for resource: MatchRoot.cs`）。已重新下载 mono 版并改落 **/var/tmp**（持久落点纪律），符号链接已修复。
+
 ## VS-6 完成后待做（用户裁定后）
 
-1. Godot 客户端接入 PresentationEventBridge（代码已就绪——MatchRoot 消费桥接事件派发到 FighterView/CameraRig/HitStop——本机 D-P0-2 限制待用户 Windows 侧运行验证）
+1. ~~Godot 客户端接入 PresentationEventBridge~~ ✅ **VS-7 完成（2026-10-10）**——配对映射 + HitStop/相机全接线；手感待用户 Windows 侧 Godot 编辑器实测
 2. Weapon trail 完整实现（当前简化为 slash arc + weapon pivot tween——ImmediateMesh 拖尾后续）
 3. DDQ-B7 白名单 13 项裁定（拉拽/震地/截脉/全异常/分身/操纵/冻结值注入/打断攻击）
 4. MEH/NJA/SUM/UNS Epic 集中推进

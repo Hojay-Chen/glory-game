@@ -34,13 +34,15 @@ public readonly record struct PresentationEvent(
     float PosX, float PosY, float PosZ)
 {
     public static PresentationEvent From(SimEvent e) => new(
-        Map(e.Kind), (int)e.Tick, e.AttackerId, e.VictimId, e.SkillId, e.DamageRaw,
+        Map(e), (int)e.Tick, e.AttackerId, e.VictimId, e.SkillId, e.DamageRaw,
         e.HitPointX / 65536f, e.HitPointY / 65536f, e.HitPointZ / 65536f);
 
-    private static PresentationEventKind Map(EventKind k) => k switch
+    // Hit 按伤害分流: 有伤害 → DamageApplied（Hit Stop/闪白触发源）；无伤害 → AttackHit（纯接触火花）。
+    // 仍保持「1 个 SimEvent → 1 个 PresentationEvent」，PE01/PE04 的 1:1 不变式不受影响。
+    private static PresentationEventKind Map(SimEvent e) => e.Kind switch
     {
         EventKind.SkillCast => PresentationEventKind.SkillCast,
-        EventKind.Hit => PresentationEventKind.AttackHit,
+        EventKind.Hit => e.DamageRaw > 0 ? PresentationEventKind.DamageApplied : PresentationEventKind.AttackHit,
         EventKind.GuardHit => PresentationEventKind.Guarded,
         EventKind.Parry => PresentationEventKind.Parried,
         EventKind.Interrupted => PresentationEventKind.SkillInterrupted,
