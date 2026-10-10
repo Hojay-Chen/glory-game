@@ -18,7 +18,7 @@ public sealed partial class FighterView : Node3D
     private readonly FighterVisualProfile _profile;
 
     // ---- Body ----
-    private readonly MeshInstance3D _body;
+    private readonly Node3D _bodyRig;          // 人形装配根（取代原单胶囊）
     private readonly StandardMaterial3D _bodyMat;
 
     // ---- Weapon ----
@@ -49,15 +49,10 @@ public sealed partial class FighterView : Node3D
 
         var teamCol = team == 0 ? _profile.BodyColor0 : _profile.BodyColor1;
 
-        // Body
-        _bodyMat = new StandardMaterial3D { AlbedoColor = teamCol, EmissionEnabled = true, Emission = new Color(0.05f, 0.05f, 0.05f) };
-        _body = new MeshInstance3D
-        {
-            Mesh = new CapsuleMesh { Radius = _profile.BodyRadius, Height = _profile.BodyHeight },
-            MaterialOverride = _bodyMat,
-            Position = new Godot.Vector3(0, _profile.BodyHeight / 2, 0),
-        };
-        AddChild(_body);
+        // Body —— 人形装配（14 件基本体 + 系别变体件；纯代码，零外部资产）
+        _bodyRig = new Node3D();
+        _bodyMat = FighterMeshBuilder.Build(_bodyRig, _profile, teamCol);
+        AddChild(_bodyRig);
 
         // Weapon（右手侧竖持——AnimationDriver 挥摆）
         _weaponPivot = new Node3D { Position = new Godot.Vector3(0.45f, 1.1f, 0) };
@@ -113,8 +108,8 @@ public sealed partial class FighterView : Node3D
         if (f.Hidden) col = new Color(0.35f, 0.35f, 0.45f);
         _bodyMat.AlbedoColor = col;
 
-        _body.RotationDegrees = f.State == FighterState.Down ? new Godot.Vector3(-90, 0, 0) : Godot.Vector3.Zero;
-        _body.Position = f.State == FighterState.Down ? new Godot.Vector3(0, 0.4f, 0) : new Godot.Vector3(0, _profile.BodyHeight / 2, 0);
+        _bodyRig.RotationDegrees = f.State == FighterState.Down ? new Godot.Vector3(-90, 0, 0) : Godot.Vector3.Zero;
+        _bodyRig.Position = f.State == FighterState.Down ? new Godot.Vector3(0, 0.4f, 0) : Godot.Vector3.Zero;
         _nameTag.Text = f.State == FighterState.Dead ? "KO" : _team == 0 ? $"P1 {f.Hp / 100}" : $"BOT {f.Hp / 100}";
     }
 

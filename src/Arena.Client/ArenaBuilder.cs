@@ -11,24 +11,53 @@ namespace Arena.Client;
 
 public sealed class ArenaBuilder
 {
-    private static readonly Color FloorCol = new(0.28f, 0.30f, 0.34f);
-    private static readonly Color WallCol = new(0.45f, 0.48f, 0.55f);
-    private static readonly Color PlatformCol = new(0.55f, 0.52f, 0.44f);
-    private static readonly Color CoverCol = new(0.40f, 0.36f, 0.30f);
+    // 配色与照明取自 docs/art/art-bible-v1.md §5（地板提亮以衬深色腿部；三灯把角色从背景抠出）
+    private static readonly Color FloorCol = new(0.290f, 0.310f, 0.349f);      // #4A4F59 中性中灰
+    private static readonly Color WallCol = new(0.34f, 0.37f, 0.43f);
+    private static readonly Color PlatformCol = new(0.46f, 0.44f, 0.38f);
+    private static readonly Color CoverCol = new(0.32f, 0.29f, 0.25f);
 
     /// 静态环境（光照/地板——与对局状态无关，只建一次）
     public void BuildEnvironment(Node parent)
     {
         AddBox(parent, 0, 0, 58, 82, 0.2f, FloorCol);
-        var sun = new DirectionalLight3D { RotationDegrees = new Godot.Vector3(-55, 30, 0) };
-        sun.LightEnergy = 1.1f;
-        parent.AddChild(sun);
+
+        // 主光 Key：定义形体与投影方向
+        var key = new DirectionalLight3D
+        {
+            RotationDegrees = new Godot.Vector3(-50, 35, 0),
+            LightColor = new Color(1.0f, 0.965f, 0.910f),   // #FFF6E8
+            LightEnergy = 1.15f,
+            ShadowEnabled = true,
+        };
+        parent.AddChild(key);
+
+        // 补光 Fill：抬暗面，避免纯黑（读姿态）
+        var fill = new DirectionalLight3D
+        {
+            RotationDegrees = new Godot.Vector3(-20, -140, 0),
+            LightColor = new Color(0.788f, 0.839f, 1.0f),   // #C9D6FF 冷调
+            LightEnergy = 0.30f,
+            ShadowEnabled = false,
+        };
+        parent.AddChild(fill);
+
+        // 轮廓光 Rim：从背后打，把角色剪影从背景里抠出来
+        var rim = new DirectionalLight3D
+        {
+            RotationDegrees = new Godot.Vector3(18, 200, 0),
+            LightColor = new Color(0.85f, 0.90f, 1.0f),
+            LightEnergy = 0.60f,
+            ShadowEnabled = false,
+        };
+        parent.AddChild(rim);
+
         var env = new Godot.Environment();
         env.BackgroundMode = Godot.Environment.BGMode.Color;
-        env.BackgroundColor = new Color(0.12f, 0.13f, 0.16f);
+        env.BackgroundColor = new Color(0.078f, 0.090f, 0.118f);   // #14171E 去饱和
         env.AmbientLightSource = Godot.Environment.AmbientSource.Color;
-        env.AmbientLightColor = new Color(0.55f, 0.58f, 0.65f);
-        env.AmbientLightEnergy = 0.8f;
+        env.AmbientLightColor = new Color(0.549f, 0.588f, 0.671f); // #8C96AB
+        env.AmbientLightEnergy = 0.60f;
         parent.AddChild(new WorldEnvironment { Environment = env });
     }
 

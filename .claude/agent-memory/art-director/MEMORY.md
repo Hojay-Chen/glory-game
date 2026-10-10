@@ -1,0 +1,1 @@
+- [美术圣经 v1](art-bible-v1.md) — docs/art/art-bible-v1.md 已产出；双轴色系、6 系剪影、今晚基本体拼装方案；3 项待裁定

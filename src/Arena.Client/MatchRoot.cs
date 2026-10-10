@@ -103,6 +103,14 @@ public partial class MatchRoot : Node
         AddChild(_select);
     }
 
+    /// class_id → 系别名（视觉档案的剪影族依据）
+    private string BranchOf(string classId)
+    {
+        foreach (var c in _classList)
+            if (c.ClassId == classId) return c.Branch;
+        return "";
+    }
+
     /// class_id → 中文名（选人界面与 HUD 显示用）
     private string ClassNameOf(string classId)
     {
@@ -156,7 +164,10 @@ public partial class MatchRoot : Node
         // FighterView
         foreach (var f in _world.Fighters)
         {
-            var view = new FighterView(f.Id, f.Team, Arena.Client.Visuals.FighterVisualProfile.Blade);
+            // 按职业取视觉档案（六系剪影 + 系别徽记色）——此前所有职业硬用同一套 Blade 档案
+            string cls = f.Id == LocalPlayerId ? _playerClass : _enemyClass;
+            var view = new FighterView(f.Id, f.Team,
+                Arena.Client.Visuals.FighterVisualProfile.For(cls, BranchOf(cls)));
             _views[f.Id] = view;
             _matchRoot.AddChild(view);
         }
@@ -325,6 +336,8 @@ public partial class MatchRoot : Node
                 break;
             case PresentationCueKind.HitFlash:
                 if (_views.TryGetValue(cue.VictimId, out var vFlash)) vFlash.OnHitFlash(CuePoint(cue));
+                // 飘伤害数字（第三层命中反馈: 顿帧 → 火花 → 数字）
+                DamagePopup.Spawn(_matchRoot, CuePoint(cue), cue.Damage, isCrit: cue.Damage >= 2000);
                 break;
             case PresentationCueKind.GuardSpark:
                 if (_views.TryGetValue(cue.VictimId, out var vGuard)) vGuard.OnGuard(CuePoint(cue));
