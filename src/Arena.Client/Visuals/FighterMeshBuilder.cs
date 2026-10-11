@@ -3,216 +3,213 @@ using System.Collections.Generic;
 using Godot;
 
 // PRODUCTION - Arena.Client
-// 人形装配器：**关节化**人形（程序化骨架 + 分段网格），零外部资产。
-// 依据 `docs/art/art-bible-v1.md` §4。
+// 人形装配器：加载 **Blender 生成 + 骨骼绑定** 的角色资产（assets/fighter_knight.glb）。
 //
-// 为什么不用静态网格/metaball：静态体块在越肩机位下读不出**四肢与动作**——评审 §2.2 判 FAIL 的主因。
-// 本版改成 FK 骨架：Hips→Chest→Head，Chest→肩→上臂→前臂→手，Hips→大腿→小腿→脚；
-// 每段是可独立旋转的 Node3D 枢轴，FighterView 逐帧写旋转 → 步态/待机/攻击/受击全部由代码驱动。
+// 资产来源（可复现）：Blender MCP → Hyper3D/Rodin 生成白模 → 刚性壳片绑定 19 骨骼 → 导出 GLB。
+// 绑定策略见 docs/art/character-rig.md：
+//   该 AI 网格是"壳片汤"（数千个不连通壳片），Blender 的**热扩散自动权重无解**（全 0 权重），
+//   包络权重会把铠甲撕裂；因此改为**按连通壳片刚性绑到最近骨骼**——硬表面铠甲本就该刚性，
+//   成品是"关节可动的盔甲人"观感，无撕裂。
 //
-// 坐标约定: 原点在脚底、前方 −Z、背面 +Z、右手 +X。总高 ≈ 1.80m。
+// 坐标约定: 原点在脚底、前方 −Z（资产导出后前向为 +Z，此处整体转 180°）。
 namespace Arena.Client.Visuals;
 
-/// 关节化人形骨架引用（FighterView 逐帧写各关节 rotation 做程序化动作）。
+/// 骨骼化角色引用（FighterView 逐帧写骨骼 pose 做程序化动作）。
 public sealed class BodyRig
 {
-    public Node3D Root = null!;      // 整体（呼吸起伏 / 前倾 / 倒地）
-    public Node3D Hips = null!;
-    public Node3D Chest = null!;     // 胸/脊柱
-    public Node3D Head = null!;
-    public Node3D ArmL = null!, ForeL = null!, HandL = null!;
-    public Node3D ArmR = null!, ForeR = null!, HandR = null!;
-    public Node3D ThighL = null!, ShinL = null!, FootL = null!;
-    public Node3D ThighR = null!, ShinR = null!, FootR = null!;
-    public StandardMaterial3D TeamMaterial = null!;   // 状态染色 / 受击闪白的载体
-    public StandardMaterial3D DarkMaterial = null!;
+    public Node3D Root = null!;                  // 实例根（整体位移/前倾/倒地）
+    public Skeleton3D Skel = null!;              // 骨骼
+    public MeshInstance3D Mesh = null!;
+    public BaseMaterial3D BodyMaterial = null!;  // 状态染色 / 受击闪白的载体
+    public Color BaseTint = Colors.White;        // 阵营基础调制（状态染色在其上做乘算）
+    public BoneAttachment3D HandAnchor = null!;  // 右手挂点（武器/尾迹）
+    private readonly Dictionary<string, int> _bones = new();
+
+    public int Bone(string name) => _bones.TryGetValue(name, out var i) ? i : -1;
+    internal void Index()
+    {
+        for (int i = 0; i < Skel.GetBoneCount(); i++) _bones[Skel.GetBoneName(i)] = i;
+    }
+
+    /// 把一次**世界轴**旋转翻译成该骨骼的 pose。
+    ///
+    /// ⚠️ 关键（踩坑记录）：Godot 的 `bone_pose` 是**骨骼相对父级的完整局部变换**，
+    /// `SetBonePoseRotation(idx, Identity)` 会把骨骼自带的 rest 局部旋转一并抹掉——
+    /// 实测把 upperarm 的 pose 置为 identity，手臂会立刻对齐到父级（shoulder）的朝向，
+    /// 也就是"横着张开"。所以必须 `新 pose = (父空间下的世界旋转) × rest 局部旋转`。
+    public Quaternion Around(int boneIdx, Vector3 worldAxis, float deg)
+    {
+        if (boneIdx < 0) return Quaternion.Identity;
+        var rest = Skel.GetBoneRest(boneIdx).Basis.Orthonormalized();
+        int parent = Skel.GetBoneParent(boneIdx);
+        var p = parent >= 0 ? Skel.GetBoneGlobalRest(parent).Basis.Orthonormalized() : Basis.Identity;
+        var r = new Basis(worldAxis.Normalized(), Mathf.DegToRad(deg));
+        // 把世界旋转搬到父级坐标系：parent⁻¹ · R · parent
+        var delta = p.Inverse() * r * p;
+        return (delta * rest).GetRotationQuaternion();
+    }
+
+    public void Pose(string bone, Vector3 worldAxis, float deg)
+    {
+        int i = Bone(bone);
+        if (i >= 0) Skel.SetBonePoseRotation(i, Around(i, worldAxis, deg));
+    }
+}
+
+/// 骨骼空间的三条语义轴——动作代码只关心"前后摆 / 左右张合 / 扭转"，
+/// 由 BodyRig.Around() 负责翻译成每根骨骼的局部轴。
+public static class BodyRigAxes
+{
+    public static readonly Vector3 Fwd = Vector3.Right;     // 绕它转 = 前后摆（腿/臂）
+    public static readonly Vector3 Side = Vector3.Forward;  // 绕它转 = 左右张合
+    public static readonly Vector3 Up = Vector3.Up;         // 绕它转 = 扭转
 }
 
 public static class FighterMeshBuilder
 {
+    public const string ModelPath = "res://assets/fighter_knight.glb";
+
+    private static PackedScene? _bodyScene;
     private static PackedScene? _weaponsScene;
 
-    private static void EnsureWeapons()
-        => _weaponsScene ??= Godot.ResourceLoader.Load<PackedScene>("res://assets/weapons.glb");
+    private static PackedScene? Load(string path, ref PackedScene? cache)
+        => cache ??= Godot.ResourceLoader.Load<PackedScene>(path);
 
-    private static void CollectMeshes(Node n, List<MeshInstance3D> outList)
+    private static void Collect(Node n, List<MeshInstance3D> meshes, ref Skeleton3D? skel)
     {
-        if (n is MeshInstance3D mi) outList.Add(mi);
-        foreach (var c in n.GetChildren()) CollectMeshes(c, outList);
+        if (n is Skeleton3D s && skel is null) skel = s;
+        if (n is MeshInstance3D mi) meshes.Add(mi);
+        foreach (var c in n.GetChildren()) Collect(c, meshes, ref skel);
     }
 
     /// 武器：从 weapons.glb 取该职业所属家族的子节点，挂到握把枢轴上。
     public static void BuildWeapon(Node3D pivot, string meshName, Material weaponMat)
     {
-        EnsureWeapons();
+        Load("res://assets/weapons.glb", ref _weaponsScene);
         if (_weaponsScene?.Instantiate() is not Node3D root) return;
         var want = root.GetNodeOrNull<Node3D>(meshName);
         if (want is null)
-        {
             foreach (var c in root.GetChildren())
                 if (c.Name.ToString().StartsWith("W_", StringComparison.Ordinal)) { want = c as Node3D; break; }
-        }
         if (want is null) { root.QueueFree(); return; }
         want.GetParent()?.RemoveChild(want);
         var meshes = new List<MeshInstance3D>();
-        CollectMeshes(want, meshes);
+        Skeleton3D? _ = null;
+        Collect(want, meshes, ref _);
         foreach (var mi in meshes) mi.MaterialOverride = weaponMat;
         pivot.AddChild(want);
         root.QueueFree();
     }
 
-    // ---- 骨架尺寸（脚底 y=0，总高 ≈1.80m）----
-    private const float HipY = 0.94f, ChestY = 1.12f, NeckY = 1.50f, HeadY = 1.64f, HeadR = 0.145f;
-    private const float ThighLen = 0.44f, ShinLen = 0.40f;
-    private const float UpperArmLen = 0.32f, ForeLen = 0.27f;
-
     public static BodyRig Build(Node3D parent, FighterVisualProfile p, Color teamColor, byte team)
     {
         var rig = new BodyRig();
-        rig.TeamMaterial = Mat(teamColor);
-        rig.DarkMaterial = Mat(FighterVisualProfile.DarkPart);
-        rig.TeamMaterial.EmissionEnabled = true;                 // 预留：受击闪白写 Emission
-        rig.TeamMaterial.Emission = Colors.Black;
-        var teamMat = rig.TeamMaterial;
-        var darkMat = rig.DarkMaterial;
-        var accentMat = Mat(p.Accent, emissive: true);
-        // 前臂/小腿：只比躯干暗一档——**必须在地板底色之上可读**（此前压到 0.28 使下半身与地板糊在一起，
-        // 视觉上整个人"缩水"一半；这是本轮最重要的一处"看不清"根因）。
-        var limbMat = Mat(teamColor.Darkened(0.12f));
-        var gearMat = Mat(new Color(0.30f, 0.33f, 0.39f));       // 靴/手/骨盆：中灰护具（对比地板）
+        Load(ModelPath, ref _bodyScene);
+        if (_bodyScene?.Instantiate() is not Node3D inst)
+        {
+            GD.PushError($"角色资产缺失: {ModelPath}");
+            return rig;
+        }
 
-        rig.Root = Joint(parent, "Root", Godot.Vector3.Zero);
+        // glTF 导出后前向为 +Z（Blender 前向 −Y → glTF +Z），Godot 前向为 −Z → 整体转 180°
+        var holder = new Node3D { Name = "BodyModel", RotationDegrees = new Vector3(0, 180, 0) };
+        holder.AddChild(inst);
+        parent.AddChild(holder);
+        rig.Root = holder;
 
-        // --- 躯干 ---
-        rig.Hips = Joint(rig.Root, "Hips", new Godot.Vector3(0, HipY, 0));
-        Box(rig.Hips, gearMat, new Godot.Vector3(0.34f, 0.20f, 0.22f), new Godot.Vector3(0, -0.02f, 0));   // 骨盆
+        var meshes = new List<MeshInstance3D>();
+        Skeleton3D? skel = null;
+        Collect(inst, meshes, ref skel);
+        rig.Skel = skel!;
+        rig.Mesh = meshes.Count > 0 ? meshes[0] : null!;
+        rig.Index();
 
-        rig.Chest = Joint(rig.Hips, "Chest", new Godot.Vector3(0, ChestY - HipY, 0));
-        // 胸廓：躯干箱 + 顶部"肩轭"箱 → 干净的宽肩剪影（棱柱在实机里读作几何碎片，已弃用）
-        Box(rig.Chest, teamMat, new Godot.Vector3(0.34f, 0.44f, 0.24f), new Godot.Vector3(0, 0.20f, 0));
-        Box(rig.Chest, teamMat, new Godot.Vector3(0.52f, 0.15f, 0.26f), new Godot.Vector3(0, 0.36f, 0));
-        Box(rig.Chest, accentMat, new Godot.Vector3(0.15f, 0.11f, 0.03f), new Godot.Vector3(0, 0.24f, -0.13f)); // 胸徽
+        // 材质：复制资产自带材质（保留 PBR 贴图），再按阵营/状态做**调制**染色
+        if (rig.Mesh is not null && rig.Mesh.Mesh.GetSurfaceCount() > 0 &&
+            rig.Mesh.Mesh.SurfaceGetMaterial(0) is BaseMaterial3D src)
+        {
+            var mat = (BaseMaterial3D)src.Duplicate();
+            rig.BaseTint = Tint(teamColor);
+            mat.AlbedoColor = rig.BaseTint;
+            rig.Mesh.MaterialOverride = mat;
+            rig.BodyMaterial = mat;
+        }
+        else
+        {
+            rig.BaseTint = Tint(teamColor);
+            rig.BodyMaterial = new StandardMaterial3D { AlbedoColor = rig.BaseTint };
+            if (rig.Mesh is not null) rig.Mesh.MaterialOverride = rig.BodyMaterial;
+        }
 
-        rig.Head = Joint(rig.Chest, "Head", new Godot.Vector3(0, NeckY - ChestY + 0.06f, 0));
-        Sphere(rig.Head, darkMat, HeadR, new Godot.Vector3(0, HeadY - NeckY - 0.06f, 0));                   // 头
-        Box(rig.Head, accentMat, new Godot.Vector3(0.11f, 0.015f, 0.05f), new Godot.Vector3(0, HeadY - NeckY - 0.04f, -HeadR)); // 面甲缝
+        // 右手挂点：BoneAttachment3D 跟随 hand.R 骨骼（武器随手臂动作一起走）
+        if (rig.Skel is not null && rig.Bone("hand.R") >= 0)
+        {
+            var att = new BoneAttachment3D { Name = "HandR", BoneName = "hand.R" };
+            rig.Skel.AddChild(att);
+            rig.HandAnchor = att;
+        }
 
-        // --- 手臂（肩枢轴在胸顶两侧）---
-        (rig.ArmL, rig.ForeL, rig.HandL) = Arm(rig.Chest, teamMat, limbMat, gearMat, +1f);
-        (rig.ArmR, rig.ForeR, rig.HandR) = Arm(rig.Chest, teamMat, limbMat, gearMat, -1f);
-
-        // --- 腿 ---
-        (rig.ThighL, rig.ShinL, rig.FootL) = Leg(rig.Hips, teamMat, limbMat, gearMat, +1f);
-        (rig.ThighR, rig.ShinR, rig.FootR) = Leg(rig.Hips, teamMat, limbMat, gearMat, -1f);
-
-        BuildBranchParts(rig, p, teamMat, darkMat, accentMat);
         BuildTeamMarkers(rig.Root, teamColor, team);   // 阵营识别（形状 + 色双通道）
-
+        _ = p;
+        if (OS.GetEnvironment("ARENA_DEBUG") == "1")
+        {
+            GD.Print($"[RIG] bones={rig.Skel?.GetBoneCount()} surf={rig.Mesh?.Mesh.GetSurfaceCount()} " +
+                     $"mat={rig.BodyMaterial?.GetType().Name} albedo={rig.BodyMaterial?.AlbedoColor} " +
+                     $"tex={rig.BodyMaterial?.AlbedoTexture?.GetType().Name}");
+            GD.Print($"[RIG] meshAabb={rig.Mesh?.GetAabb()}");
+            foreach (var n in new[] { "hand.L", "hand.R", "head", "thigh.L" })
+            {
+                int i = rig.Bone(n);
+                if (i >= 0 && rig.Skel is not null) GD.Print($"[RIG] {n} rest={rig.Skel.GetBoneGlobalRest(i).Origin}");
+            }
+            GD.Print($"[RIG] skelScale={rig.Skel?.Scale} rootScale={rig.Root?.Scale} holderRot={rig.Root?.RotationDegrees}");
+            int ul = rig.Bone("upperarm.L");
+            if (ul >= 0 && rig.Skel is not null)
+            {
+                var rb = rig.Skel.GetBoneGlobalRest(ul).Basis;
+                GD.Print($"[RIG] upperarm.L basisX={rb.X} basisY={rb.Y} basisZ={rb.Z}");
+                GD.Print($"[RIG] local(Fwd=+X)={rb.Inverse() * Vector3.Right}  local(Side=+Z)={rb.Inverse() * Vector3.Forward}");
+            }
+        }
         return rig;
     }
 
-    private static (Node3D arm, Node3D fore, Node3D hand) Arm(Node3D chest, Material upper, Material lower, Material dark, float side)
+    /// 阵营染色：只做**轻度**调制（保留铠甲材质本身的金属/布料层次，不做纯色覆盖）。
+    /// 注意先按**最大通道**归一化——若按亮度归一化会产生 >1 的分量，被钳制后既偏色又过曝。
+    private static Color Tint(Color teamColor)
     {
-        var sh = Joint(chest, side > 0 ? "ArmL" : "ArmR", new Godot.Vector3(side * 0.235f, 0.34f, 0));
-        CapsuleExt(sh, upper, 0.062f, UpperArmLen);
-        var fore = Joint(sh, "Fore", new Godot.Vector3(0, -UpperArmLen, 0));
-        CapsuleExt(fore, lower, 0.052f, ForeLen);
-        var hand = Joint(fore, "Hand", new Godot.Vector3(0, -ForeLen, 0));
-        Sphere(hand, dark, 0.062f, new Godot.Vector3(0, -0.03f, 0));
-        return (sh, fore, hand);
-    }
-
-    private static (Node3D thigh, Node3D shin, Node3D foot) Leg(Node3D hips, Material upper, Material lower, Material dark, float side)
-    {
-        var th = Joint(hips, side > 0 ? "ThighL" : "ThighR", new Godot.Vector3(side * 0.105f, -0.06f, 0));
-        CapsuleExt(th, upper, 0.078f, ThighLen);
-        var sh = Joint(th, "Shin", new Godot.Vector3(0, -ThighLen, 0));
-        CapsuleExt(sh, lower, 0.062f, ShinLen);
-        var ft = Joint(sh, "Foot", new Godot.Vector3(0, -ShinLen, 0));
-        Box(ft, dark, new Godot.Vector3(0.11f, 0.06f, 0.24f), new Godot.Vector3(0, -0.03f, -0.05f));   // 脚掌向前伸
-        return (th, sh, ft);
-    }
-
-    /// 系别变体件：肩垫 / 头饰 / 背饰 / 下摆——挂在胸或髋上，保留六系剪影差异。
-    private static void BuildBranchParts(BodyRig rig, FighterVisualProfile p,
-        StandardMaterial3D teamMat, StandardMaterial3D darkMat, StandardMaterial3D accentMat)
-    {
-        void Shoulders(Godot.Vector3 size, float x, Material m)
-        {
-            Box(rig.Chest, m, size, new Godot.Vector3(x, 0.34f, 0));
-            Box(rig.Chest, m, size, new Godot.Vector3(-x, 0.34f, 0));
-        }
-
-        switch (p.Shape)
-        {
-            case BranchShape.Mage:      // 大肩袍 + 尖帽 + A 字下摆
-                Shoulders(new Godot.Vector3(0.17f, 0.11f, 0.17f), 0.25f, darkMat);
-                Prism(rig.Head, accentMat, new Godot.Vector3(0.22f, 0.32f, 0.22f), new Godot.Vector3(0, HeadY - NeckY + 0.12f, 0));
-                Cyl(rig.Hips, darkMat, 0.25f, 0.60f, new Godot.Vector3(0, -0.34f, 0), topR: 0.16f);   // 法袍下摆
-                break;
-            case BranchShape.Blade:     // 宽肩甲 + 短披风
-                Shoulders(new Godot.Vector3(0.21f, 0.13f, 0.19f), 0.26f, darkMat);
-                Box(rig.Chest, Mat(p.Accent.Darkened(0.35f)), new Godot.Vector3(0.32f, 0.52f, 0.05f), new Godot.Vector3(0, 0.18f, 0.15f));
-                break;
-            case BranchShape.Gunner:    // 扁肩甲 + 斜弹带 + 腰袋
-                Shoulders(new Godot.Vector3(0.19f, 0.08f, 0.15f), 0.27f, darkMat);
-                Box(rig.Chest, accentMat, new Godot.Vector3(0.10f, 0.44f, 0.06f), new Godot.Vector3(0.17f, 0.20f, 0.14f));
-                Box(rig.Hips, darkMat, new Godot.Vector3(0.14f, 0.12f, 0.10f), new Godot.Vector3(-0.20f, 0.02f, 0.12f));
-                break;
-            case BranchShape.Brawler:   // 低重心 + 放大拳
-                Shoulders(new Godot.Vector3(0.15f, 0.09f, 0.15f), 0.29f, darkMat);
-                Sphere(rig.HandL, darkMat, 0.095f, new Godot.Vector3(0, -0.04f, 0));
-                Sphere(rig.HandR, darkMat, 0.095f, new Godot.Vector3(0, -0.04f, 0));
-                break;
-            case BranchShape.Night:     // 兜帽收顶 + 背披流苏
-                Prism(rig.Head, darkMat, new Godot.Vector3(0.26f, 0.30f, 0.30f), new Godot.Vector3(0, HeadY - NeckY + 0.06f, 0));
-                Box(rig.Chest, accentMat, new Godot.Vector3(0.28f, 0.50f, 0.05f), new Godot.Vector3(0, 0.16f, 0.15f));
-                break;
-            case BranchShape.Cleric:    // 头盔 + 大肩甲 + 背盾
-                Sphere(rig.Head, darkMat, 0.17f, new Godot.Vector3(0, HeadY - NeckY + 0.01f, 0));
-                Shoulders(new Godot.Vector3(0.25f, 0.17f, 0.23f), 0.28f, darkMat);
-                Box(rig.Chest, accentMat, new Godot.Vector3(0.12f, 0.58f, 0.42f), new Godot.Vector3(0, 0.14f, 0.20f));
-                break;
-            default:                    // 散人：中性 + 收拢的万象伞背在身后
-                Shoulders(new Godot.Vector3(0.16f, 0.10f, 0.16f), 0.26f, darkMat);
-                Cyl(rig.Chest, accentMat, 0.04f, 1.10f, new Godot.Vector3(0, 0.05f, 0.17f));
-                break;
-        }
+        float m = Mathf.Max(teamColor.R, Mathf.Max(teamColor.G, teamColor.B));
+        var hue = m > 0.0001f ? new Color(teamColor.R / m, teamColor.G / m, teamColor.B / m) : Colors.White;
+        const float k = 0.30f;
+        return new Color(
+            Mathf.Lerp(1f, hue.R, k) * 0.90f,
+            Mathf.Lerp(1f, hue.G, k) * 0.90f,
+            Mathf.Lerp(1f, hue.B, k) * 0.90f);
     }
 
     /// 阵营识别件（蓝=方肩徽 + 方角地环；橙=圆肩徽 + 圆环地环）——形状冗余，色盲可分。
     public static void BuildTeamMarkers(Node3D root, Color teamColor, byte team)
     {
         var mat = Mat(teamColor, emissive: true);
-        var ring = new MeshInstance3D
+        root.AddChild(new MeshInstance3D
         {
-            Mesh = new CylinderMesh { TopRadius = 0.60f, BottomRadius = 0.60f, Height = 0.03f },
+            Mesh = new CylinderMesh { TopRadius = 0.62f, BottomRadius = 0.62f, Height = 0.03f },
             MaterialOverride = Mat(teamColor.Darkened(0.25f), emissive: true),
-            Position = new Godot.Vector3(0, 0.02f, 0),
-        };
-        root.AddChild(ring);
-
+            Position = new Godot.Vector3(0, 0.03f, 0),
+        });
+        // 肩甲上的小徽记（贴在肩后侧——大部分机位都看得到，又不挡脸）
         foreach (float sx in new[] { 1f, -1f })
         {
             Mesh mesh = team == 0
-                ? new BoxMesh { Size = new Godot.Vector3(0.13f, 0.11f, 0.13f) }
-                : new SphereMesh { Radius = 0.075f, Height = 0.15f };
+                ? new BoxMesh { Size = new Godot.Vector3(0.085f, 0.075f, 0.085f) }
+                : new SphereMesh { Radius = 0.05f, Height = 0.10f };
             root.AddChild(new MeshInstance3D
             {
                 Mesh = mesh,
                 MaterialOverride = mat,
-                Position = new Godot.Vector3(0.305f * sx, 1.46f, 0),
+                Position = new Godot.Vector3(0.215f * sx, 1.47f, -0.115f),
             });
         }
-    }
-
-    // ---- 基本体工厂 ----
-
-    private static Node3D Joint(Node3D parent, string name, Godot.Vector3 pos)
-    {
-        var n = new Node3D { Name = name, Position = pos };
-        parent.AddChild(n);
-        return n;
     }
 
     private static StandardMaterial3D Mat(Color c, bool emissive = false) => new()
@@ -224,38 +221,4 @@ public static class FighterMeshBuilder
         Emission = emissive ? c : Colors.Black,
         EmissionEnergyMultiplier = emissive ? 0.50f : 0f,
     };
-
-    private static void Add(Node3D parent, MeshInstance3D mi, Material m, Godot.Vector3 pos)
-    {
-        mi.MaterialOverride = m;
-        mi.Position = pos;
-        parent.AddChild(mi);
-    }
-
-    /// 从关节沿 −Y 向下延伸的胶囊（骨骼段）。len 为段长。
-    private static void CapsuleExt(Node3D joint, Material m, float r, float len)
-    {
-        var mi = new MeshInstance3D { Mesh = new CapsuleMesh { Radius = r, Height = len } };
-        Add(joint, mi, m, new Godot.Vector3(0, -len / 2f, 0));
-    }
-
-    private static void Box(Node3D parent, Material m, Godot.Vector3 size, Godot.Vector3 pos) =>
-        Add(parent, new MeshInstance3D { Mesh = new BoxMesh { Size = size } }, m, pos);
-
-    private static void Sphere(Node3D parent, Material m, float r, Godot.Vector3 pos) =>
-        Add(parent, new MeshInstance3D { Mesh = new SphereMesh { Radius = r, Height = r * 2f, RadialSegments = 20, Rings = 12 } }, m, pos);
-
-    private static void Cyl(Node3D parent, Material m, float r, float h, Godot.Vector3 pos, float? topR = null) =>
-        Add(parent, new MeshInstance3D
-        {
-            Mesh = new CylinderMesh { TopRadius = topR ?? r, BottomRadius = r, Height = h, RadialSegments = 16 },
-        }, m, pos);
-
-    /// PrismMesh 默认尖端朝上；flip=true 则尖端朝下（做宽肩窄腰的胸廓/下摆）。
-    private static void Prism(Node3D parent, Material m, Godot.Vector3 size, Godot.Vector3 pos, bool flip = false)
-    {
-        var mi = new MeshInstance3D { Mesh = new PrismMesh { Size = size } };
-        if (flip) mi.RotationDegrees = new Godot.Vector3(180, 0, 0);
-        Add(parent, mi, m, pos);
-    }
 }
