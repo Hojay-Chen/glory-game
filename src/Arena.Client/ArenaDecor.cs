@@ -27,6 +27,12 @@ public static class ArenaDecor
     private static readonly StandardMaterial3D RailMat =
         new() { AlbedoColor = new Color(0.353f, 0.376f, 0.431f), Roughness = 0.45f, Metallic = 0.35f };  // 围栏金属
 
+    /// 看台体 / 围栏——供 ArenaBuilder 的看台环复用（保持单一材质来源）。
+    public static void Bench(Node parent, float x, float z, Godot.Vector3 size) =>
+        Piece(parent, x, size.Y / 2f, z, size, BleacherMat);
+    public static void Rail(Node parent, float x, float y, float z, Godot.Vector3 size) =>
+        Piece(parent, x, y, z, size, RailMat);
+
     private static StandardMaterial3D Emissive(Color c, float energy, float rough, float metal) => new()
     {
         AlbedoColor = c,
@@ -61,7 +67,9 @@ public static class ArenaDecor
         }
 
         // ============ 1. 擂台边缘高光描边（可见的近场焦点——暖金自发光环）============
-        AddTorus(parent, px, ph + 0.06f, pz, pr - 0.05f, pr + 0.05f, RimMat, flattenY: 1f, segments: 64);
+        // 注：擂台已改为**与地面齐平**的涂装台面（见 ArenaBuilder，Sim 把 platform 视为穿透），
+        // 故描边必须贴地（y≈0.12）；此前用 ph+0.06 会让光环浮在半空。
+        AddTorus(parent, px, 0.12f, pz, pr - 0.05f, pr + 0.05f, RimMat, flattenY: 1f, segments: 64);
         // 擂台基座轮廓线（地面上一圈冷色细线，把台体从地板上"切"出来）
         AddTorus(parent, px, 0.04f, pz, pr + 0.55f, pr + 0.75f, GuideMat, flattenY: 0.4f, segments: 64);
 
@@ -83,18 +91,8 @@ public static class ArenaDecor
             Piece(parent, x, h + 0.70f, z, new Godot.Vector3(0.5f, 0.5f, 0.5f), RimMat);       // 顶灯
         }
 
-        // ============ 4. 观众席 + 围栏意象（结界外的抬升看台环，暗色退让）============
-        float bx = hw + 3.5f, bz = hd + 3.5f;           // 看台中心（墙外 3.5m）
-        float bw = (hw + 6f) * 2f, bd = (hd + 6f) * 2f; // 看台长度（对齐地板外缘）
-        Bench(parent, 0f, bz, new Godot.Vector3(bw, 2.2f, 5f));
-        Bench(parent, 0f, -bz, new Godot.Vector3(bw, 2.2f, 5f));
-        Bench(parent, bx, 0f, new Godot.Vector3(5f, 2.2f, bd));
-        Bench(parent, -bx, 0f, new Godot.Vector3(5f, 2.2f, bd));
-        // 围栏（看台顶沿的细挡板——长条大件，非小件堆砌）
-        RailX(parent, 0f, bz, bw);     // N：沿 X 长
-        RailX(parent, 0f, -bz, bw);    // S
-        RailZ(parent, bx, 0f, bd);     // E：沿 Z 长
-        RailZ(parent, -bx, 0f, bd);    // W
+        // 注：观众席已由 ArenaBuilder.BuildSkyAndEnclosure 统一建（3 级看台 + 人群），
+        // 此处不再重复建 bench/rail，避免两层看台互相穿插。
     }
 
     // ---- 装配辅助 ----
@@ -114,18 +112,6 @@ public static class ArenaDecor
     /// 地面刻线（细长 Box 平贴在 y=0.03）
     private static void Mark(Node parent, float x, float z, Godot.Vector3 size) =>
         Piece(parent, x, 0.03f, z, size, GuideMat);
-
-    /// 看台体（底面贴地，中心抬到 size.y/2）
-    private static void Bench(Node parent, float x, float z, Godot.Vector3 size) =>
-        Piece(parent, x, size.Y / 2f, z, size, BleacherMat);
-
-    /// 围栏挡板（坐在看台顶 y=2.2 之上；沿 X 长）
-    private static void RailX(Node parent, float x, float z, float length) =>
-        Piece(parent, x, 2.7f, z, new Godot.Vector3(length, 1.0f, 0.16f), RailMat);
-
-    /// 围栏挡板（沿 Z 长）
-    private static void RailZ(Node parent, float x, float z, float length) =>
-        Piece(parent, x, 2.7f, z, new Godot.Vector3(0.16f, 1.0f, length), RailMat);
 
     private static void Piece(Node parent, float x, float y, float z, Godot.Vector3 size, Material m) =>
         parent.AddChild(new MeshInstance3D

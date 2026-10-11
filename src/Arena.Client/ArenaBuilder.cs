@@ -16,7 +16,7 @@ public sealed class ArenaBuilder
     // ---- 材质分层（每类不同 Roughness/Metallic/Albedo，杜绝"一片同灰"——§2.3）----
     // 共用实例（非每件 new）: gl_compatibility 对 draw call 敏感，材质复用便于批处理与降内存。
     private static readonly StandardMaterial3D FloorMat =
-        Mat(new Color(0.130f, 0.145f, 0.175f), 0.90f, 0.00f);   // 石地 冷石板（压暗——给角色做亮底衬）
+        Mat(new Color(0.082f, 0.092f, 0.118f), 0.90f, 0.00f);   // 石地 冷石板（压暗——给角色/刻线做底衬）
     private static readonly StandardMaterial3D WallMat =
         Mat(new Color(0.318f, 0.345f, 0.405f), 0.72f, 0.08f);   // 结界墙 冷灰石（抬高以显剪影）
     private static readonly StandardMaterial3D PlatformMat =
@@ -38,6 +38,9 @@ public sealed class ArenaBuilder
     // 用**环形刻线**而非整盘高光来提供近场焦点，避免"一块大煎饼"）
     private static readonly StandardMaterial3D ArenaDeckMat =
         Mat(new Color(0.238f, 0.222f, 0.190f), 0.66f, 0.10f);
+    // 擂台包边（低矮金属压条——给台面一个"边界"，同时绝不遮挡角色）
+    private static readonly StandardMaterial3D CurbMat =
+        Mat(new Color(0.155f, 0.140f, 0.115f), 0.42f, 0.55f);
     private static readonly StandardMaterial3D DeckLineMat =
         Emissive(new Color(0.30f, 0.245f, 0.140f), 0.10f, 0.45f, 0.15f);   // 刻线 暖金**微**自发光（压低——刻线是地面细节不是发光条）
 
@@ -95,8 +98,8 @@ public sealed class ArenaBuilder
         parent.AddChild(new DirectionalLight3D
         {
             RotationDegrees = new Godot.Vector3(-18, -140, 0),
-            LightColor = new Color(0.62f, 0.72f, 1.000f),     // 冷蓝补光（比旧实现更"冷"，拉开冷暖）
-            LightEnergy = 0.38f,
+            LightColor = new Color(0.62f, 0.72f, 1.000f),     // 冷蓝补光
+            LightEnergy = 0.22f,                              // 压低（原 0.38 把场面提得太平、无对比）
             ShadowEnabled = false,
         });
 
@@ -106,7 +109,7 @@ public sealed class ArenaBuilder
         {
             RotationDegrees = new Godot.Vector3(-14, 0, 0),
             LightColor = new Color(0.850f, 0.900f, 1.000f),   // 近白微冷
-            LightEnergy = 0.75f,                              // §5.1 规格 0.5–0.7；略高补偿兼容渲染器的平光
+            LightEnergy = 0.95f,                              // 提高——轮廓光是"从背景里抠出角色"的关键
             ShadowEnabled = false,
         });
     }
@@ -115,42 +118,107 @@ public sealed class ArenaBuilder
 
     private static void BuildSkyAndEnclosure(Node parent, float hw, float hd)
     {
-        // 远景天幕环：一圈**高于界墙的圆柱内壁**，顶边渐隐到天空色。
-        // 作用：给画面一个"地平线/远景"，把 void 顶掉；暗色低对比（§5.2 背景必须退让）。
-        float r = Mathf.Max(hw, hd) + 16f;
-        var ring = new MeshInstance3D
+        // 看台：四面逐级后退/升高的台阶 + 顶层人群带——给"竞技场↔观众"的语境（评审 R-3）。
+        // 人群用**沿看台等分的色块带**表现（几块一组、共用少量材质），而非逐个人形小盒：
+        // gl_compatibility 对 draw call 敏感，这样几十个大件即可读出"坐满的看台"。
+        const int Tiers = 3;
+        var seatMat = new[] { Mat(new Color(0.40f, 0.19f, 0.18f), 0.94f, 0f),
+                              Mat(new Color(0.19f, 0.25f, 0.40f), 0.94f, 0f),
+                              Mat(new Color(0.43f, 0.36f, 0.20f), 0.94f, 0f),
+                              Mat(new Color(0.22f, 0.32f, 0.29f), 0.94f, 0f) };
+        for (int tier = 0; tier < Tiers; tier++)
         {
-            Mesh = new CylinderMesh
+            float off = 3.6f * tier;
+            float h = 2.4f + tier * 2.2f;
+            float zc = hd + 3.6f + off, xc = hw + 3.6f + off;
+            float spanX = hw * 2f + 34f, spanZ = hd * 2f + 34f;
+
+            foreach (float sz in new[] { 1f, -1f })
             {
-                TopRadius = r,
-                BottomRadius = r,
-                Height = 46f,
-                RadialSegments = 48,
-                CapTop = false,
-                CapBottom = false,
-            },
-            MaterialOverride = new StandardMaterial3D
+                ArenaDecor.Bench(parent, 0, sz * zc, new Godot.Vector3(spanX, h, 3.4f));
+                CrowdRow(parent, 0, sz * zc + sz * 0.4f, h, 2.6f, spanX, alongX: true, tier, seatMat);
+                // 前挡板压到 0.36m（原来 1.0m 会把身后的"人群"整排遮住）
+                ArenaDecor.Rail(parent, 0, h + 0.18f, sz * (zc - 1.62f), new Godot.Vector3(spanX, 0.36f, 0.14f));
+            }
+            foreach (float sx in new[] { 1f, -1f })
             {
-                AlbedoColor = new Color(0.118f, 0.133f, 0.176f),     // #1E2230 暗沉去饱和
-                Roughness = 1.0f,
-                CullMode = BaseMaterial3D.CullModeEnum.Disabled,     // 双面（相机在环内）
-                ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
-            },
-            Position = new Godot.Vector3(0, 20f, 0),
-        };
-        parent.AddChild(ring);
+                ArenaDecor.Bench(parent, sx * xc, 0, new Godot.Vector3(3.4f, h, spanZ));
+                CrowdRow(parent, sx * xc + sx * 0.4f, 0, h, 2.6f, spanZ, alongX: false, tier, seatMat);
+                ArenaDecor.Rail(parent, sx * (xc - 1.62f), h + 0.18f, 0, new Godot.Vector3(0.14f, 0.36f, spanZ));
+            }
+        }
+
+        // 灯桅：四角高杆 + 发光灯组——给上方空天补纵向结构（竞技场转播感），同时是远景纵深锚点。
+        var mastMat = Mat(new Color(0.10f, 0.11f, 0.13f), 0.55f, 0.45f);
+        var lampMat = Emissive(new Color(1.00f, 0.95f, 0.82f), 1.6f, 0.30f, 0.00f);
+        foreach (float sx in new[] { 1f, -1f })
+            foreach (float sz in new[] { 1f, -1f })
+            {
+                float mx = sx * (hw + 14f), mz = sz * (hd + 14f);
+                const float MastH = 19f;
+                parent.AddChild(new MeshInstance3D
+                {
+                    Mesh = new BoxMesh { Size = new Godot.Vector3(0.55f, MastH, 0.55f) },
+                    MaterialOverride = mastMat,
+                    Position = new Godot.Vector3(mx, MastH / 2f, mz),
+                });
+                parent.AddChild(new MeshInstance3D
+                {
+                    Mesh = new BoxMesh { Size = new Godot.Vector3(3.6f, 1.1f, 1.4f) },
+                    MaterialOverride = lampMat,
+                    Position = new Godot.Vector3(mx, MastH + 0.7f, mz),
+                });
+            }
+    }
+
+    /// 看台顶层的一排"观众"色块（沿长度等分 14 组，共用 4 个材质实例）。
+    private static void CrowdRow(Node parent, float cx, float cz, float topY, float depth,
+        float span, bool alongX, int tier, StandardMaterial3D[] mats)
+    {
+        const int N = 14;
+        float step = span / N;
+        for (int i = 0; i < N; i++)
+        {
+            float t = (i + 0.5f) * step - span / 2f;
+            // 用 tier 错开配色，避免整排同色
+            var m = mats[(i + tier * 3) % mats.Length];
+            float hgt = 0.80f + ((i * 7 + tier * 5) % 3) * 0.16f;
+            var size = alongX
+                ? new Godot.Vector3(step * 0.82f, hgt, depth * 0.55f)
+                : new Godot.Vector3(depth * 0.55f, hgt, step * 0.82f);
+            var pos = alongX
+                ? new Godot.Vector3(cx + t, topY + hgt / 2f, cz)
+                : new Godot.Vector3(cx, topY + hgt / 2f, cz + t);
+            parent.AddChild(new MeshInstance3D
+            {
+                Mesh = new BoxMesh { Size = size },
+                MaterialOverride = m,
+                Position = pos,
+            });
+        }
     }
 
     private static void BuildEnvironmentSettings(Node parent)
     {
+        // 程序化天空：给出真正的"天顶→地平线"渐变（取代此前一块扁平灰墙），
+        // 让远景有纵深；室内剧场式配色（暗天顶 / 亮地平线 / 暗地面）。
+        var skyMat = new ProceduralSkyMaterial
+        {
+            SkyTopColor = new Color(0.085f, 0.105f, 0.170f),
+            SkyHorizonColor = new Color(0.310f, 0.345f, 0.430f),
+            SkyCurve = 0.24f,
+            GroundBottomColor = new Color(0.040f, 0.046f, 0.062f),
+            GroundHorizonColor = new Color(0.150f, 0.170f, 0.215f),
+            SunAngleMax = 40f,
+        };
         var env = new Godot.Environment
         {
-            BackgroundMode = Godot.Environment.BGMode.Color,
-            BackgroundColor = new Color(0.055f, 0.065f, 0.098f),      // 天顶深靛（比地面暗，形成上暗下亮的照明感）
-            AmbientLightSource = Godot.Environment.AmbientSource.Color,
-            AmbientLightColor = new Color(0.560f, 0.600f, 0.690f),    // #8F99B0
-            AmbientLightEnergy = 0.42f,
-            FogEnabled = false,                                        // §5.1: 关雾（否则吃掉 35m 外剪影）
+            BackgroundMode = Godot.Environment.BGMode.Sky,
+            Sky = new Sky { SkyMaterial = skyMat, RadianceSize = Sky.RadianceSizeEnum.Size128 },
+            AmbientLightSource = Godot.Environment.AmbientSource.Sky,   // 环境光取自天空（更自然）
+            AmbientLightEnergy = 0.30f,
+            AmbientLightSkyContribution = 0.75f,
+            FogEnabled = false,                                          // §5.1: 关雾（否则吃掉 35m 外剪影）
         };
         // 注: Compatibility 渲染器不支持色调映射（已实测 tonemap_mode 无效果）→ 只能靠灯光/材质控制曝光
         parent.AddChild(new WorldEnvironment { Environment = env });
@@ -159,17 +227,17 @@ public sealed class ArenaBuilder
     /// 中央擂台盘面 + 同心环刻线——把 r=8m 的大圆盘从"一块煎饼"变成有层次的"擂台"。
     private static void BuildArenaDeck(IReadOnlyList<ArenaDefParser.ArenaObject> objects, Node parent)
     {
-        float px = 0, pz = 0, pr = 8, ph = 1.2f;
+        float px = 0, pz = 0, pr = 8;
         foreach (var o in objects)
             if (o.KindId == ArenaObjectKind.Platform && o.R > 0)
-            { px = (float)o.X; pz = (float)o.Z; pr = (float)o.R; ph = (float)o.Height; }
+            { px = (float)o.X; pz = (float)o.Z; pr = (float)o.R; }
 
-        // 盘面顶皮（略高于台体，给独立的暖石材与刻线）
+        // 盘面顶皮（与地面近乎齐平——薄片，避免遮挡站在其上的角色；给独立的暖石材与刻线）
         parent.AddChild(new MeshInstance3D
         {
-            Mesh = new CylinderMesh { TopRadius = pr - 0.05f, BottomRadius = pr - 0.05f, Height = 0.06f, RadialSegments = 64 },
+            Mesh = new CylinderMesh { TopRadius = pr - 0.12f, BottomRadius = pr - 0.12f, Height = 0.06f, RadialSegments = 64 },
             MaterialOverride = ArenaDeckMat,
-            Position = new Godot.Vector3(px, ph + 0.02f, pz),
+            Position = new Godot.Vector3(px, 0.05f, pz),
         });
         // 同心环刻线（2 圈**细线**——给盘面一个焦点，不做发光条）
         for (int i = 0; i < 2; i++)
@@ -179,7 +247,7 @@ public sealed class ArenaBuilder
             {
                 Mesh = new TorusMesh { InnerRadius = rr - 0.025f, OuterRadius = rr + 0.025f, Rings = 64, RingSegments = 6 },
                 MaterialOverride = DeckLineMat,
-                Position = new Godot.Vector3(px, ph + 0.05f, pz),
+                Position = new Godot.Vector3(px, 0.09f, pz),
                 Scale = new Godot.Vector3(1f, 0.12f, 1f),
             });
         }
@@ -190,7 +258,7 @@ public sealed class ArenaBuilder
             {
                 Mesh = new BoxMesh { Size = new Godot.Vector3(dx != 0 ? pr * 0.9f : 0.06f, 0.04f, dz != 0 ? pr * 0.9f : 0.06f) },
                 MaterialOverride = DeckLineMat,
-                Position = new Godot.Vector3(px + dx * pr * 0.45f, ph + 0.05f, pz + dz * pr * 0.45f),
+                Position = new Godot.Vector3(px + dx * pr * 0.45f, 0.09f, pz + dz * pr * 0.45f),
             });
         }
     }
@@ -211,20 +279,25 @@ public sealed class ArenaBuilder
                     AddBox(parent, o.X + o.HalfW + 0.5m, o.Z, 1, o.HalfD * 2 + 2, 4, WallMat);
                     break;
                 case ArenaObjectKind.Platform:
-                    // 圆台（中央擂台 r8）→ 圆柱；方台（南北高台）→ 立方
+                    // ⚠️ 关键：Sim 侧 BuildTerrain 把 platform/ramp 视为**穿透**（战斗是 XZ 平面判定，
+                    // PosY 只用于击飞/浮空），所以角色恒在 y=0 地面上移动。若这里把中央擂台画成
+                    // 1.2m 实体块，它就会把站在同一坐标的角色**齐胸埋掉**（此前"看不到下半身 / 整个人
+                    // 像一团蹲着的方块"的真凶）。故此处画**与地面齐平的涂装台面**（顶面 y≈0.04），
+                    // 再用低矮包边（0.10m，远低于 1.8m 身高）给出"擂台边界"的读感。
                     if (o.R > 0)
-                        AddCylinder(parent, o.X, o.Z, o.R, (float)o.Height, PlatformMat);
+                    {
+                        AddFlatDisc(parent, o.X, o.Z, o.R, PlatformMat);
+                        AddCurbRing(parent, o.X, o.Z, o.R);
+                    }
                     else
-                        AddBox(parent, o.X, o.Z, o.HalfW * 2, o.HalfD * 2, (float)o.Height, PlatformMat);
+                    {
+                        AddFlatRect(parent, o.X, o.Z, o.HalfW * 2, o.HalfD * 2, PlatformMat);
+                        AddCurbRingRect(parent, o.X, o.Z, o.HalfW, o.HalfD);
+                    }
                     break;
                 case ArenaObjectKind.Ramp:
-                    parent.AddChild(new MeshInstance3D
-                    {
-                        Mesh = new BoxMesh { Size = new Godot.Vector3((float)(o.HalfW * 2), 0.4f, (float)(o.HalfD * 2)) },
-                        MaterialOverride = RampMat,
-                        Position = new Godot.Vector3((float)o.X, (float)(o.Height / 2), (float)o.Z),
-                        RotationDegrees = new Godot.Vector3(-30, 0, 0),
-                    });
+                    // 坡道同样与地面齐平（Sim 明确穿透）——只作为色带提示连通关系。
+                    AddFlatRect(parent, o.X, o.Z, o.HalfW * 2, o.HalfD * 2, RampMat);
                     break;
                 case ArenaObjectKind.CoverWall:
                     AddBox(parent, o.X, o.Z, o.HalfW * 2, o.HalfD * 2, (float)o.Height, CoverMat);
@@ -257,6 +330,59 @@ public sealed class ArenaBuilder
             MaterialOverride = m,
             Position = new Godot.Vector3(0, -thick / 2f, 0),   // 顶面 = 0
         });
+    }
+
+    /// 与地面齐平的圆形涂装台面（顶面 y=0.04，绝不遮挡站在其上的角色）。
+    private static void AddFlatDisc(Node parent, decimal x, decimal z, decimal r, Material m)
+    {
+        parent.AddChild(new MeshInstance3D
+        {
+            Mesh = new CylinderMesh { TopRadius = (float)r, BottomRadius = (float)r, Height = 0.04f, RadialSegments = 64 },
+            MaterialOverride = m,
+            Position = new Godot.Vector3((float)x, 0.02f, (float)z),
+        });
+    }
+
+    /// 与地面齐平的矩形涂装台面。
+    private static void AddFlatRect(Node parent, decimal x, decimal z, decimal w, decimal d, Material m)
+    {
+        parent.AddChild(new MeshInstance3D
+        {
+            Mesh = new BoxMesh { Size = new Godot.Vector3((float)w, 0.04f, (float)d) },
+            MaterialOverride = m,
+            Position = new Godot.Vector3((float)x, 0.02f, (float)z),
+        });
+    }
+
+    /// 擂台圆形包边（低矮金属圈——只做"边界"读感，不构成遮挡）。
+    private static void AddCurbRing(Node parent, decimal x, decimal z, decimal r)
+    {
+        parent.AddChild(new MeshInstance3D
+        {
+            Mesh = new TorusMesh { InnerRadius = (float)r - 0.16f, OuterRadius = (float)r + 0.16f, Rings = 72, RingSegments = 8 },
+            MaterialOverride = CurbMat,
+            Position = new Godot.Vector3((float)x, 0.10f, (float)z),
+            Scale = new Godot.Vector3(1f, 0.6f, 1f),
+        });
+    }
+
+    /// 高台矩形包边（四条低矮边条）。
+    private static void AddCurbRingRect(Node parent, decimal x, decimal z, decimal hw, decimal hd)
+    {
+        foreach (float sz in new[] { 1f, -1f })
+            parent.AddChild(new MeshInstance3D
+            {
+                Mesh = new BoxMesh { Size = new Godot.Vector3((float)(hw * 2) + 0.32f, 0.20f, 0.32f) },
+                MaterialOverride = CurbMat,
+                Position = new Godot.Vector3((float)x, 0.10f, (float)z + sz * (float)hd),
+            });
+        foreach (float sx in new[] { 1f, -1f })
+            parent.AddChild(new MeshInstance3D
+            {
+                Mesh = new BoxMesh { Size = new Godot.Vector3(0.32f, 0.20f, (float)(hd * 2) + 0.32f) },
+                MaterialOverride = CurbMat,
+                Position = new Godot.Vector3((float)x + sx * (float)hw, 0.10f, (float)z),
+            });
     }
 
     private static void AddBox(Node parent, decimal x, decimal z, decimal w, decimal d, float h, Material m)

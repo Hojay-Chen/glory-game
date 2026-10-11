@@ -19,7 +19,8 @@ public sealed partial class FighterView : Node3D
     private readonly string _displayName;
 
     // ---- Body ----
-    private readonly Node3D _bodyRig;          // 人形装配根（取代原单胶囊）
+    private readonly Node3D _bodyRig;          // 人形装配根（整体位移/前倾/倒地）
+    private readonly BodyRig _rig;             // 关节化骨架（逐帧写四肢 rotation）
     private readonly StandardMaterial3D _bodyMat;
 
     // ---- Weapon ----
@@ -56,15 +57,20 @@ public sealed partial class FighterView : Node3D
 
         var teamCol = team == 0 ? _profile.BodyColor0 : _profile.BodyColor1;
 
-        // Body —— 人形装配（14 件基本体 + 系别变体件；纯代码，零外部资产）
+        // Body —— 关节化人形骨架（FK：Hips→Chest→Head / 肩→臂→手 / 髋→腿→脚；纯代码，零外部资产）
         _bodyRig = new Node3D();
-        _bodyMat = FighterMeshBuilder.Build(_bodyRig, _profile, teamCol, _team);
+        _rig = FighterMeshBuilder.Build(_bodyRig, _profile, teamCol, _team);
+        _bodyMat = _rig.TeamMaterial;
         AddChild(_bodyRig);
 
-        // Weapon（右手侧竖持——AnimationDriver 挥摆）
-        _weaponPivot = new Node3D { Position = new Godot.Vector3(0.45f, 1.1f, 0) };
+        // Weapon（**挂在右手**上——随手臂动作一起走，不再是脱手的悬浮物）
+        _weaponPivot = new Node3D
+        {
+            Position = new Godot.Vector3(0, -0.06f, 0),
+            RotationDegrees = new Godot.Vector3(-18, 0, 0),   // 持械基准角（略前倾）
+        };
         _weaponMat = new StandardMaterial3D { AlbedoColor = _profile.WeaponColor, Metallic = 0.6f, Roughness = 0.3f };
-        AddChild(_weaponPivot);
+        _rig.HandR.AddChild(_weaponPivot);
         // 武器来自 assets/weapons.glb 的**职业所属家族**（此前所有职业共用同一个 BoxMesh）
         FighterMeshBuilder.BuildWeapon(_weaponPivot, _profile.WeaponMesh, _weaponMat);
 
@@ -157,9 +163,10 @@ public sealed partial class FighterView : Node3D
         _swingTween?.Kill();
         _tweenPaused = false;
         _swingTween = CreateTween();
-        _weaponPivot.RotationDegrees = new Godot.Vector3(0, 0, -60);
-        _swingTween.TweenProperty(_weaponPivot, "rotation_degrees", new Godot.Vector3(0, 0, 60), 0.12f);
-        _swingTween.TweenProperty(_weaponPivot, "rotation_degrees", Godot.Vector3.Zero, 0.15f);
+        // 前摇后举 → 前劈 → 回持械角（绕 X = 前后劈砍，武器挂在手上故这是"腕+臂"的复合动作）
+        _weaponPivot.RotationDegrees = new Godot.Vector3(-95, 0, 0);
+        _swingTween.TweenProperty(_weaponPivot, "rotation_degrees", new Godot.Vector3(55, 0, 0), 0.12f);
+        _swingTween.TweenProperty(_weaponPivot, "rotation_degrees", new Godot.Vector3(-18, 0, 0), 0.15f);
 
         // 尾迹武装（清掉上一击余点——连续攻击不跨技连线）；实际轨迹在 _Process 逐帧采样
         _trail.Arm(skillId);
@@ -255,13 +262,63 @@ public sealed partial class FighterView : Node3D
 
         if (_lastState == FighterState.Down || _lastState == FighterState.Dead)
         {
-            _bodyRig.Position = new Godot.Vector3(0, 0.4f, 0);
-            _bodyRig.Rotation = new Godot.Vector3(-Mathf.Pi / 2f, 0, 0);
+            _bodyRig.Position = new Godot.Vector3(0, 0.34f, 0.22f);
+            _bodyRig.Rotation = new Godot.Vector3(-Mathf.Pi / 2f * 0.92f, 0, 0);
+            CollapseLimbs();
             return;
         }
 
         _bodyRig.Position = new Godot.Vector3(0, bob, 0);
         _bodyRig.Rotation = new Godot.Vector3(leanX + recoilX, 0, sway);
+
+        // ---- 四肢驱动（程序化动作——评审 §2.2 的"静态网格"整改）----
+        if (run > 0.05f)
+        {
+            // 步态：大腿前后摆 + 膝盖屈伸 + 手臂反摆（A 字摆臂）
+            float phase = _animTime * (5.0f + run * 6.0f);
+            float swing = 0.28f + run * 0.55f;
+            float s = MathF.Sin(phase), c = MathF.Cos(phase);
+            _rig.ThighL.Rotation = new Godot.Vector3(s * swing, 0, 0);
+            _rig.ThighR.Rotation = new Godot.Vector3(-s * swing, 0, 0);
+            _rig.ShinL.Rotation = new Godot.Vector3(-MathF.Max(0f, -c) * (0.7f + run * 0.8f), 0, 0);
+            _rig.ShinR.Rotation = new Godot.Vector3(-MathF.Max(0f, c) * (0.7f + run * 0.8f), 0, 0);
+            _rig.ArmL.Rotation = new Godot.Vector3(-s * swing * 0.85f, 0, 0.12f);
+            _rig.ArmR.Rotation = new Godot.Vector3(s * swing * 0.85f, 0, -0.12f);
+            _rig.ForeL.Rotation = new Godot.Vector3(-0.40f - MathF.Max(0f, s) * 0.45f, 0, 0);
+            _rig.ForeR.Rotation = new Godot.Vector3(-0.40f - MathF.Max(0f, -s) * 0.45f, 0, 0);
+            _rig.Chest.Rotation = new Godot.Vector3(0, 0, s * 0.05f);
+            _rig.Head.Rotation = Godot.Vector3.Zero;
+        }
+        else
+        {
+            // 待机：呼吸起伏 + 双肩微沉 + 头轻点
+            float br = MathF.Sin(_animTime * 1.6f) * 0.5f;
+            _rig.ThighL.Rotation = Godot.Vector3.Zero;
+            _rig.ThighR.Rotation = Godot.Vector3.Zero;
+            _rig.ShinL.Rotation = Godot.Vector3.Zero;
+            _rig.ShinR.Rotation = Godot.Vector3.Zero;
+            _rig.ArmL.Rotation = new Godot.Vector3(br * 0.05f, 0, 0.12f + br * 0.03f);
+            _rig.ArmR.Rotation = new Godot.Vector3(-br * 0.05f, 0, -0.12f - br * 0.03f);
+            _rig.ForeL.Rotation = new Godot.Vector3(-0.34f + br * 0.05f, 0, 0);
+            _rig.ForeR.Rotation = new Godot.Vector3(-0.34f - br * 0.05f, 0, 0);
+            _rig.Chest.Rotation = new Godot.Vector3(0, 0, br * 0.012f);
+            _rig.Head.Rotation = new Godot.Vector3(br * 0.02f, 0, 0);
+        }
+    }
+
+    /// 倒地/阵亡：四肢摊开（配合整体后仰平躺）。
+    private void CollapseLimbs()
+    {
+        _rig.ArmL.Rotation = new Godot.Vector3(0.2f, 0, 0.55f);
+        _rig.ArmR.Rotation = new Godot.Vector3(-0.1f, 0, -0.55f);
+        _rig.ForeL.Rotation = new Godot.Vector3(-0.3f, 0, 0);
+        _rig.ForeR.Rotation = new Godot.Vector3(-0.3f, 0, 0);
+        _rig.ThighL.Rotation = new Godot.Vector3(0.40f, 0, 0.06f);
+        _rig.ThighR.Rotation = new Godot.Vector3(-0.18f, 0, -0.06f);
+        _rig.ShinL.Rotation = new Godot.Vector3(-0.60f, 0, 0);
+        _rig.ShinR.Rotation = new Godot.Vector3(-0.30f, 0, 0);
+        _rig.Chest.Rotation = Godot.Vector3.Zero;
+        _rig.Head.Rotation = Godot.Vector3.Zero;
     }
 
     public override void _Process(double delta)

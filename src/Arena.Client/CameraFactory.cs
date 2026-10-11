@@ -39,20 +39,24 @@ public sealed class CameraFactory
         if (dist < 0.01f) dist = 0.01f;
         var dir = flat / dist;
 
-        // 距离: 越肩基准 4.2m（GDD）+ 随间距 0.4×；上限 11m（再远就把角色压成棋子）
-        float back = Mathf.Clamp(4.2f + dist * 0.40f, 4.2f, 11f);
+        // 距离: 越肩基准 4.0m（GDD）+ 随间距缓增；上限 8m（保持"玩家动作机位"体感，
+        // 不因两人拉开就退成转播机——远端的敌人本就该小，靠场景/角色可读性补，不靠拉远镜头）
+        float back = Mathf.Clamp(3.6f + dist * 0.20f, 3.4f, 7.0f);
 
-        // 机位: 玩家背后，略微抬高并侧移一点（越肩构图，避免完全挡住玩家自己的角色）
+        // 机位: 玩家背后**偏右肩**，并抬高成俯视角。
+        // 关键：两人恒在同一轴线（敌人就在玩家正前方），若机位不侧移，玩家会**整块挡住敌人**。
+        // 侧移(0.66) + 抬高(2.15) + 视线落点也侧移/抬高 三者合力把敌人从玩家身后"挪出来"，
+        // 形成经典越肩射击式构图（玩家在左下、敌人落在中上）。
         var right = new Godot.Vector3(dir.Z, 0, -dir.X);   // 水平右向量
         var focus = new Godot.Vector3(player.X, player.Y, player.Z);
-        var want = focus - dir * back + right * 0.55f + new Godot.Vector3(0, 2.0f + dist * 0.06f, 0);
-        if (want.Y < 0.8f) want.Y = 0.8f;
+        var want = focus - dir * back + right * 0.80f + new Godot.Vector3(0, 2.00f + dist * 0.05f, 0);
+        if (want.Y < 1.0f) want.Y = 1.0f;
 
-        // 视线落点: 偏向敌人（不只是玩家），让敌人处于画面上部、双方都读得到
+        // 视线落点: 偏敌人侧、略高于胸——玩家被推到画面左下，敌人落在中上，双方都读得到
         var target = new Godot.Vector3(
-            player.X + (enemy.X - player.X) * 0.62f,
-            1.25f,
-            player.Z + (enemy.Z - player.Z) * 0.62f);
+            player.X + (enemy.X - player.X) * 0.45f + right.X * 0.22f,
+            1.30f,
+            player.Z + (enemy.Z - player.Z) * 0.45f + right.Z * 0.22f);
 
         if (!_init) { cam.Position = want; _lookAt = target; _init = true; }
         else

@@ -21,13 +21,14 @@ public static class DamagePopup
             Modulate = isCrit ? new Color(1f, 0.85f, 0.2f) : new Color(1f, 0.95f, 0.9f),
             OutlineSize = 10,
             OutlineModulate = new Color(0f, 0f, 0f, 0.85f),
-            Position = worldPos + new Godot.Vector3(0, 1.6f, 0),
+            Position = worldPos + new Godot.Vector3(0, 0.85f, 0),
         };
         parent.AddChild(label);
 
+        // 上浮幅度收窄（原 1.2m 会一路飘到名牌/HUD 上，和「职业名+血条」重叠——评审 R-6）
         var tween = label.CreateTween().SetParallel();
-        tween.TweenProperty(label, "position", label.Position + new Godot.Vector3(0, 1.2f, 0), 0.55f);
-        tween.TweenProperty(label, "modulate:a", 0f, 0.55f);
+        tween.TweenProperty(label, "position", label.Position + new Godot.Vector3(0, 0.55f, 0), 0.62f);
+        tween.TweenProperty(label, "modulate:a", 0f, 0.62f);
         tween.Chain().TweenCallback(Callable.From(label.QueueFree));
     }
 }
