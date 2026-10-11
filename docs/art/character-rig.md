@@ -85,10 +85,47 @@ return (delta * rest).GetRotationQuaternion();                          // ← �
   覆盖会把整张贴图压成一块纯色（曾导致角色变成一团饱和蓝）。
 - 阵营识别件：地面光环（形状冗余：方角 vs 圆环）+ 肩后小徽记（方 vs 圆）。
 
+## 5.5 动作库（CC0 动捕重定向）——2026-10-11
+
+角色本体之外，**46 个动作 clip** 来自 CC0 社区动作库，重定向到本骨架：
+
+| 项 | 值 |
+|----|-----|
+| 来源 | **Quaternius Universal Animation Library（Standard 免费版）**，CC0 |
+| 镜像 | `https://github.com/J-Ponzo/gltf-universal-animation-library`（glTF 导出，Godot 版） |
+| 文件 | `glTF/AnimationLibrary_Godot_Standard.gltf` + `.bin` |
+| 源骨架 | 53 关节（含手指 15×2 / 脚趾），本项目只取其中 19 根 |
+| 重定向 | `tools/retarget_anim.py`（无头 Blender，世界增量法） |
+| 校验 | `tools/render_clips.py` 把若干 clip 各渲一格拼图目视检查 |
+
+**重定向原理（世界增量）**：源骨骼 S 与目标骨骼 T，各自 rest 世界矩阵 S₀ / T₀。
+第 f 帧的"世界增量" `delta = S(f) · S₀⁻¹`，套到目标 rest 上 `T(f) = delta · T₀`。
+给 Blender `pose_bone.matrix` 赋该值即自动解出局部 pose，**与两套骨架 rest 朝向的差异无关**——
+这正是跨骨架重定向能成立的原因。骨骼须按层级顺序处理（父先于子）。
+
+只有 `hips` 跟随平移（跑/跳/翻滚的身体位移），其余骨骼只取旋转，避免和 Sim 的位置权威打架。
+
+**已重定向的 clip**（供 `FighterView.DriveClips` 使用）：
+`Idle` / `Walk` / `Jog_Fwd` / `Sprint` / `Jump` / `Jump_Start` / `Jump_Land` / `Roll` /
+`Sword_Attack` / `Sword_Attack_RM` / `Sword_Idle` / `Punch_Jab` / `Punch_Cross` / `Punch_Enter` /
+`Hit_Chest` / `Hit_Head` / `Death01` / `Crouch_Idle` / `Crouch_Fwd` / `Spell_Simple_*` /
+`Pistol_*`（5 段）/ `Sitting_*` / `Swim_*` / `Dance` / `Interact` / `PickUp_Table` / `Push` …（共 46）
+
+**动作与判定的对齐**：`FighterView.OnAttackStarted` 收到技能 id + **技能实际时长**
+（`MatchRoot.SkillSeconds` 按 `skills.csv` 的 startup+active+recovery 帧算），
+对攻击 clip 做 `SpeedScale = clipLen / skillLen` → 动作与判定窗口对齐。
+
+**Blender 运行方式**：本机（云服务器）装了无头 Blender 4.2.1 LTS（`/home/ubuntu/tools/`），
+比走 Windows 上的 GUI MCP 可靠得多（MCP 桥曾卡死且非管理员账号杀不掉进程）。
+
 ## 6. 待办
 
 | 项 | 说明 |
 |----|------|
 | 分支专属外观 | 目前 24 职业共用这一具"铠甲守卫"；后续按系别各生成一版（提示词须带 empty hands） |
-| 武器朝向微调 | 剑挂在 `hand.R` 的 `BoneAttachment3D` 上，当前朝向可接受但未精修 |
-| 格挡/受击/倒地动作 | 目前只有待机 / 步态 / 倒地摊开；攻击是武器 tween + 骨骼未联动 |
+| 分支专属攻击动作 | 现在所有技能都用 `Sword_Attack`；应按武器家族（枪/杖/枪械/拳）挑不同 clip |
+| 取消窗 / 浮空连招的**动作表现** | 系统侧帧数据已就位，动作侧还需接：取消时的动作切换、空中追打 clip |
+| Mixamo 补充 | 用户要的 Mixamo 免费动作库需要 Adobe 登录后才能下载；CC0 库缺口部分先用自研补 |
+| 刚性绑定的极限姿态 | 大幅跨步时护腿壳片会分离（硬表面盔甲的固有代价）；后续可对少数关节做软权重 |
+| 动作过渡 | 现在只靠 `PlaybackDefaultBlendTime` 全局混合；后续该上 AnimationTree/状态机做分层混合 |
+

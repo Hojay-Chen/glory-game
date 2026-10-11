@@ -20,6 +20,7 @@ public sealed class BodyRig
     public Node3D Root = null!;                  // 实例根（整体位移/前倾/倒地）
     public Skeleton3D Skel = null!;              // 骨骼
     public MeshInstance3D Mesh = null!;
+    public AnimationPlayer Anim = null!;         // 动作库（46 个重定向自 CC0 动捕的动作）
     public BaseMaterial3D BodyMaterial = null!;  // 状态染色 / 受击闪白的载体
     public Color BaseTint = Colors.White;        // 阵营基础调制（状态染色在其上做乘算）
     public BoneAttachment3D HandAnchor = null!;  // 右手挂点（武器/尾迹）
@@ -75,11 +76,12 @@ public static class FighterMeshBuilder
     private static PackedScene? Load(string path, ref PackedScene? cache)
         => cache ??= Godot.ResourceLoader.Load<PackedScene>(path);
 
-    private static void Collect(Node n, List<MeshInstance3D> meshes, ref Skeleton3D? skel)
+    private static void Collect(Node n, List<MeshInstance3D> meshes, ref Skeleton3D? skel, ref AnimationPlayer? anim)
     {
         if (n is Skeleton3D s && skel is null) skel = s;
+        if (n is AnimationPlayer ap && anim is null) anim = ap;
         if (n is MeshInstance3D mi) meshes.Add(mi);
-        foreach (var c in n.GetChildren()) Collect(c, meshes, ref skel);
+        foreach (var c in n.GetChildren()) Collect(c, meshes, ref skel, ref anim);
     }
 
     /// 武器：从 weapons.glb 取该职业所属家族的子节点，挂到握把枢轴上。
@@ -94,8 +96,8 @@ public static class FighterMeshBuilder
         if (want is null) { root.QueueFree(); return; }
         want.GetParent()?.RemoveChild(want);
         var meshes = new List<MeshInstance3D>();
-        Skeleton3D? _ = null;
-        Collect(want, meshes, ref _);
+        Skeleton3D? _ = null; AnimationPlayer? _a = null;
+        Collect(want, meshes, ref _, ref _a);
         foreach (var mi in meshes) mi.MaterialOverride = weaponMat;
         pivot.AddChild(want);
         root.QueueFree();
@@ -118,11 +120,14 @@ public static class FighterMeshBuilder
         rig.Root = holder;
 
         var meshes = new List<MeshInstance3D>();
-        Skeleton3D? skel = null;
-        Collect(inst, meshes, ref skel);
+        Skeleton3D? skel = null; AnimationPlayer? anim = null;
+        Collect(inst, meshes, ref skel, ref anim);
         rig.Skel = skel!;
         rig.Mesh = meshes.Count > 0 ? meshes[0] : null!;
+        rig.Anim = anim!;
         rig.Index();
+        if (rig.Anim is not null)
+            rig.Anim.PlaybackDefaultBlendTime = 0.18f;   // 动作切换留过渡，避免硬切
 
         // 材质：复制资产自带材质（保留 PBR 贴图），再按阵营/状态做**调制**染色
         if (rig.Mesh is not null && rig.Mesh.Mesh.GetSurfaceCount() > 0 &&

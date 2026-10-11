@@ -493,6 +493,16 @@ public partial class MatchRoot : Node
 
     // ================= VS-7 表现线索分发 / 相机偏移（Godot 层唯一职责：cue → 节点操作） =================
 
+    /// 技能的**实际总时长（秒）** = (前摇+判定+后摇)/60 —— 动作按它做速度缩放，
+    /// 视觉与判定窗口对齐（帧数据驱动，GDD §28.4）。
+    private float SkillSeconds(ushort skillId)
+    {
+        var def = _world?.GetSkill(skillId);
+        if (def is null) return 0.6f;
+        int ticks = def.StartupTicks + def.ActiveTicks + def.RecoveryTicks;
+        return ticks <= 0 ? 0.6f : ticks / 60f;
+    }
+
     private void ApplyCameraShake()
     {
         if (_camera is null) return;
@@ -510,7 +520,7 @@ public partial class MatchRoot : Node
         {
             case PresentationCueKind.WeaponSwing:
                 if (_views.TryGetValue(cue.AttackerId, out var atk) && FindFighter(cue.AttackerId) is { } attacker)
-                    atk.OnAttackStarted(cue.SkillId, WorldPos(attacker), StrikeDir(attacker, cue));
+                    atk.OnAttackStarted(cue.SkillId, WorldPos(attacker), StrikeDir(attacker, cue), SkillSeconds(cue.SkillId));
                 break;
             case PresentationCueKind.HitSpark:
                 if (_views.TryGetValue(cue.VictimId, out var vSpark)) vSpark.OnHitSpark(CuePoint(cue));

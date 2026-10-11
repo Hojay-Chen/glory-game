@@ -42,15 +42,13 @@ public sealed partial class FighterView : Node3D
     private readonly WeaponTrail _trail;
 
     // ---- AnimationDriver ----
-    private Tween? _swingTween;
     private float _flash;
+    private float _attackTimer;  // 出招剩余时间（>0 时动作由攻击 clip 自持）
     private bool _frozen;        // Hit Stop 表现冻结
     private float _animTime;     // 表现层动画时钟（与 Sim tick 无关）
     private long _lastSpeedRaw;  // 最近一次同步的速度（决定呼吸/奔跑步频）
     private FighterState _lastState = FighterState.Normal;
     private float _recoil;       // 受击后仰（命中反馈的身体层）
-    private bool _tweenPaused;   // 冻结时暂停挥摆、解冻时恢复（只恢复自己暂停的那次）
-
     public FighterView(int id, byte team, FighterVisualProfile profile, string displayName = "")
     {
         _id = id;
@@ -159,33 +157,38 @@ public sealed partial class FighterView : Node3D
 
     // ================= AnimationDriver（PresentationEvent 驱动） =================
 
-    public void OnAttackStarted(ushort skillId, Godot.Vector3 pos, Godot.Vector3 dir)
+    /// 技能的**实际时长**由调用方按帧数据给出（startup+active+recovery），
+    /// 动作按此时长做速度缩放 → 视觉与判定窗口对齐（GDD §28.4 帧数据驱动）。
+    public void OnAttackStarted(ushort skillId, Godot.Vector3 pos, Godot.Vector3 dir, float totalSec = 0.6f)
     {
-        // 武器挥摆 tween（前摇反馈——出刀感）
-        _swingTween?.Kill();
-        _tweenPaused = false;
-        _swingTween = CreateTween();
-        _weaponPivot.RotationDegrees = new Godot.Vector3(-95, 0, 0);
-        _swingTween.TweenProperty(_weaponPivot, "rotation_degrees", new Godot.Vector3(55, 0, 0), 0.12f);
-        _swingTween.TweenProperty(_weaponPivot, "rotation_degrees", new Godot.Vector3(0, 0, 0), 0.15f);
-
+        _attackTimer = MathF.Max(0.12f, totalSec);
+        if (_rig.Anim is not null)
+        {
+            var a = _rig.Anim.GetAnimation(AttackClip);
+            float len = a?.Length ?? 0f;
+            _rig.Anim.SpeedScale = len > 0.01f ? Mathf.Clamp(len / totalSec, 0.35f, 3.5f) : 1f;
+            _rig.Anim.Play(AttackClip);
+        }
         _trail.Arm(skillId);
     }
 
+    /// 攻击动作用哪一段（按系别/武器家族挑，暂用剑击）
+    private const string AttackClip = "Sword_Attack";
+
     /// 攻击生命周期结束（ActEnded/Cancelled/被打断）——停止采样，余点自然淡出
-    public void OnAttackEnded(ushort skillId) => _trail.Disarm(skillId);
+    public void OnAttackEnded(ushort skillId) { _trail.Disarm(skillId); _attackTimer = 0f; }
 
     /// 终局——立即清空尾迹（不淡出，避免结算画面残留）
     public void OnMatchEnd() => _trail.Clear();
 
-    /// Hit Stop 表现冻结：冻结期暂停挥摆并停止采样
+    /// Hit Stop 表现冻结：冻结期连动作播放一起停住（否则顿帧只有特效停、角色还在动）
     public void SetFrozen(bool frozen)
     {
         if (frozen == _frozen) return;
         _frozen = frozen;
-        if (_swingTween is null || !_swingTween.IsValid()) { _tweenPaused = false; return; }
-        if (frozen && !_tweenPaused && _swingTween.IsRunning()) { _swingTween.Pause(); _tweenPaused = true; }
-        else if (!frozen && _tweenPaused) { if (_swingTween.IsValid()) _swingTween.Play(); _tweenPaused = false; }
+        if (_rig.Anim is null) return;
+        if (frozen) _rig.Anim.Pause();
+        else _rig.Anim.Play();     // 无参 = 从当前处继续
     }
 
     public void OnHitFlash(Godot.Vector3 pos)
@@ -204,8 +207,7 @@ public sealed partial class FighterView : Node3D
 
     public void OnDeath()
     {
-        _swingTween?.Kill();
-        _tweenPaused = false;
+        _attackTimer = 0f;
         _trail.Clear();
     }
 
@@ -233,88 +235,57 @@ public sealed partial class FighterView : Node3D
         tw.Chain().TweenCallback(Callable.From(mi.QueueFree));
     }
 
-    // ================= 程序化动作（写骨骼 pose） =================
+    // ================= 动作驱动（AnimationPlayer 播放重定向好的 CC0 动作） =================
 
-    private const float Rad2Deg = 57.29578f;
+    /// 各档位动作的"设计步速"（m/s）——用来把播放速度缩放到实际移动速度，避免滑步。
+    private const float WalkSpd = 1.7f, JogSpd = 3.6f, SprintSpd = 6.0f;
 
-    /// 每表现帧：尾迹采样 + Hit Flash 衰减 + 骨骼姿态。
-    /// 全部是**加在权威投影之上的偏移**——Sync 决定"在哪"，本函数决定"什么姿态"，不影响 Sim。
+    /// 每表现帧：尾迹采样 + Hit Flash 衰减 + 整体位移 + 动作选择。
+    /// 姿态全部来自动作 clip；本函数只决定"放哪一段、放多快"，是**纯表现**，不影响 Sim。
     private void ApplyMotion(float delta)
     {
         _animTime += delta;
         _recoil = Math.Max(0f, _recoil - delta * 3.2f);
+        if (_attackTimer > 0f) _attackTimer = MathF.Max(0f, _attackTimer - delta);
 
         float speed = _lastSpeedRaw / 65536f;
-        float run = Math.Min(1f, speed / 6f);
+        float run = Math.Min(1f, speed / SprintSpd);
         float bob = MathF.Sin(_animTime * (2.2f + run * 6.5f) * 6.2831853f) * (0.012f + run * 0.035f);
 
-        float leanX = -run * 0.16f;
-        float recoilX = _recoil * 0.42f;
-        float sway = MathF.Sin(_animTime * 1.4f) * 0.015f;
-
-        if (_lastState == FighterState.Down || _lastState == FighterState.Dead)
+        if (_lastState == FighterState.Dead || _lastState == FighterState.Down)
         {
-            _bodyRig.Position = new Godot.Vector3(0, 0.26f, 0.14f);
-            _bodyRig.Rotation = new Godot.Vector3(-Mathf.Pi / 2f * 0.92f, 0, 0);
-            CollapseLimbs();
-            return;
-        }
-
-        _bodyRig.Position = new Godot.Vector3(0, bob, 0);
-        _bodyRig.Rotation = new Godot.Vector3(leanX + recoilX, 0, sway);
-
-        if (_rig.Skel is null) return;
-        if (OS.GetEnvironment("ARENA_NOANIM") == "1") return;   // 诊断：只做整体位移，不写骨骼
-
-        if (run > 0.05f)
-        {
-            // 步态：大腿前后摆 + 膝盖屈伸 + 手臂反摆（绕"左右轴"= 前后方向摆动）
-            float phase = _animTime * (5.0f + run * 6.0f);
-            float swing = 0.30f + run * 0.55f;
-            float s = MathF.Sin(phase), c = MathF.Cos(phase);
-
-            _rig.Pose("thigh.L", BodyRigAxes.Fwd, s * swing * Rad2Deg);
-            _rig.Pose("thigh.R", BodyRigAxes.Fwd, -s * swing * Rad2Deg);
-            _rig.Pose("shin.L", BodyRigAxes.Fwd, -MathF.Max(0f, -c) * (0.75f + run * 0.8f) * Rad2Deg);
-            _rig.Pose("shin.R", BodyRigAxes.Fwd, -MathF.Max(0f, c) * (0.75f + run * 0.8f) * Rad2Deg);
-            _rig.Pose("upperarm.L", BodyRigAxes.Fwd, -s * swing * 0.85f * Rad2Deg);
-            _rig.Pose("upperarm.R", BodyRigAxes.Fwd, s * swing * 0.85f * Rad2Deg);
-            _rig.Pose("forearm.L", BodyRigAxes.Fwd, (-0.35f - MathF.Max(0f, s) * 0.40f) * Rad2Deg);
-            _rig.Pose("forearm.R", BodyRigAxes.Fwd, (-0.35f - MathF.Max(0f, -s) * 0.40f) * Rad2Deg);
-            _rig.Pose("chest", BodyRigAxes.Up, s * 3.5f);
-            _rig.Pose("head", BodyRigAxes.Up, 0f);
+            _bodyRig.Position = Godot.Vector3.Zero;   // 倒地姿态由 Death01 动作给，这里不再人工摆
+            _bodyRig.Rotation = Godot.Vector3.Zero;
         }
         else
         {
-            // 待机：呼吸起伏 + 双肩微沉 + 头轻点
-            float br = MathF.Sin(_animTime * 1.6f) * 0.5f;
-            _rig.Pose("thigh.L", BodyRigAxes.Fwd, 0f);
-            _rig.Pose("thigh.R", BodyRigAxes.Fwd, 0f);
-            _rig.Pose("shin.L", BodyRigAxes.Fwd, 0f);
-            _rig.Pose("shin.R", BodyRigAxes.Fwd, 0f);
-            _rig.Pose("upperarm.L", BodyRigAxes.Fwd, br * 2.5f);
-            _rig.Pose("upperarm.R", BodyRigAxes.Fwd, -br * 2.5f);
-            _rig.Pose("forearm.L", BodyRigAxes.Fwd, -14f + br * 3f);
-            _rig.Pose("forearm.R", BodyRigAxes.Fwd, -14f - br * 3f);
-            _rig.Pose("chest", BodyRigAxes.Up, br * 1.2f);
-            _rig.Pose("head", BodyRigAxes.Fwd, br * 1.6f);
+            _bodyRig.Position = new Godot.Vector3(0, bob, 0);
+            _bodyRig.Rotation = new Godot.Vector3(-run * 0.10f + _recoil * 0.30f, 0, MathF.Sin(_animTime * 1.4f) * 0.012f);
         }
+        DriveClips(speed);
     }
 
-    /// 倒地/阵亡：四肢摊开（配合整体后仰平躺）。
-    private void CollapseLimbs()
+    /// 按状态/速度挑动作。攻击期由 `_attackTimer` 自持，不被打断。
+    private void DriveClips(float speed)
     {
-        if (_rig.Skel is null) return;
-        _rig.Pose("upperarm.L", BodyRigAxes.Side, 42f);
-        _rig.Pose("upperarm.R", BodyRigAxes.Side, -42f);
-        _rig.Pose("forearm.L", BodyRigAxes.Fwd, -18f);
-        _rig.Pose("forearm.R", BodyRigAxes.Fwd, -18f);
-        _rig.Pose("thigh.L", BodyRigAxes.Fwd, 16f);
-        _rig.Pose("thigh.R", BodyRigAxes.Fwd, -8f);
-        _rig.Pose("shin.L", BodyRigAxes.Fwd, -28f);
-        _rig.Pose("shin.R", BodyRigAxes.Fwd, -14f);
-        _rig.Pose("chest", BodyRigAxes.Up, 0f);
-        _rig.Pose("head", BodyRigAxes.Fwd, 0f);
+        var a = _rig.Anim;
+        if (a is null) return;
+
+        string want;
+        float scale = 1f;
+
+        if (_lastState is FighterState.Dead or FighterState.Down) want = "Death01";
+        else if (_lastState == FighterState.Launch) want = "Jump";
+        else if (_lastState == FighterState.Hitstun) want = "Hit_Chest";
+        else if (_attackTimer > 0f) return;                       // 出招中：让攻击动作自己跑完
+        else if (speed > 4.6f) { want = "Sprint"; scale = Mathf.Clamp(speed / SprintSpd, 0.7f, 1.5f); }
+        else if (speed > 1.9f) { want = "Jog_Fwd"; scale = Mathf.Clamp(speed / JogSpd, 0.7f, 1.5f); }
+        else if (speed > 0.22f) { want = "Walk"; scale = Mathf.Clamp(speed / WalkSpd, 0.7f, 1.5f); }
+        else want = "Idle";
+
+        if (a.CurrentAnimation == want) { a.SpeedScale = scale; return; }
+        a.SpeedScale = scale;
+        a.Play(want);
     }
 
     public override void _Process(double delta)
