@@ -482,6 +482,14 @@ public partial class MatchRoot : Node
                     var hits = _world.Events.All.Count(e => e.Kind == EventKind.Hit);
                     Console.WriteLine($"[VS] match over t={_tick} result={result} hits={hits} " +
                         $"hp0={_world.Fighters[0].Hp} hp1={_world.Fighters[1].Hp}");
+                    // 荣耀高光事件统计——确认"系统深度"真的在跑（否则表现层新接的 cue 永远不触发）
+                    var kinds = new[] { EventKind.Cancelled, EventKind.BasicStep, EventKind.Launched,
+                        EventKind.Relaunched, EventKind.Ukemi, EventKind.WallBounced, EventKind.GuardBroken,
+                        EventKind.GetupDone, EventKind.Parry, EventKind.GuardHit, EventKind.Interrupted,
+                        EventKind.ForcedDown, EventKind.FloatProtect };
+                    var tally = string.Join(" ", kinds.Select(k =>
+                        $"{k}={_world.Events.All.Count(e => e.Kind == k)}"));
+                    Console.WriteLine($"[VS] events: {tally}");
                     GetTree().Quit(0);
                 }
             }
@@ -550,6 +558,41 @@ public partial class MatchRoot : Node
             case PresentationCueKind.AttackEnded:
                 // 攻击生命周期结束（自然结束/取消）——收束尾迹
                 if (_views.TryGetValue(cue.AttackerId, out var vEnd)) vEnd.OnAttackEnded(cue.SkillId);
+                break;
+            // ---------- 荣耀高光：此前 Sim 有事件、画面什么都没有 ----------
+            case PresentationCueKind.SkillCancelled:
+                if (_views.TryGetValue(cue.AttackerId, out var vCancel))
+                {
+                    vCancel.OnCancel();
+                    vCancel.OnAttackEnded(cue.SkillId);      // 取消同样要收尾迹
+                }
+                break;
+            case PresentationCueKind.Relaunched:
+                // 二段浮空 = 浮空连招节拍：受击者身上爆一次亮火花 + 屏上打"连击"
+                if (_views.TryGetValue(cue.VictimId, out var vRel)) vRel.OnRelaunched(CuePoint(cue));
+                DamagePopup.SpawnText(_matchRoot, CuePoint(cue), "浮空追击", new Color(1f, 0.78f, 0.35f), 40);
+                break;
+            case PresentationCueKind.Ukemi:
+                if (_views.TryGetValue(cue.VictimId, out var vUkemi))
+                {
+                    vUkemi.OnUkemi(CuePoint(cue));
+                    DamagePopup.SpawnText(_matchRoot, CuePoint(cue), "受身", new Color(0.65f, 0.95f, 1f), 40);
+                }
+                break;
+            case PresentationCueKind.WallBounced:
+                if (_views.TryGetValue(cue.VictimId, out var vWall)) vWall.OnWallBounce(CuePoint(cue));
+                DamagePopup.SpawnText(_matchRoot, CuePoint(cue), "撞墙", new Color(1f, 0.62f, 0.30f), 40);
+                break;
+            case PresentationCueKind.GuardBroken:
+                if (_views.TryGetValue(cue.VictimId, out var vGb)) vGb.OnGuardBroken(CuePoint(cue));
+                DamagePopup.SpawnText(_matchRoot, CuePoint(cue), "破防", new Color(1f, 0.90f, 0.35f), 48);
+                break;
+            case PresentationCueKind.BasicStep:
+                // cue.Value = skills.csv 的 ChainN（第 N 段）——连段在视觉上分段
+                if (_views.TryGetValue(cue.AttackerId, out var vStep)) vStep.OnBasicStep((byte)cue.Value);
+                break;
+            case PresentationCueKind.GetupDone:
+                if (_views.TryGetValue(cue.VictimId, out var vGetup)) vGetup.OnGetupDone();
                 break;
             case PresentationCueKind.Interrupt:
                 // 注: Sim 侧 Interrupted 载荷是 AttackerId=被中断的施法者（字段名与语义不符，

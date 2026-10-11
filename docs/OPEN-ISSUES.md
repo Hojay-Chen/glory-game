@@ -101,6 +101,11 @@
 
 | ID | 内容 | 证据 | 严重度 |
 |----|------|------|--------|
+| EN-10 | **浮空连招在实战里根本触发不了（Sim 真 bug，已修）**：`QueryGround` 的 maxY = PosY+台阶高，角色上抛穿过 1.2m 中央擂台台面时，**台面顶会立刻被当成地面** → 刚起飞就判落地。实测天击后 6 tick 内就 `Down`，`Launched` 整场只有 1 次。**修法**：落地判定加 `VelY ≤ 0`（必须在下落才算落地）。修后 `Launched` 翻倍，浮空弧线正常（1.2→2.95m 顶点） | ✅ 已修 |
+| EN-11 | **`EventKind.BasicStep` 只声明、从不发射（已修）**：普攻连段逻辑本身是对的，但没有任何地方发出该事件 → 客户端既分不出连段、也做不出分段表现（实测整场 0 次，修后 49 次） | ✅ 已修 |
+| EN-12 | **表现层只接了 13 / 38 种 SimEvent（已扩）**：`Cancelled` 原先被**混同成 `ActEnded`**，取消链在画面上完全看不见；`Relaunched/Ukemi/WallBounced/BasicStep/GuardBroken/GetupDone` 全被丢弃。现已全链路打通（Bridge→Cue→客户端动作/特效/飘字） | ✅ 已修 |
+| EN-13 | **荣耀核心操作机制此前 0 测试覆盖**（BasicStep / cancel_min_tier / jump_cancel / 浮空追打 全无）——补 `tests/Arena.Tests/Combat/GloryComboTests.cs`（普攻连段 / 技能取消后摇 / 跳跃取消 / 浮空追打）5 条 | ✅ 已补 |
+| EN-14 | **二段浮空（Relaunched）在 1v1 几乎不可能触发**：各职业**只有 1 个浮空技**（如 BMG 仅天击），且 CD 5~10s，而 Relaunched 要求"浮空技命中已处 Launch 态的敌人" → 需要第二发浮空技。**属数据缺口**（需给各职业补第 2 个浮空技，或放宽为"任何命中浮空目标即计浮空追击"） | ⏳ **待裁定** |
 | EN-06 | **ADR-0010（Accepted）的键位与实际代码完全不符** | ADR 写 Basic=鼠标左键 / Skill=数字键 1–0 / ForceCancel=Alt / Lock=Tab / OrbFire=R；代码是 J / K-L-I-O-P / U / R=重开。**ADR 是 Accepted 状态却实现不了** | 高（文档与实现背离） |
 | EN-07 | **单局时长与 GDD 不符** | GDD §1.7/§20.1 写 **180s**；代码 `MatchRoot.MatchLengthTicks = 3600` = **60s**（60T/s） | 高（影响对局节奏） |
 | EN-08 | **HUD 敌方血条不对称** | 我方 x=30（左边距 30）、敌方原 x=774（右边距 106）；已在本轮修正 | 已关 |

@@ -22,7 +22,15 @@ public enum PresentationEventKind : byte
     FighterDown = 9,        // Landed/ForcedDown（倒地）
     FighterDied = 10,       // Died
     MatchEnded = 11,        // 终局（首个 Died 或外部 Flag——仅一次）
-    AttackEnded = 12,       // ActEnded/Cancelled（本次攻击生命周期结束——武器尾迹收束锚点）
+    AttackEnded = 12,       // ActEnded（自然结束——武器尾迹收束锚点）
+    // ---- 荣耀手感的"高光时刻"——此前全被丢掉或与其它事件混同，导致这些深度在画面上完全看不见 ----
+    SkillCancelled = 13,    // Cancelled（**取消**：技能取消普攻后摇/强制取消/跳跃取消）——原先与 AttackEnded 混同
+    Relaunched = 14,        // Relaunched（**二段浮空**：空中被再次打起——浮空连招的核心节拍）
+    Ukemi = 15,             // Ukemi（**受身**：被击飞时受身）
+    WallBounced = 16,       // WallBounced（**撞墙**：击飞撞结界墙反弹）
+    BasicStep = 17,         // BasicStep（**普攻连段第 N 段**）
+    GuardBroken = 18,       // GuardBroken（**破防**：格挡值被打光）
+    GetupDone = 19,         // GetupDone（起身完成）
 }
 
 public readonly record struct PresentationEvent(
@@ -32,11 +40,12 @@ public readonly record struct PresentationEvent(
     int VictimId,
     ushort SkillId,
     long Damage,
-    float PosX, float PosY, float PosZ)
+    float PosX, float PosY, float PosZ,
+    long Value = 0)   // SimEvent.ValueRaw 透传（普攻连段序号等）
 {
     public static PresentationEvent From(SimEvent e) => new(
         Map(e), (int)e.Tick, e.AttackerId, e.VictimId, e.SkillId, e.DamageRaw,
-        e.HitPointX / 65536f, e.HitPointY / 65536f, e.HitPointZ / 65536f);
+        e.HitPointX / 65536f, e.HitPointY / 65536f, e.HitPointZ / 65536f, e.ValueRaw);
 
     // Hit 按伤害分流: 有伤害 → DamageApplied（Hit Stop/闪白触发源）；无伤害 → AttackHit（纯接触火花）。
     // 仍保持「1 个 SimEvent → 1 个 PresentationEvent」，PE01/PE04 的 1:1 不变式不受影响。
@@ -51,9 +60,15 @@ public readonly record struct PresentationEvent(
         EventKind.Knockback => PresentationEventKind.Knockback,
         EventKind.Landed or EventKind.ForcedDown or EventKind.FallLanded => PresentationEventKind.FighterDown,
         EventKind.Died => PresentationEventKind.FighterDied,
-        // 攻击生命周期结束——自然结束(ActEnded) / 取消(Cancelled) 同义：该执行体不再推进。
-        // 两者载荷均为 AttackerId=执行体主人、SkillId=该技（Cancelled 尤见于取消链）。
-        EventKind.ActEnded or EventKind.Cancelled => PresentationEventKind.AttackEnded,
+        EventKind.ActEnded => PresentationEventKind.AttackEnded,
+        // 取消与自然结束**分开**：取消链是荣耀的核心节奏，画面必须看得见（客户端二者都收尾迹）
+        EventKind.Cancelled => PresentationEventKind.SkillCancelled,
+        EventKind.Relaunched => PresentationEventKind.Relaunched,
+        EventKind.Ukemi => PresentationEventKind.Ukemi,
+        EventKind.WallBounced => PresentationEventKind.WallBounced,
+        EventKind.BasicStep => PresentationEventKind.BasicStep,
+        EventKind.GuardBroken => PresentationEventKind.GuardBroken,
+        EventKind.GetupDone => PresentationEventKind.GetupDone,
         _ => (PresentationEventKind)255,   // 非表现事件（Whiff/StatusExpired 等）——桥接层过滤
     };
 

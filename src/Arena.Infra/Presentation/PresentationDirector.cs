@@ -24,12 +24,21 @@ public enum PresentationCueKind : byte
     Death = 9,         // 阵亡
     MatchEnd = 10,     // 终局（仅一次）
     AttackEnded = 11,  // 攻击者：本次攻击生命周期结束——尾迹收束
+    // ---- 荣耀手感高光（客户端各自给动作/特效/HUD 文案）----
+    SkillCancelled = 12,  // 取消成立（技能取消后摇 / 强制取消 / 跳跃取消）
+    Relaunched = 13,      // 二段浮空（空中追打）
+    Ukemi = 14,           // 受身
+    WallBounced = 15,     // 击飞撞墙反弹
+    BasicStep = 16,       // 普攻连段第 N 段
+    GuardBroken = 17,     // 破防
+    GetupDone = 18,       // 起身完成
 }
 
 public readonly record struct PresentationCue(
     PresentationCueKind Kind, int Tick,
     int AttackerId, int VictimId, ushort SkillId,
-    long Damage, float PosX, float PosY, float PosZ);
+    long Damage, float PosX, float PosY, float PosZ,
+    long Value = 0);   // 事件载荷透传（如普攻连段序号 ChainN）
 
 public sealed class PresentationDirector
 {
@@ -80,6 +89,13 @@ public sealed class PresentationDirector
             PresentationEventKind.FighterDied      => PresentationCueKind.Death,
             PresentationEventKind.MatchEnded       => PresentationCueKind.MatchEnd,
             PresentationEventKind.AttackEnded      => PresentationCueKind.AttackEnded,
+            PresentationEventKind.SkillCancelled   => PresentationCueKind.SkillCancelled,
+            PresentationEventKind.Relaunched       => PresentationCueKind.Relaunched,
+            PresentationEventKind.Ukemi            => PresentationCueKind.Ukemi,
+            PresentationEventKind.WallBounced      => PresentationCueKind.WallBounced,
+            PresentationEventKind.BasicStep        => PresentationCueKind.BasicStep,
+            PresentationEventKind.GuardBroken      => PresentationCueKind.GuardBroken,
+            PresentationEventKind.GetupDone        => PresentationCueKind.GetupDone,
             _ => (PresentationCueKind)255,
         };
 
@@ -110,10 +126,31 @@ public sealed class PresentationDirector
             case PresentationEventKind.MatchEnded:
                 Camera.SetMatchEnd();
                 break;
+            // ---- 荣耀高光的表现层权重（力度按"玩家感知强度"排：二段浮空 > 撞墙 > 破防 > 取消）----
+            case PresentationEventKind.Relaunched:
+                HitStop.TriggerLaunch();
+                Camera.AddTrauma(0.26);
+                break;
+            case PresentationEventKind.WallBounced:
+                Camera.AddTrauma(0.40);
+                break;
+            case PresentationEventKind.GuardBroken:
+                HitStop.TriggerParry();
+                Camera.AddTrauma(0.34);
+                break;
+            case PresentationEventKind.SkillCancelled:
+                Camera.AddTrauma(0.06);          // 取消：轻快的手感顿点，不喧宾夺主
+                break;
+            case PresentationEventKind.Ukemi:
+                Camera.AddTrauma(0.10);
+                break;
+            case PresentationEventKind.GetupDone:
+                Camera.AddTrauma(0.05);
+                break;
         }
 
         return new PresentationCue(
             kind, pe.Tick, pe.AttackerId, pe.VictimId, pe.SkillId,
-            pe.Damage, pe.PosX, pe.PosY, pe.PosZ);
+            pe.Damage, pe.PosX, pe.PosY, pe.PosZ, pe.Value);
     }
 }

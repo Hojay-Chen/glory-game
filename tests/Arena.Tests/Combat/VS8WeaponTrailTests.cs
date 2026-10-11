@@ -143,10 +143,14 @@ public class VS8WeaponTrailTests
         Assert.Equal(-1, buf.ArmedSkill);
     }
 
-    // ================= WL07: 攻击结束事件 → AttackEnded 线索（真实 SimEvent） =================
+    // ================= WL07: 攻击结束事件 → 线索（真实 SimEvent） =================
+    //
+    // 2026-10-11 变更：**取消（Cancelled）不再与自然结束（ActEnded）混同**。
+    // 取消链是《荣耀》的核心节奏，若两者映射到同一条线索，画面上就完全看不出"这一下是取消出来的"。
+    // 客户端对两者**都**收尾迹（见 MatchRoot.DispatchCue），但取消另有专属高光反馈。
 
     [Fact]
-    public void WL07_ActEnded_And_Cancelled_Map_To_AttackEnded_Cue_For_The_Caster()
+    public void WL07_ActEnded_Maps_To_AttackEnded_And_Cancelled_Maps_To_SkillCancelled()
     {
         var director = new PresentationDirector();
 
@@ -157,11 +161,14 @@ public class VS8WeaponTrailTests
         }, Dt);
 
         var ends = cues.Where(c => c.Kind == PresentationCueKind.AttackEnded).ToList();
-        Assert.Equal(2, ends.Count);
+        Assert.Single(ends);
         Assert.Equal(1, ends[0].AttackerId);      // 施法者本人（ActEnded 载荷语义）
         Assert.Equal(42, ends[0].SkillId);
-        Assert.Equal(0, ends[1].AttackerId);
-        Assert.Equal(43, ends[1].SkillId);
+
+        var cancels = cues.Where(c => c.Kind == PresentationCueKind.SkillCancelled).ToList();
+        Assert.Single(cancels);
+        Assert.Equal(0, cancels[0].AttackerId);
+        Assert.Equal(43, cancels[0].SkillId);
     }
 
     // ================= WL08: 真实对局——SkillCast 与 ActEnded 首尾配对 =================

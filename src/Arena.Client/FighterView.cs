@@ -43,7 +43,9 @@ public sealed partial class FighterView : Node3D
 
     // ---- AnimationDriver ----
     private float _flash;
+    private float _cancelGlow;   // 取消成立时的青白闪光
     private float _attackTimer;  // 出招剩余时间（>0 时动作由攻击 clip 自持）
+    private byte _comboStep;     // 当前普攻连段序号（ChainN；0=非普攻）
     private bool _frozen;        // Hit Stop 表现冻结
     private float _animTime;     // 表现层动画时钟（与 Sim tick 无关）
     private long _lastSpeedRaw;  // 最近一次同步的速度（决定呼吸/奔跑步频）
@@ -164,19 +166,23 @@ public sealed partial class FighterView : Node3D
         _attackTimer = MathF.Max(0.12f, totalSec);
         if (_rig.Anim is not null)
         {
-            var a = _rig.Anim.GetAnimation(AttackClip);
+            // 普攻按连段段号在两段剑击之间交替；技能统一用主段
+            string clip = _comboStep > 0 && (_comboStep % 2 == 0) ? AttackClipAlt : AttackClip;
+            if (_rig.Anim.GetAnimation(clip) is null) clip = AttackClip;
+            var a = _rig.Anim.GetAnimation(clip);
             float len = a?.Length ?? 0f;
             _rig.Anim.SpeedScale = len > 0.01f ? Mathf.Clamp(len / totalSec, 0.35f, 3.5f) : 1f;
-            _rig.Anim.Play(AttackClip);
+            _rig.Anim.Play(clip);
         }
         _trail.Arm(skillId);
     }
 
-    /// 攻击动作用哪一段（按系别/武器家族挑，暂用剑击）
+    /// 攻击动作用哪一段（按系别/武器家族挑，暂用剑击；连段在两段之间交替）
     private const string AttackClip = "Sword_Attack";
+    private const string AttackClipAlt = "Sword_Attack_RM";
 
     /// 攻击生命周期结束（ActEnded/Cancelled/被打断）——停止采样，余点自然淡出
-    public void OnAttackEnded(ushort skillId) { _trail.Disarm(skillId); _attackTimer = 0f; }
+    public void OnAttackEnded(ushort skillId) { _trail.Disarm(skillId); _attackTimer = 0f; _comboStep = 0; }
 
     /// 终局——立即清空尾迹（不淡出，避免结算画面残留）
     public void OnMatchEnd() => _trail.Clear();
@@ -204,6 +210,39 @@ public sealed partial class FighterView : Node3D
     public void OnParry(Godot.Vector3 pos) => SpawnSpark(pos, _profile.ParrySparkColor, 14);
     public void OnLaunched() { }
     public void OnDown() { }
+
+    // ================= 荣耀高光反馈（此前 Sim 有事件、画面全无） =================
+
+    /// 取消成立（技能取消普攻后摇 / 强制取消 / 跳跃取消）——已收尾迹 + 一记青白闪光。
+    public void OnCancel()
+    {
+        _attackTimer = 0f;
+        _flash = Mathf.Max(_flash, 0.55f);
+        _cancelGlow = 1f;
+    }
+
+    /// 二段浮空（空中被再次打起）——浮空连招的关键节拍，给最亮的火花。
+    public void OnRelaunched(Godot.Vector3 pos) => SpawnSpark(pos, new Color(1f, 0.78f, 0.35f), 18);
+
+    /// 受身——落地瞬间的翻滚起身
+    public void OnUkemi(Godot.Vector3 pos)
+    {
+        SpawnSpark(pos, new Color(0.65f, 0.95f, 1f), 10);
+        _rig.Anim?.Play("Roll");
+    }
+
+    /// 击飞撞墙反弹
+    public void OnWallBounce(Godot.Vector3 pos) => SpawnSpark(pos, new Color(1f, 0.55f, 0.25f), 16);
+
+    /// 破防（格挡值被打光）
+    public void OnGuardBroken(Godot.Vector3 pos) => SpawnSpark(pos, new Color(1f, 0.9f, 0.35f), 20);
+
+    /// 起身完成——回到常规动作
+    public void OnGetupDone() { }
+
+    /// 普攻连段第 N 段——只记录段号，实际选哪段动作由随后的 OnAttackStarted 决定
+    /// （两者同 Tick 发出；由一处统一播动作，避免互相覆盖）。
+    public void OnBasicStep(byte step) => _comboStep = step;
 
     public void OnDeath()
     {
@@ -294,8 +333,13 @@ public sealed partial class FighterView : Node3D
         _trail.Sample(delta);
         ApplyMotion((float)delta);
 
-        if (_flash <= 0) return;
+        if (_flash <= 0 && _cancelGlow <= 0) return;
         _flash = Math.Max(0, _flash - (float)delta * 6f);
-        if (_bodyMat is not null) _bodyMat.Emission = new Color(_flash, _flash * 0.8f, _flash * 0.5f);
+        _cancelGlow = Math.Max(0, _cancelGlow - (float)delta * 4.5f);
+        if (_bodyMat is not null)
+            _bodyMat.Emission = new Color(
+                _flash,                                        // 受击闪白（暖）
+                _flash * 0.8f + _cancelGlow * 0.85f,           // 取消闪青（冷）——两路叠加
+                _flash * 0.5f + _cancelGlow);
     }
 }

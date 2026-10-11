@@ -78,6 +78,7 @@ public sealed partial class SimWorld
             Atk = atk, Def = def,
             HpMax = 10000, MpMax = 1000,              // GDD §2.5.3 基线（未来 class-base 列驱动）
         };
+        f.PosY = Fixed.Zero;
         if (_classResources.TryGetValue(classId, out var cap))
         {
             f.ResourceCaps[(int)cap.kind] = cap.cap;
@@ -511,6 +512,13 @@ public sealed partial class SimWorld
         Executions.Add(exec);
         f.State = FighterState.Act;
         f.ActiveSkillUid = exec.Uid;
+        // 普攻连段第 N 段——此前该事件**只声明、从不发射**，客户端因此既分不出连段、也做不出分段表现。
+        if (def.Type.StartsWith("basic"))
+            Events.Emit(new SimEvent
+            {
+                Kind = EventKind.BasicStep, AttackerId = f.Id,
+                SkillId = def.RuntimeId, ValueRaw = def.ChainN,
+            });
         // 格挡姿态激活: 盾值置满（GDD §6.2 盾值1500；破碎/结束后 8s 恢复）
         if (def.Guard is { } g)
         {
@@ -1149,7 +1157,10 @@ public sealed partial class SimWorld
                 if (f.PeakY < f.PosY.Raw) f.PeakY = f.PosY.Raw;   // 空中峰值追踪（坠落伤害用）
                 f.VelY = Fixed.FromRaw(f.VelY.Raw - RuntimeConstants.GRAVITY_PER_TICK);
                 f.PosY = Fixed.FromRaw(f.PosY.Raw + DeterministicMath.DivRoundHalfEven(f.VelY.Raw, RuntimeConstants.TICK_RATE));
-                if (f.PosY.Raw <= ground)
+                // ⚠️ 必须同时满足"在下落"才判落地：QueryGround 的 maxY = PosY+台阶高，
+                // 角色上抛穿过 1.2m 的中央擂台台面时，台面顶会**立刻**成为 ground——若只看
+                // `PosY <= ground`，刚起飞就会被判落地（浮空连招因此完全无法成立）。
+                if (f.PosY.Raw <= ground && f.VelY.Raw <= 0)
                 {
                     long drop = f.PeakY - ground;
                     f.PosY = Fixed.FromRaw(ground);
