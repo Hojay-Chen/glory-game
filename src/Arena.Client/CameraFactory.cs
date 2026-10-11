@@ -91,4 +91,16 @@ public sealed class CameraFactory
         cam.LookAt(alook.Lerp(flook, e), Godot.Vector3.Up);
         _init = false;   // 演出结束交棒时 Follow 直接落到目标位姿（此处已收敛到该位姿）
     }
+
+    /// 终局特写：绕胜者慢速环绕 + 推近（t01 0→1 用约 6s）。
+    /// 与 Follow/Intro 一样是**纯表现**，只读已同步的世界坐标。
+    public static void Finisher(Camera3D cam, Godot.Vector3 focus, float t01)
+    {
+        float t = Mathf.Clamp(t01, 0f, 1f);
+        float ang = -0.95f + t * 1.75f;                       // 缓慢环绕
+        float r = Mathf.Lerp(6.0f, 3.2f, 1f - MathF.Pow(1f - t, 2f));   // 缓推近
+        var off = new Godot.Vector3(MathF.Sin(ang), 0, MathF.Cos(ang)) * r;
+        cam.Position = focus + off + new Godot.Vector3(0, Mathf.Lerp(2.4f, 1.7f, t), 0);
+        cam.LookAt(focus + new Godot.Vector3(0, 1.15f, 0), Godot.Vector3.Up);
+    }
 }

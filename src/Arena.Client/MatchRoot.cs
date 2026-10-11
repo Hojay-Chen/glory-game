@@ -50,6 +50,8 @@ public partial class MatchRoot : Node
     private Godot.Vector3 _lastEnemy;
     private bool _camValid;
     private const int IntroTicks = 90;   // 开场运镜时长（60 Tick/s → 1.5s）
+    private float _finishT;              // 终局特写进度 0→1
+    private Godot.Vector3 _finishFocus;  // 终局特写焦点（胜者）
 
     private const int LocalPlayerId = 0;
     private const int EnemyId = 1;
@@ -372,7 +374,13 @@ public partial class MatchRoot : Node
             if (_camera is not null && _camValid)
             {
                 _director.Camera.Tick(delta);
-                CameraFactory.Follow(_camera, _lastPlayer, _lastEnemy);
+                // 终局特写：结算界面之下做绕胜者环绕推近
+                if (_matchOver)
+                {
+                    _finishT = MathF.Min(1f, _finishT + (float)delta * 0.16f);
+                    CameraFactory.Finisher(_camera, _finishFocus, _finishT);
+                }
+                else CameraFactory.Follow(_camera, _lastPlayer, _lastEnemy);
                 ApplyCameraShake();
             }
             return;
@@ -461,6 +469,11 @@ public partial class MatchRoot : Node
                 _matchOver = true;
                 _director.FlagMatchEnd();   // 终局闸断战斗表现（Died 路径由 Bridge 自动置位）
                 _resultText = !alive0 && !alive1 ? "DRAW" : alive0 ? "BLUE WIN" : "ORANGE WIN";
+                // 终局特写焦点：胜者所在（平局则取两人中点）
+                _finishT = 0f;
+                _finishFocus = !alive0 && !alive1
+                    ? (_lastPlayer + _lastEnemy) * 0.5f
+                    : (alive0 ? _lastPlayer : _lastEnemy);
                 var result = _resultText;
                 _hud?.ShowResult(result, _tick);
                 if (!_autopilot) ShowResultScreen();   // 真人局弹结算界面；autopilot 只打印
