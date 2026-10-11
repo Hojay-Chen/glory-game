@@ -49,6 +49,7 @@ public partial class MatchRoot : Node
     private Godot.Vector3 _lastPlayer;    // 相机跟随的玩家位（越肩机位用）
     private Godot.Vector3 _lastEnemy;
     private bool _camValid;
+    private const int IntroTicks = 90;   // 开场运镜时长（60 Tick/s → 1.5s）
 
     private const int LocalPlayerId = 0;
     private const int EnemyId = 1;
@@ -302,6 +303,7 @@ public partial class MatchRoot : Node
         _catalog = setup.Catalog;
         _tick = 0;
         _matchOver = false;
+        CameraFactory.ResetLook(new Godot.Vector3(0, 1.3f, 0));   // 每局开场运镜从干净位姿起
         _resultText = "";
         _statDealt = _statTaken = _statHits = _statMaxCombo = 0;
         SetWorldVisible(true);
@@ -441,7 +443,11 @@ public partial class MatchRoot : Node
             _lastPlayer = new Godot.Vector3((float)(a.PosX.Raw / 65536.0), 0, (float)(a.PosZ.Raw / 65536.0));
             _lastEnemy = new Godot.Vector3((float)(b.PosX.Raw / 65536.0), 0, (float)(b.PosZ.Raw / 65536.0));
             _camValid = true;
-            CameraFactory.Follow(_camera, _lastPlayer, _lastEnemy);
+            // 开场演出：前 1.5s 用高空拉升机位（§1.7），随后平滑交棒越肩战斗位
+            if (_tick < IntroTicks)
+                CameraFactory.Intro(_camera, _lastPlayer, _lastEnemy, _tick / (float)IntroTicks);
+            else
+                CameraFactory.Follow(_camera, _lastPlayer, _lastEnemy);
             ApplyCameraShake();
         }
 
@@ -454,7 +460,7 @@ public partial class MatchRoot : Node
             {
                 _matchOver = true;
                 _director.FlagMatchEnd();   // 终局闸断战斗表现（Died 路径由 Bridge 自动置位）
-                _resultText = !alive0 && !alive1 ? "DRAW" : alive0 ? "BLUE WIN" : "RED WIN";
+                _resultText = !alive0 && !alive1 ? "DRAW" : alive0 ? "BLUE WIN" : "ORANGE WIN";
                 var result = _resultText;
                 _hud?.ShowResult(result, _tick);
                 if (!_autopilot) ShowResultScreen();   // 真人局弹结算界面；autopilot 只打印

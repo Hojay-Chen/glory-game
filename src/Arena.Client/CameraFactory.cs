@@ -34,6 +34,21 @@ public sealed class CameraFactory
     /// 越肩锁定机位：在玩家背后、朝敌人看；两人重叠时自动侧移错开。
     public static void Follow(Camera3D cam, Godot.Vector3 player, Godot.Vector3 enemy)
     {
+        ComputeFollow(player, enemy, out var want, out var target);
+        if (!_init) { cam.Position = want; _lookAt = target; _init = true; }
+        else
+        {
+            cam.Position = cam.Position.Lerp(want, PosLerp);
+            _lookAt = _lookAt.Lerp(target, LookLerp);
+        }
+        cam.LookAt(_lookAt, Godot.Vector3.Up);
+    }
+
+    /// 目标机位与视线落点（Follow 与 Intro 共用——保证入场演出**平滑收进**战斗位，
+    /// 而不是演出结束瞬间硬切）。
+    private static void ComputeFollow(Godot.Vector3 player, Godot.Vector3 enemy,
+        out Godot.Vector3 pos, out Godot.Vector3 look)
+    {
         var flat = new Godot.Vector3(enemy.X - player.X, 0, enemy.Z - player.Z);
         float dist = flat.Length();
         if (dist < 0.01f) dist = 0.01f;
@@ -58,25 +73,22 @@ public sealed class CameraFactory
             1.30f,
             player.Z + (enemy.Z - player.Z) * 0.45f + right.Z * 0.22f);
 
-        if (!_init) { cam.Position = want; _lookAt = target; _init = true; }
-        else
-        {
-            cam.Position = cam.Position.Lerp(want, PosLerp);
-            _lookAt = _lookAt.Lerp(target, LookLerp);
-        }
-        cam.LookAt(_lookAt, Godot.Vector3.Up);
+        pos = want;
+        look = target;
     }
 
     /// 入场演出: 从高远处缓降压到战斗机位（§1.7 镜头拉升）。
+    /// 末段直接收在 ComputeFollow 的目标位姿上，交棒 Follow 时**无跳变**。
     public static void Intro(Camera3D cam, Godot.Vector3 player, Godot.Vector3 enemy, float t01)
     {
+        ComputeFollow(player, enemy, out var fpos, out var flook);
         float e = 1f - MathF.Pow(1f - Math.Clamp(t01, 0f, 1f), 3f);
         var mid = (player + enemy) * 0.5f;
-        float dist = (enemy - player).Length();
-        float back = Mathf.Lerp(16f, Mathf.Clamp(4.2f + dist * 0.40f, 4.2f, 11f), e);
-        float h = Mathf.Lerp(10f, 2.0f + dist * 0.06f, e);
-        var target = new Godot.Vector3(mid.X, Mathf.Lerp(0.4f, 1.25f, e), mid.Z);
-        cam.Position = new Godot.Vector3(mid.X, h, mid.Z + back);
-        cam.LookAt(target, Godot.Vector3.Up);
+        // 起手：中点上空 11m、后拉 15m 的鸟瞰 → 收到战斗越肩位
+        var apos = new Godot.Vector3(mid.X, 11f, mid.Z + 15f);
+        var alook = new Godot.Vector3(mid.X, 0.5f, mid.Z);
+        cam.Position = apos.Lerp(fpos, e);
+        cam.LookAt(alook.Lerp(flook, e), Godot.Vector3.Up);
+        _init = false;   // 演出结束交棒时 Follow 直接落到目标位姿（此处已收敛到该位姿）
     }
 }
