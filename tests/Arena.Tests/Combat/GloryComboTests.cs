@@ -100,28 +100,46 @@ public class GloryCombo : IDisposable
 
     // ================= 4. 浮空连招（荣耀的高光） =================
 
+    /// 浮空连招要成立，**必须取消后摇**：天击总长 32f（前摇12+判定4+后摇16），
+    /// 而浮空窗只有约 32f——老老实实等后摇走完，对方已经落地了，追打永远差那几帧。
+    /// 这正是《荣耀》"技能取消技能后摇"存在的理由。
+    /// 注：普攻（BAS 档）**不能**取消 T1 技的后摇——取消档位是 T1+，普攻只有 any 档，这是设计而非 bug。
     [Fact]
-    public void GC04_天击起手_空中追打产生二段浮空()
+    public void GC04_浮空后追打_取消后摇接普攻即计空中追击()
     {
         var w = CreateWorld();
-        w.Step(1, new[] { Skill(0, "BMG_T1_001") });    // 天击 launch_v=9.0
-        Run(w, 2, 33);
+        w.Step(1, new[] { Skill(0, "BMG_T1_001") });    // 天击（cancel_min_tier = T1+）
+        Run(w, 2, 17);
 
-        Assert.Contains(w.Events.All, e => e.Kind == EventKind.Launched && e.VictimId == 1);
-        Assert.Equal(FighterState.Launch, w.Fighters[1].State);   // 33t 时应仍在空中（峰值 ~t35）
+        Assert.Equal(FighterState.Launch, w.Fighters[1].State);
 
-        // 空中追打：前摇结束后立刻接一发，趁对方还在空中再补一刀。
-        // 注：这里**追打成功是硬要求**——一旦台面顶被误判成地面（见 AddFighter 的出生点高度），
-        // 天击刚起飞就"落地"，这条断言会立刻红。
-        w.Step(33, new[] { Skill(0, "BMG_T2_001") });
-        Run(w, 34, 110);
+        w.Step(18, new[] { Skill(0, "BMG_T1_002") });   // 后摇中取消 → 龙牙续空（同为 T1，满足 T1+ 取消档）
+        Run(w, 19, 90);
 
-        var airHit = w.Events.All.FirstOrDefault(e =>
-            e.Kind == EventKind.Hit && e.VictimId == 1 && e.AirMod);
-        Assert.True(airHit.Tick > 0, "浮空后必须能追打命中（AirMod 空中修正命中）");
+        Assert.Contains(w.Events.All, e => e.Kind == EventKind.Cancelled);
+        Assert.Contains(w.Events.All, e => e.Kind == EventKind.Hit && e.VictimId == 1 && e.AirMod);
+        Assert.Contains(w.Events.All, e => e.Kind == EventKind.Relaunched && e.VictimId == 1);
+    }
 
-        // ⚠️ 已知缺口（见 docs/OPEN-ISSUES.md EN-10）：各职业**只有 1 个浮空技且 CD 5~10s**，
-        //    因此"二段浮空（Relaunched）"在 1v1 实战里几乎不可能触发——是数据缺口，不是本用例该掩盖的。
+    /// 方案 B 的**核心**：空中命中不得把目标从 Launch 态里拽出来，否则"一次就断"、空中连打无从谈起。
+    [Fact]
+    public void GC06_空中命中保持浮空态_可继续连()
+    {
+        var w = CreateWorld();
+        w.Step(1, new[] { Skill(0, "BMG_T1_001") });
+        Run(w, 2, 17);
+        w.Step(18, new[] { Skill(0, "BMG_T1_002") });   // 取消后摇 → 龙牙续空
+
+        int t = 19;
+        while (t < 90 && !w.Events.All.Any(e => e.Kind == EventKind.Relaunched && e.VictimId == 1))
+        {
+            w.Step(t, Array.Empty<Command>());
+            t++;
+        }
+
+        Assert.True(w.Events.All.Any(e => e.Kind == EventKind.Relaunched && e.VictimId == 1),
+            "命中浮空目标必须产生 Relaunched（空中追击节拍）");
+        Assert.Equal(FighterState.Launch, w.Fighters[1].State);   // ← 仍在浮空，而不是被打落成硬直
     }
 
     [Fact]

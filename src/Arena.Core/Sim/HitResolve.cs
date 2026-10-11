@@ -451,7 +451,35 @@ public static class HitResolve
         // 扫地命中倒地: 仅结算伤害，状态不变（GDD §5.6 倒地保护）
         if (vic.State == FighterState.Down) return;
 
-        // 浮空（GDD §5.3）
+        // ---- 空中追击 / 空中连打（2026-10-11 裁定：方案 B）----
+        // 命中**浮空中的目标**即算浮空追击，不再要求"必须是第二发浮空技"——
+        // 荣耀的空中连打本来就是普攻续的，而不是靠连续挑空技。
+        // ⚠️ 原实现把空中命中一律走下面的 Hitstun 分支，会把目标**从 Launch 态里拽出来**，
+        //    于是"一次命中就断开"，浮空连招永远连不起来。此处改为保持 Launch 态。
+        //    行动限制由状态机天然保证（非 Normal 不可出招/移动）；无限浮空由 FloatProtect 兜底。
+        if (vic.State == FighterState.Launch && !vic.ForcedFall)
+        {
+            vic.LaunchCount++;
+            long v = 0;
+            if (def.LaunchVelQ > 0)
+            {
+                // 浮空技续空: 刷新上抛速度 v = 技能初速 × 0.8ⁿ，下限 3.0（GDD §5.3 第一道闸）
+                int idx = Math.Min(vic.LaunchCount, Calc.DeterministicTables.LaunchDecay.Length - 1);
+                v = DeterministicMath.MulShift(def.LaunchVelQ, Calc.DeterministicTables.LaunchDecay[idx]);
+                long floor = RuntimeConstants.LAUNCH_FLOOR_MPS * Fixed.ONE;
+                if (v < floor) v = floor;
+                vic.VelY = Fixed.FromRaw(v);
+            }
+            else
+            {
+                // 普攻/普通技续空: 不改垂直速度（重力照常把双方拉回地面），只记一次追击节拍
+                vic.VelX = Fixed.Zero; vic.VelZ = Fixed.Zero;   // 水平制动，免得被打飞脱离攻击范围
+            }
+            w.Events.Emit(new SimEvent { Kind = EventKind.Relaunched, AttackerId = ctx.Attacker.Id, VictimId = vic.Id, SkillId = def.RuntimeId, ValueRaw = v });
+            return;
+        }
+
+        // ---- 起浮空（目标在地面）----
         if (def.LaunchVelQ > 0)
         {
             if (vic.ForcedFall)
@@ -460,25 +488,11 @@ public static class HitResolve
                 ApplyHitstun(w, ctx, hitNumber);
                 return;
             }
-            if (vic.State == FighterState.Launch)
-            {
-                // 空中再命中刷新: v = 技能初速 × 0.8ⁿ，下限 3.0（第一道闸）
-                vic.LaunchCount++;
-                int idx = Math.Min(vic.LaunchCount, Calc.DeterministicTables.LaunchDecay.Length - 1);
-                long v = DeterministicMath.MulShift(def.LaunchVelQ, Calc.DeterministicTables.LaunchDecay[idx]);
-                long floor = RuntimeConstants.LAUNCH_FLOOR_MPS * Fixed.ONE;
-                if (v < floor) v = floor;
-                vic.VelY = Fixed.FromRaw(v);
-                w.Events.Emit(new SimEvent { Kind = EventKind.Relaunched, AttackerId = ctx.Attacker.Id, VictimId = vic.Id, SkillId = def.RuntimeId, ValueRaw = v });
-            }
-            else
-            {
-                vic.LaunchCount = 0;
-                vic.FloatAirTicks = 0;
-                vic.VelY = Fixed.FromRaw(def.LaunchVelQ);
-                SetState(w, vic, FighterState.Launch);
-                w.Events.Emit(new SimEvent { Kind = EventKind.Launched, AttackerId = ctx.Attacker.Id, VictimId = vic.Id, SkillId = def.RuntimeId, ValueRaw = def.LaunchVelQ });
-            }
+            vic.LaunchCount = 0;
+            vic.FloatAirTicks = 0;
+            vic.VelY = Fixed.FromRaw(def.LaunchVelQ);
+            SetState(w, vic, FighterState.Launch);
+            w.Events.Emit(new SimEvent { Kind = EventKind.Launched, AttackerId = ctx.Attacker.Id, VictimId = vic.Id, SkillId = def.RuntimeId, ValueRaw = def.LaunchVelQ });
             return;
         }
 
