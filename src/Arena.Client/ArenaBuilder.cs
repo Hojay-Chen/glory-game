@@ -16,28 +16,28 @@ public sealed class ArenaBuilder
     // ---- 材质分层（每类不同 Roughness/Metallic/Albedo，杜绝"一片同灰"——§2.3）----
     // 共用实例（非每件 new）: gl_compatibility 对 draw call 敏感，材质复用便于批处理与降内存。
     private static readonly StandardMaterial3D FloorMat =
-        Mat(new Color(0.082f, 0.092f, 0.118f), 0.90f, 0.00f);   // 石地 冷石板（压暗——给角色/刻线做底衬）
+        Textured(Mat(new Color(0.088f, 0.098f, 0.126f), 0.90f, 0.00f), 0.14f);   // 石地 冷石板
     private static readonly StandardMaterial3D WallMat =
-        Mat(new Color(0.318f, 0.345f, 0.405f), 0.72f, 0.08f);   // 结界墙 冷灰石（抬高以显剪影）
+        Textured(Mat(new Color(0.318f, 0.345f, 0.405f), 0.72f, 0.08f), 0.10f);   // 结界墙 冷灰石
     private static readonly StandardMaterial3D PlatformMat =
-        Mat(new Color(0.212f, 0.198f, 0.170f), 0.60f, 0.14f);   // 高台 略暖（高处=危险提示 §5.2）
+        Textured(Mat(new Color(0.212f, 0.198f, 0.170f), 0.60f, 0.14f), 0.22f);   // 高台 略暖
     private static readonly StandardMaterial3D RampMat =
         Mat(new Color(0.255f, 0.240f, 0.205f), 0.74f, 0.08f);   // 坡道 同族压暗
     private static readonly StandardMaterial3D CoverMat =
-        Mat(new Color(0.196f, 0.176f, 0.150f), 0.80f, 0.05f);   // 掩体墙 暖褐
+        Textured(Mat(new Color(0.196f, 0.176f, 0.150f), 0.80f, 0.05f), 0.30f);   // 掩体墙 暖褐
     private static readonly StandardMaterial3D PillarMat =
-        Mat(new Color(0.300f, 0.290f, 0.275f), 0.74f, 0.05f);   // 石柱 亮石
+        Textured(Mat(new Color(0.300f, 0.290f, 0.275f), 0.74f, 0.05f), 0.35f);   // 石柱 亮石
     private static readonly StandardMaterial3D WoodMat =
-        Mat(new Color(0.330f, 0.235f, 0.140f), 0.88f, 0.00f);   // 木箱 暖棕
+        Textured(Mat(new Color(0.330f, 0.235f, 0.140f), 0.88f, 0.00f), 0.55f);   // 木箱 暖棕
     private static readonly StandardMaterial3D RockMat =
-        Mat(new Color(0.255f, 0.265f, 0.290f), 0.92f, 0.00f);   // 乱石 冷灰
+        Textured(Mat(new Color(0.255f, 0.265f, 0.290f), 0.92f, 0.00f), 0.45f);   // 乱石 冷灰
     private static readonly StandardMaterial3D PotMat =
         Mat(new Color(0.420f, 0.290f, 0.205f), 0.80f, 0.00f);   // 陶罐 赤陶
 
     // 擂台盘面（中央圆台顶面——最靠近镜头的面，单独给一点暖金倾向的石材，
     // 用**环形刻线**而非整盘高光来提供近场焦点，避免"一块大煎饼"）
     private static readonly StandardMaterial3D ArenaDeckMat =
-        Mat(new Color(0.238f, 0.222f, 0.190f), 0.66f, 0.10f);
+        Textured(Mat(new Color(0.238f, 0.222f, 0.190f), 0.66f, 0.10f), 0.20f);
     // 擂台包边（低矮金属压条——给台面一个"边界"，同时绝不遮挡角色）
     private static readonly StandardMaterial3D CurbMat =
         Mat(new Color(0.155f, 0.140f, 0.115f), 0.42f, 0.55f);
@@ -50,6 +50,45 @@ public sealed class ArenaBuilder
         Roughness = rough,
         Metallic = metal,
     };
+
+    /// 程序化石材细纹（零素材）：一张低对比噪声当反照率相乘，配合**三平面映射**给地板/墙体
+    /// 提供不依赖 UV 的表面细节——消除"一整片纯色塑料板"的白盒感。
+    /// 噪声经 ColorRamp 压到 0.74~1.0 → 只加细纹，不改变整体明度关系、不产生云雾感。
+    private static NoiseTexture2D? _stoneTex;
+    private static Texture2D StoneTexture()
+    {
+        if (_stoneTex is not null) return _stoneTex;
+        var ramp = new Gradient();
+        ramp.SetColor(0, new Color(0.84f, 0.84f, 0.84f));
+        ramp.SetColor(1, new Color(1f, 1f, 1f));
+        _stoneTex = new NoiseTexture2D
+        {
+            Noise = new FastNoiseLite
+            {
+                NoiseType = FastNoiseLite.NoiseTypeEnum.SimplexSmooth,
+                Frequency = 0.045f,
+                FractalOctaves = 4,
+                FractalLacunarity = 2.1f,
+                FractalGain = 0.5f,
+            },
+            ColorRamp = ramp,   // NoiseTexture2D.ColorRamp 取 Gradient（把噪声压到 0.74~1.0）
+            Width = 256,
+            Height = 256,
+            Seamless = true,
+            GenerateMipmaps = true,
+        };
+        return _stoneTex;
+    }
+
+    /// 给材质挂上石材细纹（三平面映射——顺便规避 Box/Cylinder 的 UV 拉伸畸变）。
+    private static StandardMaterial3D Textured(StandardMaterial3D m, float scale = 0.16f)
+    {
+        m.AlbedoTexture = StoneTexture();
+        m.Uv1Triplanar = true;
+        m.Uv1WorldTriplanar = true;
+        m.Uv1Scale = new Godot.Vector3(scale, scale, scale);
+        return m;
+    }
 
     private static StandardMaterial3D Emissive(Color c, float energy, float rough, float metal) => new()
     {
