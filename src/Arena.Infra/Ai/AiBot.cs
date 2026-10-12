@@ -30,7 +30,10 @@ public sealed class AiBot
     private int _nextDecisionTick;
     private string _classId = "";
     private List<SkillRuntimeData> _offense = new();   // 本职业的进攻技（不含普攻），按"浮空优先、CD 短优先"排
+    private ushort _guardUid;            // 本职业格挡（Guard 盾值/hold 姿态）技；0=无
+    private int _guardHoldTicks;         // 举盾剩余 tick（到 0 发 Release）
     private const long AttackRangeSq = (long)(2.2 * 65536) * (long)(2.2 * 65536);
+    private const long GuardRangeSq = (long)(18.0 * 65536) * (long)(18.0 * 65536);
     private const long CloseRangeSq = (long)(1.2 * 65536) * (long)(1.2 * 65536);
 
     public AiBot(int selfId, int enemyId, int seed, double aggression = 0.5)
@@ -55,6 +58,36 @@ public sealed class AiBot
         long distSq = dx * dx + dz * dz;
         byte toward = DirQuantized(dx, dz);
         ushort aim = (ushort)(toward * 8192);   // 施法/普攻朝向 = 指向敌人（SPEC-0001: 45°/8192）
+
+        // ---- 防御 1：受身（Down 态翻滚=受身，方向对齐 FallDirIndex 才有效——GDD §5.6）----
+        // 此前 bot 倒地只会干躺，整场 Ukemi=0；玩家方的 bot（autopilot）同理。
+        if (self.State == FighterState.Down && !self.UkemiIneffective)
+        {
+            yield return new Command(_selfId, CmdKind.Roll, 0, 0, self.FallDirIndex, 0);
+            yield break;
+        }
+
+        // ---- 防御 2：格挡（敌人起手 → 概率举盾；hold 由 Sim 持续）----
+        // 距离放宽到 18m：枪手在 15m 外开火，只盯近距会让「对枪不举盾」——盾对弹体同样有效
+        // （弹体命中也走 HitResolve 的格挡门）。盾被打光 → GuardBroken，防御侧博弈才会出现。
+        if (enemy.State == FighterState.Act && distSq < GuardRangeSq &&
+            _guardUid != 0 && _rng.NextDouble() < 0.30 + _aggression * 0.35)
+        {
+            if (self.State is FighterState.Normal or FighterState.Act &&
+                (!self.Cooldowns.TryGetValue(_guardUid, out var gcd) || gcd <= 0))
+            {
+                yield return new Command(_selfId, CmdKind.Skill, _guardUid, aim, 0, 0);
+                _guardHoldTicks = 20 + _rng.Next(25);   // 举 0.3~0.75s 后松开
+                yield break;
+            }
+        }
+        if (_guardHoldTicks > 0)
+        {
+            _guardHoldTicks--;
+            if (_guardHoldTicks == 0)
+                yield return new Command(_selfId, CmdKind.Basic, 0, 0, 0, 0);   // Release → 解除 hold
+            yield break;
+        }
 
         // ---- 压制窗口：敌人浮空 / 硬直 / 倒地 ----
         if (enemy.State is FighterState.Launch or FighterState.Hitstun or FighterState.Down)
@@ -135,6 +168,11 @@ public sealed class AiBot
             .OrderByDescending(s => s.LaunchVelQ > 0)   // 浮空技优先（连段的起手）
             .ThenBy(s => s.CooldownTicks)
             .ToList();
+        _guardUid = catalog.Skills
+            .Where(s => s.ClassId == classId && (s.Guard is not null || s.IsHold))
+            .OrderByDescending(s => s.Guard is not null)
+            .ThenBy(s => s.SkillId, StringComparer.Ordinal)
+            .FirstOrDefault()?.RuntimeId ?? 0;
     }
 
     /// 取一发可用进攻技；tierAtLeast 用于"取消"场景（低档取消不了高档后摇）

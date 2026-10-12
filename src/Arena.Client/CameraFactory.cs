@@ -44,6 +44,37 @@ public sealed class CameraFactory
         cam.LookAt(_lookAt, Godot.Vector3.Up);
     }
 
+    /// 鼠标视角轨道机位（2026-10-13 手感重做）：
+    ///   yaw   = 视线方位角（与 Sim HeadingQuantum 同约定，0=+Z 顺时针，弧度）
+    ///   pitch = 相机相对注视点的仰角（弧度，0.05..1.15）
+    ///   dist  = 视距（3.2..9m）
+    /// 机位在玩家身后沿视线反方向，注视点 = 玩家前方 + 25% 敌人偏置（软锁画面感）。
+    /// 平滑系数比 Follow 更高（鼠标每帧都在动，惯性太大反而晕）。
+    public static void Orbit(Camera3D cam, Godot.Vector3 player, Godot.Vector3 enemy,
+        float yaw, float pitch, float dist)
+    {
+        float fx = Mathf.Sin(yaw), fz = Mathf.Cos(yaw);          // 视线前方（XZ）
+        var fwd = new Godot.Vector3(fx, 0, fz);
+
+        float cp = Mathf.Cos(pitch), sp = Mathf.Sin(pitch);
+        var want = player - fwd * (dist * cp) + new Godot.Vector3(0, 0.9f + dist * sp, 0);
+        if (want.Y < 0.7f) want.Y = 0.7f;
+
+        // 注视点: 玩家身前 2.2m 处胸口高度，向敌人偏 25%（两人同框、玩家不占正中）
+        var look = new Godot.Vector3(
+            player.X + fwd.X * 2.2f + (enemy.X - player.X) * 0.25f,
+            1.25f,
+            player.Z + fwd.Z * 2.2f + (enemy.Z - player.Z) * 0.25f);
+
+        if (!_init) { cam.Position = want; _lookAt = look; _init = true; }
+        else
+        {
+            cam.Position = cam.Position.Lerp(want, 0.35f);
+            _lookAt = _lookAt.Lerp(look, 0.45f);
+        }
+        cam.LookAt(_lookAt, Godot.Vector3.Up);
+    }
+
     /// 目标机位与视线落点（Follow 与 Intro 共用——保证入场演出**平滑收进**战斗位，
     /// 而不是演出结束瞬间硬切）。
     private static void ComputeFollow(Godot.Vector3 player, Godot.Vector3 enemy,

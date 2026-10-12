@@ -309,6 +309,21 @@ public sealed partial class SimWorld
         if (f.State != FighterState.Normal && !guardWalk) return;   // Act 制动
         if (!StatusSystem.CanMove(f)) return;
         if (f.GrabbedBy >= 0) return;
+
+        // 模拟量方向（2026-10-13 鼠标视角控制）: DirIndex==255 = 模拟量标记，AimQuantum = 16bit 朝向。
+        // 相机视角下 W 永远是"视角前方"——8 向量化（45° 扇区吸附）在自由视角里手感极差，故放开。
+        // CordicCosSin 保证定点确定性（SPEC-0001 同一约定: heading 0 = +Z 顺时针）。
+        if (cmd.DirIndex == 255 && cmd.AimQuantum != 0)
+        {
+            if (guardWalk) return;   // 格挡走位保持 8 向简化（姿态技下模拟量不开放）
+            DeterministicMath.CordicCosSin(cmd.AimQuantum, out var ax, out var az);
+            long aspd = DeterministicMath.MulShift(RuntimeConstants.RUN_MPS * Fixed.ONE, StatusSystem.MoveSpeedMultQ(f));
+            f.VelX = Fixed.FromRaw(DeterministicMath.MulShift(ax, aspd));
+            f.VelZ = Fixed.FromRaw(DeterministicMath.MulShift(az, aspd));
+            f.HeadingQuantum = cmd.AimQuantum;
+            return;
+        }
+
         if (cmd.DirIndex > 7) return;
         long speed = RuntimeConstants.RUN_MPS * Fixed.ONE;
         speed = DeterministicMath.MulShift(speed, StatusSystem.MoveSpeedMultQ(f));

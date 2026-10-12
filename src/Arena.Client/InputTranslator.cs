@@ -12,10 +12,15 @@ namespace Arena.Client;
 
 public static class InputTranslator
 {
-    /// Godot Input → IKeyPoller 适配（键位数值与 Godot.Key 枚举一致）
+    /// Godot Input → IKeyPoller 适配（键位数值与 Godot.Key 枚举一致；1000+ = 鼠标哨兵）
     public sealed class GodotKeyPoller : IKeyPoller
     {
-        public bool IsDown(int key) => Input.IsKeyPressed((Key)key);
+        public bool IsDown(int key) => key switch
+        {
+            InputMapper.KeyIds.MouseLeft => Input.IsMouseButtonPressed(MouseButton.Left),
+            InputMapper.KeyIds.MouseRight => Input.IsMouseButtonPressed(MouseButton.Right),
+            _ => Input.IsKeyPressed((Key)key),
+        };
     }
 
     /// 每局重建的 mapper（Press/Held/Release 状态自持——Restart 时随 MatchRoot 重置）

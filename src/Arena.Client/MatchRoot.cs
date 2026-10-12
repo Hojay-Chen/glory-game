@@ -53,6 +53,75 @@ public partial class MatchRoot : Node
     private float _finishT;              // 终局特写进度 0→1
     private Godot.Vector3 _finishFocus;  // 终局特写焦点（胜者）
 
+    // ---- 鼠标视角（2026-10-13 手感重做）----
+    // _camYaw 语义与 Sim HeadingQuantum 一致（0=+Z，顺时针为正；单位=弧度），
+    // 移动方向 = 相机相对（W=视角前方），攻击朝向 = 软锁定敌人 / 相机前方。
+    private float _camYaw;               // 视线方位角
+    private float _camPitch = 0.30f;     // 俯仰（0.30 ≈ 17°俯角起手）
+    private float _camDist = 5.2f;       // 视距（滚轮 3.2..9）
+    private MoveCtx? _moveCtx;           // 相机相对换算（随 _camYaw 逐 tick 刷新）
+
+    private MoveCtx MoveCtxFor()
+    {
+        if (_moveCtx is null)
+            _moveCtx = new MoveCtx { ToWorld = ToWorldDir, AimQuantum = SoftLockAim() };
+        _moveCtx.AimQuantum = SoftLockAim();
+        return _moveCtx;
+    }
+
+    /// 屏幕方向 (sx,sz)（W=(0,-1)=前、D=(1,0)=右）→ 世界 (8向Dir, 模拟量Aim)。
+    /// world = Right·sx + Forward·(−sz)；heading 约定与 Sim 一致（0=+Z，atan2(x,z)）。
+    private (byte Dir, ushort Aim) ToWorldDir(int sx, int sz)
+    {
+        float fx = Mathf.Sin(_camYaw), fz = Mathf.Cos(_camYaw);   // 视线前方（XZ）
+        float rx = -fz, rz = fx;                                  // 视线右方
+        float wx = rx * sx + fx * (-sz);
+        float wz = rz * sx + fz * (-sz);
+        if (Mathf.Abs(wx) < 1e-5f && Mathf.Abs(wz) < 1e-5f) return (0, 0);
+        float ang = Mathf.Atan2(wx, wz);
+        if (ang < 0) ang += Mathf.Tau;
+        ushort aim = (ushort)(Mathf.RoundToInt(ang / Mathf.Tau * 65536f) % 65536);
+        byte dir = (byte)(Mathf.RoundToInt(aim / 8192f) % 8);
+        return (dir, aim);
+    }
+
+    /// 攻击朝向：敌人位于视线前方 ±60° 锥内 → 直接瞄敌人（软锁定，1v1 不搓玻璃）；
+    /// 否则瞄相机前方。
+    private ushort SoftLockAim()
+    {
+        if (!_camValid) return QuantumFromAngle(_camYaw);
+        float dx = _lastEnemy.X - _lastPlayer.X, dz = _lastEnemy.Z - _lastPlayer.Z;
+        float d = Mathf.Sqrt(dx * dx + dz * dz);
+        if (d < 0.4f) return QuantumFromAngle(_camYaw);
+        float angE = Mathf.Atan2(dx / d, dz / d);
+        float diff = angE - _camYaw;
+        if (diff > Mathf.Pi) diff -= Mathf.Tau; else if (diff < -Mathf.Pi) diff += Mathf.Tau;
+        return Mathf.Abs(diff) <= 1.05f ? QuantumFromAngle(angE) : QuantumFromAngle(_camYaw);
+    }
+
+    private static ushort QuantumFromAngle(float a)
+    {
+        if (a < 0) a += Mathf.Tau;
+        return (ushort)(Mathf.RoundToInt(a / Mathf.Tau * 65536f) % 65536);
+    }
+
+        /// 鼠标：视角旋转（对战中捕获）+ 滚轮视距
+        public override void _Input(InputEvent e)
+        {
+            if (_autopilot || _state != AppState.Playing) return;
+            if (e is InputEventMouseMotion mm && Input.MouseMode == Input.MouseModeEnum.Captured)
+            {
+                _camYaw -= mm.Relative.X * 0.0028f;    // 右移鼠标 = 视线向右（yaw 减）
+                _camPitch = Mathf.Clamp(_camPitch + mm.Relative.Y * 0.0022f, 0.05f, 1.15f);
+            }
+            else if (e is InputEventMouseButton mb && mb.Pressed)
+            {
+                if (mb.ButtonIndex == MouseButton.WheelUp) _camDist = Mathf.Clamp(_camDist - 0.5f, 3.2f, 9f);
+                else if (mb.ButtonIndex == MouseButton.WheelDown) _camDist = Mathf.Clamp(_camDist + 0.5f, 3.2f, 9f);
+            }
+        }
+
+
     private const int LocalPlayerId = 0;
     private const int EnemyId = 1;
     private const long MatchLengthTicks = 3600;
@@ -306,6 +375,11 @@ public partial class MatchRoot : Node
         _tick = 0;
         _matchOver = false;
         CameraFactory.ResetLook(new Godot.Vector3(0, 1.3f, 0));   // 每局开场运镜从干净位姿起
+        // 视线初始朝敌人（玩家在 Spawn0、敌人在 Spawn1）
+        { var px = (float)(setup.Spawn0.X / 65536.0); var pz = (float)(setup.Spawn0.Z / 65536.0);
+          var ex = (float)(setup.Spawn1.X / 65536.0); var ez = (float)(setup.Spawn1.Z / 65536.0);
+          _camYaw = Mathf.Atan2(ex - px, ez - pz); }
+        _moveCtx = null;
         _resultText = "";
         _statDealt = _statTaken = _statHits = _statMaxCombo = 0;
         SetWorldVisible(true);
@@ -366,6 +440,11 @@ public partial class MatchRoot : Node
 
     public override void _PhysicsProcess(double delta)
     {
+        // 鼠标捕获: 对战中锁定指针（视角控制），其余状态放出来点菜单
+        var wantMouse = (_state == AppState.Playing && !_autopilot)
+            ? Input.MouseModeEnum.Captured : Input.MouseModeEnum.Visible;
+        if (Input.MouseMode != wantMouse) Input.MouseMode = wantMouse;
+
         if (_restartCooldown > 0) _restartCooldown--;
 
         // 非对战中（菜单/选人/暂停/结算）: 不步进 Sim；只让表现层收尾，并处理全局键
@@ -380,7 +459,7 @@ public partial class MatchRoot : Node
                     _finishT = MathF.Min(1f, _finishT + (float)delta * 0.16f);
                     CameraFactory.Finisher(_camera, _finishFocus, _finishT);
                 }
-                else CameraFactory.Follow(_camera, _lastPlayer, _lastEnemy);
+                else CameraFactory.Orbit(_camera, _lastPlayer, _lastEnemy, _camYaw, _camPitch, _camDist);
                 ApplyCameraShake();
             }
             return;
@@ -412,7 +491,12 @@ public partial class MatchRoot : Node
         }
         else
         {
-            cmds.AddRange(_inputMapper!.Collect(InputTranslator.Bindings(_catalog!, _playerClass)));
+            var bindings = InputTranslator.Bindings(_catalog!, _playerClass);
+            // 鼠标键复用同一套角色语义（LMB=普攻 / RMB=格挡——有格挡数据才绑）
+            var guardUid = bindings.FirstOrDefault(b => b.role == "guard").skillUid;
+            bindings.Add((InputMapper.KeyIds.MouseLeft, "basic", 0));
+            if (guardUid != 0) bindings.Add((InputMapper.KeyIds.MouseRight, "guard", guardUid));
+            cmds.AddRange(_inputMapper!.Collect(bindings, MoveCtxFor()));
             if (_bot is { } bot)
                 cmds.AddRange(bot.Produce(_tick, _world, _catalog!));
         }
@@ -455,7 +539,7 @@ public partial class MatchRoot : Node
             if (_tick < IntroTicks)
                 CameraFactory.Intro(_camera, _lastPlayer, _lastEnemy, _tick / (float)IntroTicks);
             else
-                CameraFactory.Follow(_camera, _lastPlayer, _lastEnemy);
+                CameraFactory.Orbit(_camera, _lastPlayer, _lastEnemy, _camYaw, _camPitch, _camDist);
             ApplyCameraShake();
         }
 
