@@ -123,9 +123,10 @@ return (delta * rest).GetRotationQuaternion();                          // ← �
 | 项 | 说明 |
 |----|------|
 | 分支专属外观 | 目前 24 职业共用这一具"铠甲守卫"；后续按系别各生成一版（提示词须带 empty hands） |
-| 分支专属攻击动作 | 现在所有技能都用 `Sword_Attack`；应按武器家族（枪/杖/枪械/拳）挑不同 clip |
+| ~~分支专属攻击动作~~ | ✅ 已做（2026-10-13）：`BindClipFamily` 按剪影族分配动作套——剑士/暗夜/圣职→Sword_*、格斗→Punch_Jab/Cross、法师→Spell_Simple_Shoot、枪手→Pistol_Shoot；待机同步分配（Sword_Idle/Pistol_Idle/Spell_Simple_Idle） |
 | 取消窗 / 浮空连招的**动作表现** | 系统侧帧数据已就位，动作侧还需接：取消时的动作切换、空中追打 clip |
 | Mixamo 补充 | 用户要的 Mixamo 免费动作库需要 Adobe 登录后才能下载；CC0 库缺口部分先用自研补 |
 | 刚性绑定的极限姿态 | 大幅跨步时护腿壳片会分离（硬表面盔甲的固有代价）；后续可对少数关节做软权重 |
-| 动作过渡 | 现在只靠 `PlaybackDefaultBlendTime` 全局混合；后续该上 AnimationTree/状态机做分层混合 |
+| 动作过渡 | ✅ 转换已分级（出招 0.05 快切 / 受击 0.05 / 起跳 0.08 / 落地 0.06 / 倒地 0.25 / 移动 0.22）；⏳ 上半身分层（AnimationTree）仍待做——做不到"边跑边攻击"的双层混合 |
+| 跳跃分段 | ✅ 已做：Jump_Start（起跳蓄力，vy>0.6）→ Jump_Loop（悬空）→ Jump_Land（落地缓冲 0.35s，沿触发）；部位受击：Hit_Head / Hit_Chest 按 HitRegion 分（表现链已透传 Region） |
 

@@ -46,6 +46,9 @@ public sealed partial class FighterView : Node3D
     private float _cancelGlow;   // 取消成立时的青白闪光
     private float _attackTimer;  // 出招剩余时间（>0 时动作由攻击 clip 自持）
     private byte _comboStep;     // 当前普攻连段序号（ChainN；0=非普攻）
+    private bool _airborne;      // 离地沿状态（权威 PosY）
+    private float _vy;           // 垂直速度（起跳/下落分段用）
+    private float _landTimer;    // 落地缓冲剩余秒数
     private bool _frozen;        // Hit Stop 表现冻结
     private float _animTime;     // 表现层动画时钟（与 Sim tick 无关）
     private long _lastSpeedRaw;  // 最近一次同步的速度（决定呼吸/奔跑步频）
@@ -133,6 +136,11 @@ public sealed partial class FighterView : Node3D
         Rotation = new Godot.Vector3(0, -(float)(f.HeadingQuantum / 65536.0 * Math.PI * 2), 0);
 
         _lastSpeedRaw = Math.Abs(f.VelX.Raw) + Math.Abs(f.VelZ.Raw);
+        // 垂直沿（跳跃三段化的依据）：离地沿/落地沿——落地缓冲 0.35s
+        bool nowAir = f.PosY.Raw > 2048;   // >3cm 视为离地
+        if (nowAir && !_airborne) { _airborne = true; _landTimer = 0f; }
+        else if (!nowAir && _airborne) { _airborne = false; _landTimer = 0.35f; }
+        _vy = f.VelY.Raw / 65536f;
         _lastState = f.State;
         // 状态染色：在**阵营基础调制**之上做乘算（不能直接覆盖——那会把贴图压成一块纯色）
         Color col = _rig.BaseTint;
@@ -166,20 +174,39 @@ public sealed partial class FighterView : Node3D
         _attackTimer = MathF.Max(0.12f, totalSec);
         if (_rig.Anim is not null)
         {
-            // 普攻按连段段号在两段剑击之间交替；技能统一用主段
-            string clip = _comboStep > 0 && (_comboStep % 2 == 0) ? AttackClipAlt : AttackClip;
-            if (_rig.Anim.GetAnimation(clip) is null) clip = AttackClip;
+            // 连段在主/副两段之间交替（主攻击 clip 按职业系别的武器家族选）
+            string clip = (_comboStep % 2 == 1) ? AtkAlt : AtkMain;
+            if (_rig.Anim.GetAnimation(clip) is null) clip = AtkMain;
             var a = _rig.Anim.GetAnimation(clip);
             float len = a?.Length ?? 0f;
             _rig.Anim.SpeedScale = len > 0.01f ? Mathf.Clamp(len / totalSec, 0.35f, 3.5f) : 1f;
-            _rig.Anim.Play(clip);
+            _rig.Anim.Play(clip, 0.05f);        // 出招快切——动作起手不允许拖泥带水
         }
         _trail.Arm(skillId);
     }
 
-    /// 攻击动作用哪一段（按系别/武器家族挑，暂用剑击；连段在两段之间交替）
-    private const string AttackClip = "Sword_Attack";
-    private const string AttackClipAlt = "Sword_Attack_RM";
+    // ---- 职业系别 → 动作 clip 族（动捕库按武器家族分配——剑/拳/法/枪各成套）----
+    private string AtkMain = "Sword_Attack";
+    private string AtkAlt = "Sword_Attack_RM";
+    private string IdleClip = "Idle";
+
+    /// 按剪影族挑动作族（在 Build 后调用一次；clip 缺失时回退剑族）
+    public void BindClipFamily(Arena.Client.Visuals.BranchShape shape)
+    {
+        (AtkMain, AtkAlt, IdleClip) = shape switch
+        {
+            Arena.Client.Visuals.BranchShape.Brawler => ("Punch_Jab", "Punch_Cross", "Idle"),
+            Arena.Client.Visuals.BranchShape.Mage    => ("Spell_Simple_Shoot", "Spell_Simple_Shoot", "Spell_Simple_Idle"),
+            Arena.Client.Visuals.BranchShape.Gunner  => ("Pistol_Shoot", "Pistol_Shoot", "Pistol_Idle"),
+            _                                        => ("Sword_Attack", "Sword_Attack_RM", "Sword_Idle"),
+        };
+        // 库里缺的 clip 回退（防某套被裁）
+        if (_rig.Anim is not null)
+        {
+            if (_rig.Anim.GetAnimation(AtkMain) is null) { AtkMain = "Sword_Attack"; AtkAlt = "Sword_Attack_RM"; }
+            if (_rig.Anim.GetAnimation(IdleClip) is null) IdleClip = "Idle";
+        }
+    }
 
     /// 攻击生命周期结束（ActEnded/Cancelled/被打断）——停止采样，余点自然淡出
     public void OnAttackEnded(ushort skillId) { _trail.Disarm(skillId); _attackTimer = 0f; _comboStep = 0; }
@@ -197,12 +224,18 @@ public sealed partial class FighterView : Node3D
         else _rig.Anim.Play();     // 无参 = 从当前处继续
     }
 
-    public void OnHitFlash(Godot.Vector3 pos)
+    public void OnHitFlash(Godot.Vector3 pos, byte region = 1)
     {
         _flash = 1.0f;
         _recoil = Math.Min(1f, _recoil + 0.85f);
         if (_bodyMat is not null) _bodyMat.Emission = new Color(_flash, _flash * 0.8f, _flash * 0.5f);
         SpawnSpark(pos, _profile.HitSparkColor, 10);
+        // 部位受击：头/躯干各自动捕动作——被打哪里哪里有反应，不再一律"胸口一缩"
+        if (_rig.Anim is not null && _attackTimer <= 0f && _lastState is FighterState.Hitstun or FighterState.Normal)
+        {
+            string clip = region == 2 && _rig.Anim.GetAnimation("Hit_Head") is not null ? "Hit_Head" : "Hit_Chest";
+            if (_rig.Anim.CurrentAnimation != clip) _rig.Anim.Play(clip, 0.05f);
+        }
     }
 
     public void OnHitSpark(Godot.Vector3 pos) => SpawnSpark(pos, _profile.HitSparkColor, 6);
@@ -286,6 +319,7 @@ public sealed partial class FighterView : Node3D
         _animTime += delta;
         _recoil = Math.Max(0f, _recoil - delta * 3.2f);
         if (_attackTimer > 0f) _attackTimer = MathF.Max(0f, _attackTimer - delta);
+        if (_landTimer > 0f) _landTimer = MathF.Max(0f, _landTimer - delta);
 
         float speed = _lastSpeedRaw / 65536f;
         float run = Math.Min(1f, speed / SprintSpd);
@@ -304,27 +338,37 @@ public sealed partial class FighterView : Node3D
         DriveClips(speed);
     }
 
-    /// 按状态/速度挑动作。攻击期由 `_attackTimer` 自持，不被打断。
+    /// 按状态/速度挑动作（跳跃三段化：起跳蓄力 → 悬空循环 → 落地缓冲——
+    /// 单一 Jump clip 来回切是"机械感"的主要来源之一；所有转换带混合时间）。
     private void DriveClips(float speed)
     {
         var a = _rig.Anim;
         if (a is null) return;
 
         string want;
-        float scale = 1f;
+        float scale = 1f, blend = 0.22f;
 
-        if (_lastState is FighterState.Dead or FighterState.Down) want = "Death01";
-        else if (_lastState == FighterState.Launch) want = "Jump";
-        else if (_lastState == FighterState.Hitstun) want = "Hit_Chest";
+        if (_lastState == FighterState.Dead) { want = "Death01"; blend = 0.12f; }
         else if (_attackTimer > 0f) return;                       // 出招中：让攻击动作自己跑完
+        else if (_lastState == FighterState.Down) { want = "Death01"; blend = 0.25f; }   // 倒地
+        else if (_airborne)
+        {
+            // 空中两段：仍在上升播起跳蓄力，过顶后播悬空循环
+            if (_vy > 0.6f && a.GetAnimation("Jump_Start") is not null) { want = "Jump_Start"; blend = 0.08f; }
+            else { want = "Jump_Loop"; blend = 0.14f; }
+        }
+        else if (_landTimer > 0f && a.GetAnimation("Jump_Land") is not null)
+        { want = "Jump_Land"; blend = 0.06f; }                    // 落地缓冲
+        else if (_lastState == FighterState.Launch) { want = "Jump_Loop"; blend = 0.10f; }
+        else if (_lastState == FighterState.Hitstun) { want = "Hit_Chest"; blend = 0.05f; }
         else if (speed > 4.6f) { want = "Sprint"; scale = Mathf.Clamp(speed / SprintSpd, 0.7f, 1.5f); }
         else if (speed > 1.9f) { want = "Jog_Fwd"; scale = Mathf.Clamp(speed / JogSpd, 0.7f, 1.5f); }
         else if (speed > 0.22f) { want = "Walk"; scale = Mathf.Clamp(speed / WalkSpd, 0.7f, 1.5f); }
-        else want = "Idle";
+        else { want = IdleClip; }                                  // 持械待机（剑/枪/法各成套）
 
         if (a.CurrentAnimation == want) { a.SpeedScale = scale; return; }
         a.SpeedScale = scale;
-        a.Play(want);
+        a.Play(want, blend);
     }
 
     public override void _Process(double delta)

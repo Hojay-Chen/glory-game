@@ -41,11 +41,12 @@ public readonly record struct PresentationEvent(
     ushort SkillId,
     long Damage,
     float PosX, float PosY, float PosZ,
-    long Value = 0)   // SimEvent.ValueRaw 透传（普攻连段序号等）
+    long Value = 0,   // SimEvent.ValueRaw 透传（普攻连段序号等）
+    byte Region = 0)  // HitRegion 透传（受击部位 → 表现层选 Hit_Head/Hit_Chest）
 {
     public static PresentationEvent From(SimEvent e) => new(
         Map(e), (int)e.Tick, e.AttackerId, e.VictimId, e.SkillId, e.DamageRaw,
-        e.HitPointX / 65536f, e.HitPointY / 65536f, e.HitPointZ / 65536f, e.ValueRaw);
+        e.HitPointX / 65536f, e.HitPointY / 65536f, e.HitPointZ / 65536f, e.ValueRaw, e.HitRegion);
 
     // Hit 按伤害分流: 有伤害 → DamageApplied（Hit Stop/闪白触发源）；无伤害 → AttackHit（纯接触火花）。
     // 仍保持「1 个 SimEvent → 1 个 PresentationEvent」，PE01/PE04 的 1:1 不变式不受影响。

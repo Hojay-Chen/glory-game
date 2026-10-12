@@ -38,7 +38,8 @@ public readonly record struct PresentationCue(
     PresentationCueKind Kind, int Tick,
     int AttackerId, int VictimId, ushort SkillId,
     long Damage, float PosX, float PosY, float PosZ,
-    long Value = 0);   // 事件载荷透传（如普攻连段序号 ChainN）
+    long Value = 0,    // 事件载荷透传（如普攻连段序号 ChainN）
+    byte Region = 0);  // 受击部位（HitRegion：1=躯干 2=头 → 表现层选受击动作）
 
 public sealed class PresentationDirector
 {
@@ -151,6 +152,6 @@ public sealed class PresentationDirector
 
         return new PresentationCue(
             kind, pe.Tick, pe.AttackerId, pe.VictimId, pe.SkillId,
-            pe.Damage, pe.PosX, pe.PosY, pe.PosZ, pe.Value);
+            pe.Damage, pe.PosX, pe.PosY, pe.PosZ, pe.Value, pe.Region);
     }
 }

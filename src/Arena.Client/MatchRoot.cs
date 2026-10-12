@@ -396,9 +396,9 @@ public partial class MatchRoot : Node
         {
             // 按职业取视觉档案（六系剪影 + 系别徽记色）——此前所有职业硬用同一套 Blade 档案
             string cls = f.Id == LocalPlayerId ? _playerClass : _enemyClass;
-            var view = new FighterView(f.Id, f.Team,
-                Arena.Client.Visuals.FighterVisualProfile.For(cls, BranchOf(cls), WeaponTypeOf(cls)),
-                ClassNameOf(cls));
+            var profile = Arena.Client.Visuals.FighterVisualProfile.For(cls, BranchOf(cls), WeaponTypeOf(cls));
+            var view = new FighterView(f.Id, f.Team, profile, ClassNameOf(cls));
+            view.BindClipFamily(profile.Shape);   // 按职业系别绑定攻击/待机动作族（剑/拳/法/枪）
             _views[f.Id] = view;
             _matchRoot.AddChild(view);
         }
@@ -638,7 +638,7 @@ public partial class MatchRoot : Node
                 if (_views.TryGetValue(cue.VictimId, out var vSpark)) vSpark.OnHitSpark(CuePoint(cue));
                 break;
             case PresentationCueKind.HitFlash:
-                if (_views.TryGetValue(cue.VictimId, out var vFlash)) vFlash.OnHitFlash(CuePoint(cue));
+                if (_views.TryGetValue(cue.VictimId, out var vFlash)) vFlash.OnHitFlash(CuePoint(cue), cue.Region);
                 // 飘伤害数字（第三层命中反馈: 顿帧 → 火花 → 数字）
                 DamagePopup.Spawn(_matchRoot, CuePoint(cue), cue.Damage, isCrit: cue.Damage >= 2000);
                 if (cue.VictimId == EnemyId) { _statDealt += (int)cue.Damage; _statHits++; }
