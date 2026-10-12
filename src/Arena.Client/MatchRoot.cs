@@ -60,6 +60,7 @@ public partial class MatchRoot : Node
     private float _camPitch = 0.30f;     // 俯仰（0.30 ≈ 17°俯角起手）
     private float _camDist = 5.2f;       // 视距（滚轮 3.2..9）
     private MoveCtx? _moveCtx;           // 相机相对换算（随 _camYaw 逐 tick 刷新）
+    private float _mouseIdle;            // 距上次鼠标移动的秒数（软锁定回正用）
 
     private MoveCtx MoveCtxFor()
     {
@@ -113,6 +114,7 @@ public partial class MatchRoot : Node
             {
                 _camYaw -= mm.Relative.X * 0.0028f;    // 右移鼠标 = 视线向右（yaw 减）
                 _camPitch = Mathf.Clamp(_camPitch + mm.Relative.Y * 0.0022f, 0.05f, 1.15f);
+                _mouseIdle = 0f;
             }
             else if (e is InputEventMouseButton mb && mb.Pressed)
             {
@@ -444,6 +446,24 @@ public partial class MatchRoot : Node
         var wantMouse = (_state == AppState.Playing && !_autopilot)
             ? Input.MouseModeEnum.Captured : Input.MouseModeEnum.Visible;
         if (Input.MouseMode != wantMouse) Input.MouseMode = wantMouse;
+
+        // 软锁定回正：鼠标静置 0.8s 后，视线以 ≤1.4 rad/s 滑向敌人方位（夹角 >110° 不拉，尊重手动）
+        if (_state == AppState.Playing && !_autopilot && _camValid)
+        {
+            _mouseIdle += (float)delta;
+            if (_mouseIdle > 0.8f)
+            {
+                float bx = _lastEnemy.X - _lastPlayer.X, bz = _lastEnemy.Z - _lastPlayer.Z;
+                if (bx * bx + bz * bz > 1f)
+                {
+                    float bearing = Mathf.Atan2(bx, bz);
+                    float diff = bearing - _camYaw;
+                    if (diff > Mathf.Pi) diff -= Mathf.Tau; else if (diff < -Mathf.Pi) diff += Mathf.Tau;
+                    if (Mathf.Abs(diff) < 1.92f)
+                        _camYaw += Mathf.Clamp(diff, -1.4f * (float)delta, 1.4f * (float)delta);
+                }
+            }
+        }
 
         if (_restartCooldown > 0) _restartCooldown--;
 

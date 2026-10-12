@@ -26,4 +26,4 @@ common/physics_ticks_per_second=60
 pointing/emulate_touch_from_mouse=false
 
 [rendering]
-renderer/rendering_method="gl_compatibility"
+renderer/rendering_method="forward_plus"

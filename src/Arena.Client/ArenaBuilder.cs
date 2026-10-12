@@ -13,36 +13,55 @@ namespace Arena.Client;
 
 public sealed class ArenaBuilder
 {
-    // ---- 材质分层（每类不同 Roughness/Metallic/Albedo，杜绝"一片同灰"——§2.3）----
-    // 共用实例（非每件 new）: gl_compatibility 对 draw call 敏感，材质复用便于批处理与降内存。
+    // ---- 材质分层（Poly Haven CC0 实拍 PBR：diff/nor/rough 三件套 + 世界三平面映射）----
+    // 共用实例（非每件 new）。AlbedoColor 现在充当**调色乘数**（贴图本色 × 调色）——
+    // 夜场氛围靠它压暗/偏色，而表面细节全部来自实拍贴图（凹凸由法线贴图承载）。
     private static readonly StandardMaterial3D FloorMat =
-        Textured(Mat(new Color(0.088f, 0.098f, 0.126f), 0.90f, 0.00f), 0.14f);   // 石地 冷石板
+        Pbr("floor", new Color(0.88f, 0.89f, 0.94f), 0.10f);          // 石板地（贴图本色较深，调色提亮）          // 石板地 冷调压暗
     private static readonly StandardMaterial3D WallMat =
-        Textured(Mat(new Color(0.318f, 0.345f, 0.405f), 0.72f, 0.08f), 0.10f);   // 结界墙 冷灰石
+        Pbr("sandstone", new Color(0.72f, 0.73f, 0.78f), 0.06f);      // 看台/结界墙 砂岩
     private static readonly StandardMaterial3D PlatformMat =
-        Textured(Mat(new Color(0.212f, 0.198f, 0.170f), 0.60f, 0.14f), 0.22f);   // 高台 略暖
+        Pbr("sandstone", new Color(0.58f, 0.55f, 0.50f), 0.09f);      // 高台 暖砂
     private static readonly StandardMaterial3D RampMat =
-        Mat(new Color(0.255f, 0.240f, 0.205f), 0.74f, 0.08f);   // 坡道 同族压暗
+        Pbr("sandstone", new Color(0.52f, 0.50f, 0.46f), 0.12f);      // 坡道
     private static readonly StandardMaterial3D CoverMat =
-        Textured(Mat(new Color(0.196f, 0.176f, 0.150f), 0.80f, 0.05f), 0.30f);   // 掩体墙 暖褐
+        Pbr("sandstone", new Color(0.46f, 0.42f, 0.38f), 0.10f);      // 掩体
     private static readonly StandardMaterial3D PillarMat =
-        Textured(Mat(new Color(0.300f, 0.290f, 0.275f), 0.74f, 0.05f), 0.35f);   // 石柱 亮石
+        Pbr("rock", new Color(0.78f, 0.78f, 0.80f), 0.10f);           // 石柱
     private static readonly StandardMaterial3D WoodMat =
-        Textured(Mat(new Color(0.330f, 0.235f, 0.140f), 0.88f, 0.00f), 0.55f);   // 木箱 暖棕
+        Pbr("planks", new Color(0.72f, 0.62f, 0.52f), 0.35f);         // 木箱
     private static readonly StandardMaterial3D RockMat =
-        Textured(Mat(new Color(0.255f, 0.265f, 0.290f), 0.92f, 0.00f), 0.45f);   // 乱石 冷灰
+        Pbr("rock", new Color(0.80f, 0.81f, 0.84f), 0.16f);           // 乱石
     private static readonly StandardMaterial3D PotMat =
-        Mat(new Color(0.420f, 0.290f, 0.205f), 0.80f, 0.00f);   // 陶罐 赤陶
+        Pbr("rock", new Color(0.62f, 0.45f, 0.34f), 0.18f);           // 陶罐 赤陶调色
 
-    // 擂台盘面（中央圆台顶面——最靠近镜头的面，单独给一点暖金倾向的石材，
-    // 用**环形刻线**而非整盘高光来提供近场焦点，避免"一块大煎饼"）
+    // 擂台盘面：大理石 + 微暖调色——近场主角面
     private static readonly StandardMaterial3D ArenaDeckMat =
-        Textured(Mat(new Color(0.238f, 0.222f, 0.190f), 0.66f, 0.10f), 0.20f);
-    // 擂台包边（低矮金属压条——给台面一个"边界"，同时绝不遮挡角色）
+        Pbr("marble", new Color(0.44f, 0.47f, 0.55f), 0.07f);          // 蓝灰大理石（暖调会读成篮球场）
+    // 擂台包边（低矮金属压条）
     private static readonly StandardMaterial3D CurbMat =
         Mat(new Color(0.155f, 0.140f, 0.115f), 0.42f, 0.55f);
     private static readonly StandardMaterial3D DeckLineMat =
-        Emissive(new Color(0.30f, 0.245f, 0.140f), 0.10f, 0.45f, 0.15f);   // 刻线 暖金**微**自发光（压低——刻线是地面细节不是发光条）
+        Emissive(new Color(0.55f, 0.80f, 1.00f), 0.60f, 0.45f, 0.15f);// 刻线：冷青辉光（竞技场符文线，远离"篮球场"）
+
+    /// Poly Haven 三件套材质（res://assets/tex/<name>_{diff,nor,rough}.jpg）
+    private static StandardMaterial3D Pbr(string name, Color tint, float metal)
+    {
+        var m = new StandardMaterial3D
+        {
+            AlbedoTexture = GD.Load<Texture2D>($"res://assets/tex/{name}_diff.jpg"),
+            NormalTexture = GD.Load<Texture2D>($"res://assets/tex/{name}_nor.jpg"),
+            RoughnessTexture = GD.Load<Texture2D>($"res://assets/tex/{name}_rough.jpg"),
+            NormalEnabled = true,
+            NormalScale = 1.1f,
+            Metallic = metal,
+            Roughness = 1.0f,               // 由贴图承载
+            Uv1Triplanar = true,
+            Uv1WorldTriplanar = true,
+        };
+        m.AlbedoColor = tint;               // 乘在实拍贴图上的调色
+        return m;
+    }
 
     private static StandardMaterial3D Mat(Color c, float rough, float metal) => new()
     {
@@ -51,44 +70,6 @@ public sealed class ArenaBuilder
         Metallic = metal,
     };
 
-    /// 程序化石材细纹（零素材）：一张低对比噪声当反照率相乘，配合**三平面映射**给地板/墙体
-    /// 提供不依赖 UV 的表面细节——消除"一整片纯色塑料板"的白盒感。
-    /// 噪声经 ColorRamp 压到 0.74~1.0 → 只加细纹，不改变整体明度关系、不产生云雾感。
-    private static NoiseTexture2D? _stoneTex;
-    private static Texture2D StoneTexture()
-    {
-        if (_stoneTex is not null) return _stoneTex;
-        var ramp = new Gradient();
-        ramp.SetColor(0, new Color(0.84f, 0.84f, 0.84f));
-        ramp.SetColor(1, new Color(1f, 1f, 1f));
-        _stoneTex = new NoiseTexture2D
-        {
-            Noise = new FastNoiseLite
-            {
-                NoiseType = FastNoiseLite.NoiseTypeEnum.SimplexSmooth,
-                Frequency = 0.045f,
-                FractalOctaves = 4,
-                FractalLacunarity = 2.1f,
-                FractalGain = 0.5f,
-            },
-            ColorRamp = ramp,   // NoiseTexture2D.ColorRamp 取 Gradient（把噪声压到 0.74~1.0）
-            Width = 256,
-            Height = 256,
-            Seamless = true,
-            GenerateMipmaps = true,
-        };
-        return _stoneTex;
-    }
-
-    /// 给材质挂上石材细纹（三平面映射——顺便规避 Box/Cylinder 的 UV 拉伸畸变）。
-    private static StandardMaterial3D Textured(StandardMaterial3D m, float scale = 0.16f)
-    {
-        m.AlbedoTexture = StoneTexture();
-        m.Uv1Triplanar = true;
-        m.Uv1WorldTriplanar = true;
-        m.Uv1Scale = new Godot.Vector3(scale, scale, scale);
-        return m;
-    }
 
     private static StandardMaterial3D Emissive(Color c, float energy, float rough, float metal) => new()
     {
@@ -123,32 +104,36 @@ public sealed class ArenaBuilder
 
     private static void BuildLights(Node parent)
     {
-        // 主光 Key：定义形体与投影方向（开阴影）——暖白，能量给足（旧实现 0.78 太弱→画面无立体感）
-        parent.AddChild(new DirectionalLight3D
+        // 主光 Key：定义形体与投影方向（PSSM4 软阴影）——暖白
+        var key = new DirectionalLight3D
         {
             RotationDegrees = new Godot.Vector3(-46, 38, 0),
             LightColor = new Color(1.000f, 0.955f, 0.885f),   // #FFF4E2
-            LightEnergy = 1.05f,
+            LightEnergy = 1.45f,                              // ACES 吃掉约 25% 亮度，相应上调
             ShadowEnabled = true,
             ShadowBias = 0.03f,
-        });
+            ShadowBlur = 1.6f,                                // 软影（Forward+ 支持）
+            DirectionalShadowMode = DirectionalLight3D.ShadowMode.Parallel4Splits,
+            DirectionalShadowBlendSplits = true,
+            DirectionalShadowMaxDistance = 70f,
+        };
+        parent.AddChild(key);
 
         // 补光 Fill：从相机侧低位抬暗面，避免纯黑（关阴影）——冷调，与暖主光形成色温分离
         parent.AddChild(new DirectionalLight3D
         {
             RotationDegrees = new Godot.Vector3(-18, -140, 0),
             LightColor = new Color(0.62f, 0.72f, 1.000f),     // 冷蓝补光
-            LightEnergy = 0.22f,                              // 压低（原 0.38 把场面提得太平、无对比）
+            LightEnergy = 0.30f,
             ShadowEnabled = false,
         });
 
         // 轮廓光 Rim：从角色背后上方低掠角打，把剪影从背景里"抠"出来（§5.1 核心）。
-        // 相机在 −Z 侧朝 +Z 看，故"背后"= +Z；低掠角（−14°）在头顶/背缘形成最亮边线。
         parent.AddChild(new DirectionalLight3D
         {
             RotationDegrees = new Godot.Vector3(-14, 0, 0),
             LightColor = new Color(0.850f, 0.900f, 1.000f),   // 近白微冷
-            LightEnergy = 0.95f,                              // 提高——轮廓光是"从背景里抠出角色"的关键
+            LightEnergy = 1.15f,
             ShadowEnabled = false,
         });
     }
@@ -239,27 +224,45 @@ public sealed class ArenaBuilder
 
     private static void BuildEnvironmentSettings(Node parent)
     {
-        // 程序化天空：给出真正的"天顶→地平线"渐变（取代此前一块扁平灰墙），
-        // 让远景有纵深；室内剧场式配色（暗天顶 / 亮地平线 / 暗地面）。
+        // 程序化天空：真正的"天顶→地平线"渐变 + 夜场竞技场配色。
         var skyMat = new ProceduralSkyMaterial
         {
-            SkyTopColor = new Color(0.085f, 0.105f, 0.170f),
-            SkyHorizonColor = new Color(0.310f, 0.345f, 0.430f),
-            SkyCurve = 0.24f,
-            GroundBottomColor = new Color(0.040f, 0.046f, 0.062f),
-            GroundHorizonColor = new Color(0.150f, 0.170f, 0.215f),
+            SkyTopColor = new Color(0.045f, 0.055f, 0.095f),
+            SkyHorizonColor = new Color(0.235f, 0.260f, 0.330f),
+            SkyCurve = 0.22f,
+            GroundBottomColor = new Color(0.030f, 0.034f, 0.046f),
+            GroundHorizonColor = new Color(0.120f, 0.135f, 0.170f),
             SunAngleMax = 40f,
         };
         var env = new Godot.Environment
         {
             BackgroundMode = Godot.Environment.BGMode.Sky,
-            Sky = new Sky { SkyMaterial = skyMat, RadianceSize = Sky.RadianceSizeEnum.Size128 },
-            AmbientLightSource = Godot.Environment.AmbientSource.Sky,   // 环境光取自天空（更自然）
-            AmbientLightEnergy = 0.30f,
-            AmbientLightSkyContribution = 0.75f,
+            Sky = new Sky { SkyMaterial = skyMat, RadianceSize = Sky.RadianceSizeEnum.Size256 },
+            AmbientLightSource = Godot.Environment.AmbientSource.Sky,
+            AmbientLightEnergy = 0.55f,
+            AmbientLightSkyContribution = 0.85f,
             FogEnabled = false,                                          // §5.1: 关雾（否则吃掉 35m 外剪影）
+
+            // ---- Forward+ 专属画质（gl_compatibility 无这些能力——切渲染器的理由）----
+            TonemapMode = Godot.Environment.ToneMapper.Aces,             // 电影级色调映射
+            TonemapExposure = 1.12f,
+            TonemapWhite = 6.0f,
+            GlowEnabled = true,                                          // 刻线/灯组/技能特效真正泛光
+            GlowIntensity = 0.38f,
+            GlowBloom = 0.06f,
+            GlowBlendMode = Godot.Environment.GlowBlendModeEnum.Additive,
+            GlowHdrThreshold = 1.05f,                                    // 只让 HDR>1 的像素溢出
+            SsaoEnabled = true,                                          // 接触阴影——接地感的关键
+            SsaoRadius = 1.2f,
+            SsaoIntensity = 1.6f,
+            SsaoPower = 1.6f,
+            SsaoDetail = 0.6f,
+            AdjustmentEnabled = true,
+            AdjustmentContrast = 1.06f,
+            AdjustmentSaturation = 1.08f,
         };
-        // 注: Compatibility 渲染器不支持色调映射（已实测 tonemap_mode 无效果）→ 只能靠灯光/材质控制曝光
+        for (int lvl = 1; lvl <= 6; lvl++)
+            env.SetGlowLevel(lvl, lvl is 3 or 4 ? 0.9f : 0.35f);         // 中频泛光为主（柔和不糊）
         parent.AddChild(new WorldEnvironment { Environment = env });
     }
 
