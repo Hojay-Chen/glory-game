@@ -468,13 +468,20 @@ public sealed class ArenaBuilder
                     AddCylinder(parent, o.X, o.Z, o.R, (float)o.Height, PillarMat);
                     break;
                 case ArenaObjectKind.PropWood:
-                    AddBox(parent, o.X, o.Z, o.HalfW * 2, o.HalfD * 2, (float)o.Height, WoodMat);
+                    // CC0 真资产（军械箱）——不再用盒子冒充木箱
+                    PlaceModel(parent, "old_military_crate",
+                        new Godot.Vector3((float)o.X, 0f, (float)o.Z), 0.95f,
+                        yawDeg: (float)((double)o.X + (double)o.Z) * 3.1f % 360f);
                     break;
                 case ArenaObjectKind.PropRock:
-                    AddBox(parent, o.X, o.Z, o.HalfW * 2, o.HalfD * 2, (float)o.Height, RockMat);
+                    PlaceModel(parent, "moon_rock_01",
+                        new Godot.Vector3((float)o.X, 0f, (float)o.Z), 1.5f,
+                        yawDeg: (float)((double)o.Z * 7.0) % 360f);
                     break;
                 case ArenaObjectKind.PropPot:
-                    AddCylinder(parent, o.X, o.Z, 0.4m, 0.5f, PotMat);
+                    PlaceModel(parent, "barrel_03",
+                        new Godot.Vector3((float)o.X, 0f, (float)o.Z), 1.05f,
+                        yawDeg: (float)((double)o.X * 11.0) % 360f);
                     break;
             }
         }
@@ -494,6 +501,52 @@ public sealed class ArenaBuilder
         });
     }
 
+
+
+    // ---- CC0 真模型资产（Poly Haven，glTF；替代基本体堆叠）----
+
+    /// 实例化一个 CC0 模型，**按目标高度自动缩放并把脚底对齐到 y=0**——
+    /// 下载来的资产尺度各不相同，手工量尺寸不可维护，自动归一化是唯一可行做法。
+    private static void PlaceModel(Node parent, string name, Godot.Vector3 pos,
+        float targetHeight, float yawDeg = 0f)
+    {
+        var scene = ResourceLoader.Load<PackedScene>($"res://assets/models/{name}/{name}.gltf");
+        if (scene?.Instantiate() is not Node3D inst) return;
+        var holder = new Node3D { Position = pos, RotationDegrees = new Godot.Vector3(0, yawDeg, 0) };
+        holder.AddChild(inst);
+        parent.AddChild(holder);
+
+        var (mn, mx) = LocalAabb(inst, Transform3D.Identity);
+        float h = mx.Y - mn.Y;
+        if (h > 0.001f)
+        {
+            float k = targetHeight / h;
+            inst.Scale = new Godot.Vector3(k, k, k);
+            inst.Position = new Godot.Vector3(-mn.X * k, -mn.Y * k, -mn.Z * k);
+        }
+    }
+
+    /// 递归求子树在 root 局部空间中的包围盒（含各 MeshInstance3D 自带变换）
+    private static (Godot.Vector3, Godot.Vector3) LocalAabb(Node n, Transform3D acc)
+    {
+        var mn = new Godot.Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
+        var mx = new Godot.Vector3(float.MinValue, float.MinValue, float.MinValue);
+        bool any = false;
+        void Walk(Node node, Transform3D t)
+        {
+            if (node is MeshInstance3D mi)
+            {
+                var a = t * mi.GetAabb();
+                mn = mn.Min(a.Position); mx = mx.Max(a.Position);
+                mn = mn.Min(a.End); mx = mx.Max(a.End);
+                any = true;
+            }
+            foreach (var c in node.GetChildren())
+                Walk(c, node is Node3D n3 ? t * n3.Transform : t);
+        }
+        Walk(n, acc);
+        return any ? (mn, mx) : (Godot.Vector3.Zero, Godot.Vector3.One);
+    }
 
     /// 竞技场建筑层：背墙拱廊 + 壁柱 + 檐口 + 旗帜 + 角雕像。
     /// 单纯的四堵墙永远读作"盒子"——建筑构件（重复的拱、有节奏的柱、收头的檐口）
@@ -597,38 +650,24 @@ public sealed class ArenaBuilder
                 });
             }
 
-        // ---- 四角雕像（基座 + 简化人形：给角落一个"尺度参照物"）----
-        var bronze = Mat(new Color(0.26f, 0.22f, 0.16f), 0.42f, 0.80f);
+        // ---- 四角雕像（CC0 哥特石像真模型 + 石基座）----
+        var pedestal = Mat(new Color(0.34f, 0.35f, 0.39f), 0.80f, 0.04f);
         foreach (float sx in new[] { 1f, -1f })
             foreach (float sz in new[] { 1f, -1f })
             {
                 float px = sx * (hw - 3.5f), pz = sz * (hd - 5f);
                 parent.AddChild(new MeshInstance3D
                 {
-                    Mesh = new BoxMesh { Size = new Godot.Vector3(2.6f, 2.0f, 2.6f) },
-                    MaterialOverride = stone,
-                    Position = new Godot.Vector3(px, 1.0f, pz),
+                    Mesh = new BoxMesh { Size = new Godot.Vector3(2.4f, 1.6f, 2.4f) },
+                    MaterialOverride = pedestal,
+                    Position = new Godot.Vector3(px, 0.8f, pz),
                 });
-                parent.AddChild(new MeshInstance3D
-                {
-                    Mesh = new CylinderMesh { TopRadius = 0.42f, BottomRadius = 0.62f, Height = 2.4f, RadialSegments = 10 },
-                    MaterialOverride = bronze,
-                    Position = new Godot.Vector3(px, 3.2f, pz),
-                });
-                parent.AddChild(new MeshInstance3D
-                {
-                    Mesh = new SphereMesh { Radius = 0.34f, Height = 0.68f, RadialSegments = 12, Rings = 8 },
-                    MaterialOverride = bronze,
-                    Position = new Godot.Vector3(px, 4.7f, pz),
-                });
-                parent.AddChild(new MeshInstance3D
-                {
-                    Mesh = new BoxMesh { Size = new Godot.Vector3(1.5f, 0.35f, 0.5f) },
-                    MaterialOverride = bronze,
-                    Position = new Godot.Vector3(px, 3.9f, pz),
-                    RotationDegrees = new Godot.Vector3(0, sx * sz > 0 ? 35f : -35f, 22f),
-                });
+                PlaceModel(parent, "gothic_statue", new Godot.Vector3(px, 1.6f, pz), 5.2f,
+                    yawDeg: sx * sz > 0 ? 135f : -135f);
             }
+
+        // ---- 北面铁门（场景中心件：给远景一个"入口"）----
+        PlaceModel(parent, "large_iron_gate", new Godot.Vector3(0f, 0f, hd + 2.2f), 7.5f, yawDeg: 180f);
     }
 
     /// 与地面齐平的圆形涂装台面（顶面 y=0.04，绝不遮挡站在其上的角色）。
