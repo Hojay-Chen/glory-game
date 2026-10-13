@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using Arena.Infra.Data;
@@ -97,6 +98,7 @@ public sealed class ArenaBuilder
         BuildLights(parent);
         BuildSkyAndEnclosure(parent, hw, hd);   // 天空 + 远景围合（消灭死黑 void）
         BuildEnvironmentSettings(parent);
+        BuildBraziers(parent);
         ArenaDecor.Build(parent, objects);
     }
 
@@ -104,35 +106,35 @@ public sealed class ArenaBuilder
 
     private static void BuildLights(Node parent)
     {
-        // 主光 Key：定义形体与投影方向（PSSM4 软阴影）——暖白
-        var key = new DirectionalLight3D
+        // 主光 Key（月光位）：PSSM4 软阴影 + 体积光（上帝光）
+        parent.AddChild(new DirectionalLight3D
         {
             RotationDegrees = new Godot.Vector3(-46, 38, 0),
-            LightColor = new Color(1.000f, 0.955f, 0.885f),   // #FFF4E2
-            LightEnergy = 1.45f,                              // ACES 吃掉约 25% 亮度，相应上调
+            LightColor = new Color(1.000f, 0.955f, 0.885f),
+            LightEnergy = 1.45f,
             ShadowEnabled = true,
             ShadowBias = 0.03f,
-            ShadowBlur = 1.6f,                                // 软影（Forward+ 支持）
+            ShadowBlur = 1.6f,
             DirectionalShadowMode = DirectionalLight3D.ShadowMode.Parallel4Splits,
             DirectionalShadowBlendSplits = true,
             DirectionalShadowMaxDistance = 70f,
-        };
-        parent.AddChild(key);
+            LightVolumetricFogEnergy = 0.85f,
+        });
 
-        // 补光 Fill：从相机侧低位抬暗面，避免纯黑（关阴影）——冷调，与暖主光形成色温分离
+        // 补光 Fill：冷蓝抬暗面
         parent.AddChild(new DirectionalLight3D
         {
             RotationDegrees = new Godot.Vector3(-18, -140, 0),
-            LightColor = new Color(0.62f, 0.72f, 1.000f),     // 冷蓝补光
-            LightEnergy = 0.30f,
+            LightColor = new Color(0.62f, 0.72f, 1.000f),
+            LightEnergy = 0.32f,
             ShadowEnabled = false,
         });
 
-        // 轮廓光 Rim：从角色背后上方低掠角打，把剪影从背景里"抠"出来（§5.1 核心）。
+        // 轮廓光 Rim：背后低掠角抠剪影
         parent.AddChild(new DirectionalLight3D
         {
             RotationDegrees = new Godot.Vector3(-14, 0, 0),
-            LightColor = new Color(0.850f, 0.900f, 1.000f),   // 近白微冷
+            LightColor = new Color(0.850f, 0.900f, 1.000f),
             LightEnergy = 1.15f,
             ShadowEnabled = false,
         });
@@ -143,13 +145,9 @@ public sealed class ArenaBuilder
     private static void BuildSkyAndEnclosure(Node parent, float hw, float hd)
     {
         // 看台：四面逐级后退/升高的台阶 + 顶层人群带——给"竞技场↔观众"的语境（评审 R-3）。
-        // 人群用**沿看台等分的色块带**表现（几块一组、共用少量材质），而非逐个人形小盒：
-        // gl_compatibility 对 draw call 敏感，这样几十个大件即可读出"坐满的看台"。
+        // 人群 = **一个 MultiMesh**（约 1600 人、随机衣色、顶点着色器逐人呼吸摆动）——
+        // 单 draw call 撑起整座看台。Forward+ 下的基本功，gl_compatibility 时代做不到。
         const int Tiers = 3;
-        var seatMat = new[] { Mat(new Color(0.40f, 0.19f, 0.18f), 0.94f, 0f),
-                              Mat(new Color(0.19f, 0.25f, 0.40f), 0.94f, 0f),
-                              Mat(new Color(0.43f, 0.36f, 0.20f), 0.94f, 0f),
-                              Mat(new Color(0.22f, 0.32f, 0.29f), 0.94f, 0f) };
         for (int tier = 0; tier < Tiers; tier++)
         {
             float off = 3.6f * tier;
@@ -160,19 +158,44 @@ public sealed class ArenaBuilder
             foreach (float sz in new[] { 1f, -1f })
             {
                 ArenaDecor.Bench(parent, 0, sz * zc, new Godot.Vector3(spanX, h, 3.4f));
-                CrowdRow(parent, 0, sz * zc + sz * 0.4f, h, 2.6f, spanX, alongX: true, tier, seatMat);
+                CrowdFill(0, sz * zc + sz * 0.55f, h, spanX, alongX: true, tier);
                 // 前挡板压到 0.36m（原来 1.0m 会把身后的"人群"整排遮住）
                 ArenaDecor.Rail(parent, 0, h + 0.18f, sz * (zc - 1.62f), new Godot.Vector3(spanX, 0.36f, 0.14f));
             }
             foreach (float sx in new[] { 1f, -1f })
             {
                 ArenaDecor.Bench(parent, sx * xc, 0, new Godot.Vector3(3.4f, h, spanZ));
-                CrowdRow(parent, sx * xc + sx * 0.4f, 0, h, 2.6f, spanZ, alongX: false, tier, seatMat);
+                CrowdFill(sx * xc + sx * 0.55f, 0, h, spanZ, alongX: false, tier);
                 ArenaDecor.Rail(parent, sx * (xc - 1.62f), h + 0.18f, 0, new Godot.Vector3(0.14f, 0.36f, spanZ));
             }
         }
 
-        // 灯桅：四角高杆 + 发光灯组——给上方空天补纵向结构（竞技场转播感），同时是远景纵深锚点。
+        EmitCrowd(parent);
+
+        // 背墙：顶层看台之后的**合拢碗壁**——把"观众浮在天上"变成"封闭竞技场"。
+        // 高度 8m，同时挡住天空接缝；用砂岩贴图与看台同族。
+        var backMat = Mat(new Color(0.36f, 0.37f, 0.42f), 0.80f, 0.04f);
+        {
+            float bz = hd + 3.6f + 3.6f * 2 + 2.4f, bx = hw + 3.6f + 3.6f * 2 + 2.4f;
+            float sxSpan = hw * 2f + 44f, szSpan = hd * 2f + 44f;
+            foreach (float sz in new[] { 1f, -1f })
+                parent.AddChild(new MeshInstance3D
+                {
+                    Mesh = new BoxMesh { Size = new Godot.Vector3(sxSpan, 8f, 1.2f) },
+                    MaterialOverride = backMat,
+                    Position = new Godot.Vector3(0, 8.6f + 4f, sz * bz),
+                });
+            foreach (float sx in new[] { 1f, -1f })
+                parent.AddChild(new MeshInstance3D
+                {
+                    Mesh = new BoxMesh { Size = new Godot.Vector3(1.2f, 8f, szSpan) },
+                    MaterialOverride = backMat,
+                    Position = new Godot.Vector3(sx * bx, 8.6f + 4f, 0),
+                });
+        }
+
+        // 灯桅：四角高杆 + **真泛光灯**（SpotLight 体积光束——体育场夜场的标志）。
+        // 真灯同时解决"看台死黑"（SpotLight 顺带照亮观众席）。
         var mastMat = Mat(new Color(0.10f, 0.11f, 0.13f), 0.55f, 0.45f);
         var lampMat = Emissive(new Color(1.00f, 0.95f, 0.82f), 1.6f, 0.30f, 0.00f);
         foreach (float sx in new[] { 1f, -1f })
@@ -192,77 +215,173 @@ public sealed class ArenaBuilder
                     MaterialOverride = lampMat,
                     Position = new Godot.Vector3(mx, MastH + 0.7f, mz),
                 });
+                // 泛光灯：对准擂台中心，宽角——转播照明 + 穿雾光柱
+                var spot = new SpotLight3D
+                {
+                    Position = new Godot.Vector3(mx, MastH + 0.6f, mz),
+                    LightColor = new Color(0.92f, 0.95f, 1.00f),
+                    SpotRange = 78f,
+                    SpotAttenuation = 0.9f,
+                    SpotAngle = 38f,
+                    SpotAngleAttenuation = 1.1f,
+                    LightEnergy = 11f,
+                    LightVolumetricFogEnergy = 0.55f,
+                    LightSpecular = 0.7f,
+                    ShadowEnabled = false,
+                };
+                spot.LookAtFromPosition(spot.Position, new Godot.Vector3(0, 1.2f, 0), Godot.Vector3.Up);
+                parent.AddChild(spot);
             }
     }
 
-    /// 看台顶层的一排"观众"色块（沿长度等分 14 组，共用 4 个材质实例）。
-    private static void CrowdRow(Node parent, float cx, float cz, float topY, float depth,
-        float span, bool alongX, int tier, StandardMaterial3D[] mats)
+    /// 火盆：擂台四角斜位的青铜盆 + 火焰 + 闪烁 OmniLight（暖火 vs 冷月光的对冲）。
+    private static void BuildBraziers(Node parent)
     {
-        const int N = 14;
-        float step = span / N;
-        for (int i = 0; i < N; i++)
+        var bowlMat = Mat(new Color(0.23f, 0.17f, 0.12f), 0.45f, 0.75f);
+        var poleMat = Mat(new Color(0.14f, 0.13f, 0.12f), 0.55f, 0.60f);
+        var fireMat = new StandardMaterial3D
+        {
+            AlbedoColor = new Color(1.0f, 0.55f, 0.15f),
+            EmissionEnabled = true,
+            Emission = new Color(1.0f, 0.50f, 0.12f),
+            EmissionEnergyMultiplier = 4.2f,
+            ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+        };
+        foreach (float sx in new[] { 1f, -1f })
+            foreach (float sz in new[] { 1f, -1f })
+            {
+                var brazier = new Node3D { Position = new Godot.Vector3(sx * 10.6f, 0f, sz * 10.6f) };
+                brazier.AddChild(new MeshInstance3D
+                {
+                    Mesh = new CylinderMesh { TopRadius = 0.16f, BottomRadius = 0.22f, Height = 1.5f, RadialSegments = 10 },
+                    MaterialOverride = poleMat,
+                    Position = new Godot.Vector3(0, 0.75f, 0),
+                });
+                brazier.AddChild(new MeshInstance3D
+                {
+                    Mesh = new CylinderMesh { TopRadius = 0.52f, BottomRadius = 0.24f, Height = 0.42f, RadialSegments = 12 },
+                    MaterialOverride = bowlMat,
+                    Position = new Godot.Vector3(0, 1.66f, 0),
+                });
+                brazier.AddChild(new MeshInstance3D
+                {
+                    Mesh = new SphereMesh { Radius = 0.38f, Height = 0.75f, RadialSegments = 12, Rings = 8 },
+                    MaterialOverride = fireMat,
+                    Position = new Godot.Vector3(0, 1.95f, 0),
+                });
+                brazier.AddChild(new Visuals.FlickerLight { Position = new Godot.Vector3(0, 2.1f, 0) });
+                parent.AddChild(brazier);
+            }
+    }
+
+    // ---- 观众（MultiMesh：单 draw call 的"人海"）----
+    private static readonly List<(Godot.Vector3 pos, Godot.Vector3 scale, float yaw, Color col)> _crowd = new();
+
+    /// 收集一排观众（沿看台长度按 ~0.72m 间距落位；衣色取自 6 色夜场调色板 + 逐人抖动）。
+    private static void CrowdFill(float cx, float cz, float topY, float span, bool alongX, int tier)
+    {
+        var palette = new[]
+        {
+            new Color(0.62f, 0.28f, 0.26f), new Color(0.24f, 0.32f, 0.52f),
+            new Color(0.66f, 0.55f, 0.30f), new Color(0.26f, 0.42f, 0.38f),
+            new Color(0.52f, 0.34f, 0.50f), new Color(0.72f, 0.70f, 0.66f),
+        };
+        float step = 0.72f;
+        int n = (int)(span / step);
+        // 逐人的确定性伪随机（位置哈希——同局同布局，Restart 不跳脸）
+        float Hash(int i) { float x = MathF.Sin(i * 12.9898f + tier * 78.233f) * 43758.5453f; return x - MathF.Floor(x); }
+        for (int i = 0; i < n; i++)
         {
             float t = (i + 0.5f) * step - span / 2f;
-            // 用 tier 错开配色，避免整排同色
-            var m = mats[(i + tier * 3) % mats.Length];
-            float hgt = 0.80f + ((i * 7 + tier * 5) % 3) * 0.16f;
-            var size = alongX
-                ? new Godot.Vector3(step * 0.82f, hgt, depth * 0.55f)
-                : new Godot.Vector3(depth * 0.55f, hgt, step * 0.82f);
+            float h1 = Hash(i), h2 = Hash(i + 977), h3 = Hash(i + 311);
+            var col = palette[(int)(h1 * palette.Length) % palette.Length].Lerp(Colors.White, h3 * 0.18f);
+            float hgt = 0.86f + h2 * 0.20f;                       // 身高差异
+            var scale = new Godot.Vector3(0.52f, hgt, 0.42f);
             var pos = alongX
-                ? new Godot.Vector3(cx + t, topY + hgt / 2f, cz)
-                : new Godot.Vector3(cx, topY + hgt / 2f, cz + t);
-            parent.AddChild(new MeshInstance3D
-            {
-                Mesh = new BoxMesh { Size = size },
-                MaterialOverride = m,
-                Position = pos,
-            });
+                ? new Godot.Vector3(cx + t, topY + hgt * 0.5f, cz + (h2 - 0.5f) * 0.5f)
+                : new Godot.Vector3(cx + (h2 - 0.5f) * 0.5f, topY + hgt * 0.5f, cz + t);
+            float yaw = (h1 - 0.5f) * 0.5f;
+            _crowd.Add((pos, scale, yaw, col));
         }
+    }
+
+    /// 把收集到的观众一次性发成一个 MultiMeshInstance3D（逐实例：变换 + 衣色 + 摆动相位）。
+    private static void EmitCrowd(Node parent)
+    {
+        if (_crowd.Count == 0) return;
+        var shader = GD.Load<Shader>("res://shaders/crowd.gdshader");
+        var mm = new MultiMesh
+        {
+            TransformFormat = MultiMesh.TransformFormatEnum.Transform3D,
+            UseColors = true,
+            Mesh = new BoxMesh { Size = Godot.Vector3.One },
+            InstanceCount = _crowd.Count,
+        };
+        for (int i = 0; i < _crowd.Count; i++)
+        {
+            var (pos, scale, yaw, col) = _crowd[i];
+            mm.SetInstanceTransform(i, new Transform3D(
+                Basis.FromEuler(new Godot.Vector3(0, yaw, 0)).Scaled(scale), pos));
+            // COLOR.r 承载"摆动相位"（着色器用），gb+a 是衣色
+            float phase = (i * 0.6180339f) % 1f;
+            mm.SetInstanceColor(i, new Color(phase, col.R, col.G, col.B));
+        }
+        parent.AddChild(new MultiMeshInstance3D
+        {
+            Multimesh = mm,
+            MaterialOverride = shader is null ? new StandardMaterial3D { AlbedoColor = new Color(0.4f, 0.4f, 0.45f) }
+                                              : new ShaderMaterial { Shader = shader },
+            CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,   // 1600 人投影不值当
+        });
+        _crowd.Clear();
     }
 
     private static void BuildEnvironmentSettings(Node parent)
     {
-        // 程序化天空：真正的"天顶→地平线"渐变 + 夜场竞技场配色。
-        var skyMat = new ProceduralSkyMaterial
+        // Poly Haven 实拍星空 HDRI（kloppenheim_02_puresky, CC0）——背景/环境光/反射三合一。
+        var skyMat = new PanoramaSkyMaterial
         {
-            SkyTopColor = new Color(0.045f, 0.055f, 0.095f),
-            SkyHorizonColor = new Color(0.235f, 0.260f, 0.330f),
-            SkyCurve = 0.22f,
-            GroundBottomColor = new Color(0.030f, 0.034f, 0.046f),
-            GroundHorizonColor = new Color(0.120f, 0.135f, 0.170f),
-            SunAngleMax = 40f,
+            Panorama = GD.Load<Texture2D>("res://assets/tex/night_sky_2k.hdr"),
+            Filter = true,
+            EnergyMultiplier = 1.15f,
         };
         var env = new Godot.Environment
         {
             BackgroundMode = Godot.Environment.BGMode.Sky,
             Sky = new Sky { SkyMaterial = skyMat, RadianceSize = Sky.RadianceSizeEnum.Size256 },
             AmbientLightSource = Godot.Environment.AmbientSource.Sky,
-            AmbientLightEnergy = 0.55f,
-            AmbientLightSkyContribution = 0.85f,
-            FogEnabled = false,                                          // §5.1: 关雾（否则吃掉 35m 外剪影）
+            AmbientLightEnergy = 0.42f,
+            AmbientLightSkyContribution = 0.90f,
 
-            // ---- Forward+ 专属画质（gl_compatibility 无这些能力——切渲染器的理由）----
-            TonemapMode = Godot.Environment.ToneMapper.Aces,             // 电影级色调映射
-            TonemapExposure = 1.12f,
+            // ---- Forward+ 专属画质 ----
+            TonemapMode = Godot.Environment.ToneMapper.Aces,
+            TonemapExposure = 1.15f,
             TonemapWhite = 6.0f,
-            GlowEnabled = true,                                          // 刻线/灯组/技能特效真正泛光
-            GlowIntensity = 0.38f,
-            GlowBloom = 0.06f,
+            GlowEnabled = true,
+            GlowIntensity = 0.45f,
+            GlowBloom = 0.05f,
             GlowBlendMode = Godot.Environment.GlowBlendModeEnum.Additive,
-            GlowHdrThreshold = 1.05f,                                    // 只让 HDR>1 的像素溢出
-            SsaoEnabled = true,                                          // 接触阴影——接地感的关键
+            GlowHdrThreshold = 1.02f,
+            SsaoEnabled = true,
             SsaoRadius = 1.2f,
-            SsaoIntensity = 1.6f,
+            SsaoIntensity = 1.7f,
             SsaoPower = 1.6f,
             SsaoDetail = 0.6f,
             AdjustmentEnabled = true,
             AdjustmentContrast = 1.06f,
-            AdjustmentSaturation = 1.08f,
+            AdjustmentSaturation = 1.05f,
+
+            // ---- 体积雾：夜场空气感（灯光锥/月光辉光都靠它承载）----
+            VolumetricFogEnabled = true,
+            VolumetricFogDensity = 0.05f,
+            VolumetricFogAlbedo = new Color(0.42f, 0.48f, 0.62f),
+            VolumetricFogEmission = new Color(0.04f, 0.05f, 0.08f),
+            VolumetricFogLength = 96f,
+            VolumetricFogAmbientInject = 0.35f,
+            VolumetricFogTemporalReprojectionEnabled = true,
         };
         for (int lvl = 1; lvl <= 6; lvl++)
-            env.SetGlowLevel(lvl, lvl is 3 or 4 ? 0.9f : 0.35f);         // 中频泛光为主（柔和不糊）
+            env.SetGlowLevel(lvl, lvl is 3 or 4 ? 0.9f : 0.35f);
         parent.AddChild(new WorldEnvironment { Environment = env });
     }
 
