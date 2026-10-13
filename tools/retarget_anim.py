@@ -177,6 +177,33 @@ def main():
                 if tname == ROOT_BONE:
                     pb.keyframe_insert("location", frame=f)
 
+        # 四元数**符号连续性**修正：烘焙出的逐帧四元数若在相邻帧间反号（q 与 -q 同一旋转），
+        # 引擎插值会走"长路径"绕 360° → 单帧骨转上百度的假跳变（实测 forearm.R 达 164°/帧）。
+        # 逐骨骼沿时间轴把符号翻正，保证相邻帧 dot >= 0。
+        fixed = 0
+        for tname in order:
+            pb = tgt_arm.pose.bones[tname]
+            path = pb.path_from_id("rotation_quaternion")
+            curves = [tgt_action.fcurves.find(path, index=i) for i in range(4)]
+            if any(c is None for c in curves):
+                continue
+            prev = None
+            n = len(curves[0].keyframe_points)
+            for k in range(n):
+                q = [curves[i].keyframe_points[k].co[1] for i in range(4)]
+                if prev is not None:
+                    d = sum(q[i] * prev[i] for i in range(4))
+                    if d < 0.0:
+                        for i in range(4):
+                            kp = curves[i].keyframe_points[k]
+                            kp.co[1] = -kp.co[1]
+                            kp.handle_left[1] = -kp.handle_left[1]
+                            kp.handle_right[1] = -kp.handle_right[1]
+                        q = [-v for v in q]
+                        fixed += 1
+                prev = q
+        if fixed:
+            print(f"[quat] {out_name}: 修正 {fixed} 处符号翻转")
         tgt_action.frame_range  # touch
         made.append((out_name, f0, f1))
         print(f"[bake] {act.name:28s} -> {out_name:24s} frames {f0}..{f1}")

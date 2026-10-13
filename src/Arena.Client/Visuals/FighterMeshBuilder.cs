@@ -127,7 +127,19 @@ public static class FighterMeshBuilder
         rig.Anim = anim!;
         rig.Index();
         if (rig.Anim is not null)
+        {
             rig.Anim.PlaybackDefaultBlendTime = 0.18f;   // 动作切换留过渡，避免硬切
+            // ⚠️ glTF 导入的动画默认 **不循环**（LOOP_NONE）：播完一遍就停 → 骨架弹回绑定姿态
+            //    → 单帧骨转上百度的"姿态跳变"。移动/待机/受击必须循环；死亡姿态保持末帧不循环。
+            foreach (var an in rig.Anim.GetAnimationList())
+            {
+                var clip = rig.Anim.GetAnimation(an);
+                if (clip is null) continue;
+                clip.LoopMode = an.Contains("Death", StringComparison.Ordinal)
+                    ? Animation.LoopModeEnum.None
+                    : Animation.LoopModeEnum.Linear;
+            }
+        }
 
         // 材质：复制资产自带材质（保留 PBR 贴图），再按阵营/状态做**调制**染色
         if (rig.Mesh is not null && rig.Mesh.Mesh.GetSurfaceCount() > 0 &&

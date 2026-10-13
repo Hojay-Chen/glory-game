@@ -107,6 +107,10 @@ public sealed partial class FighterView : Node3D
         _hpBarFill = BillboardQuad(0.92f, 0.07f, teamCol, renderPriority: 1);
         _hpBarFill.Position = new Godot.Vector3(0, 2.12f, 0);
         AddChild(_hpBarFill);
+
+        // 开局立即播待机——否则首帧停留在**绑定姿态**（T/A-pose），
+        // 下一帧跳到动作首帧会产生上百度的"起手跳变"（实测 chest 93°）。
+        _rig.Anim?.Play(IdleClip, 0f);
     }
 
     private static MeshInstance3D BillboardQuad(float w, float h, Color col, int renderPriority = 0) => new()
@@ -177,7 +181,14 @@ public sealed partial class FighterView : Node3D
     /// 真人对打时不该出现单帧 >60° 的骨转（那是动作切换硬切或蒙皮炸了）。
     private readonly System.Collections.Generic.Dictionary<int, Godot.Quaternion> _prevBone = new();
     private string _lastWorstBone = "";
+    private float _frameWorstDeg;      // 本表现帧的最坏骨转（在 _Process 内测——与动画推进同频）
     public string LastWorstBone => _lastWorstBone;
+
+    /// 读取并清零累计的最坏骨转（供探测台调用）。
+    public float ConsumeWorstBoneDeg() { float v = _frameWorstDeg; _frameWorstDeg = 0f; return v; }
+
+    /// 读取并清零本帧最坏骨转。**必须由 _Process 采样**：动画按 _Process 推进，
+    /// 若从 _PhysicsProcess 采样，两者帧率不齐会测出大量假跳变（已踩过）。
     public float MaxBoneDeltaDeg()
     {
         var sk = _rig?.Skel;
@@ -251,8 +262,10 @@ public sealed partial class FighterView : Node3D
             if (_rig.Anim.GetAnimation(clip) is null) clip = AtkMain;
             var a = _rig.Anim.GetAnimation(clip);
             float len = a?.Length ?? 0f;
-            _rig.Anim.SpeedScale = len > 0.01f ? Mathf.Clamp(len / totalSec, 0.35f, 3.5f) : 1f;
-            _rig.Anim.Play(clip, 0.05f);        // 出招快切——动作起手不允许拖泥带水
+            // 攻击动作的加速上限 2.0：把 1.5s 的挥剑硬压进 0.3s 技能会让手臂甩到 86°/帧（假快动作）。
+            // 宁可动作与判定窗略有出入，也不要"机器人甩手"——实测这是姿态跳变的主因。
+            _rig.Anim.SpeedScale = len > 0.01f ? Mathf.Clamp(len / totalSec, 0.55f, 2.0f) : 1f;
+            _rig.Anim.Play(clip, 0.12f);        // 出招过渡 0.12s（0.05s≈3 帧会让手臂一帧甩 50°+）
         }
         _trail.Arm(skillId);
     }
@@ -306,7 +319,7 @@ public sealed partial class FighterView : Node3D
         if (_rig.Anim is not null && _attackTimer <= 0f && _lastState is FighterState.Hitstun or FighterState.Normal)
         {
             string clip = region == 2 && _rig.Anim.GetAnimation("Hit_Head") is not null ? "Hit_Head" : "Hit_Chest";
-            if (_rig.Anim.CurrentAnimation != clip) _rig.Anim.Play(clip, 0.05f);
+            if (_rig.Anim.CurrentAnimation != clip) _rig.Anim.Play(clip, 0.10f);
         }
     }
 
@@ -448,6 +461,7 @@ public sealed partial class FighterView : Node3D
         if (_frozen) return;
         _trail.Sample(delta);
         ApplyMotion((float)delta);
+        _frameWorstDeg = MathF.Max(_frameWorstDeg, MaxBoneDeltaDeg());   // 同频采样
 
         if (_flash <= 0 && _cancelGlow <= 0) return;
         _flash = Math.Max(0, _flash - (float)delta * 6f);

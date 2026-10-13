@@ -545,7 +545,7 @@ public partial class MatchRoot : Node
                 if (_views.TryGetValue(f.Id, out var view)) view.Sync(f);
         }
         _hud?.Sync(_world, _tick);
-        if (_probe) ProbeTick();
+        if (_probe) { ProbeTick(); if (_tick % 300 == 0) DumpProbe(silent: true); }
         if (_tick % 60 == 0 && Godot.OS.GetEnvironment("ARENA_DEBUG") == "1" && _camera is not null)
         {
             var fa = _world.Fighters[0]; var fb = _world.Fighters[1];
@@ -631,6 +631,7 @@ public partial class MatchRoot : Node
     private void ProbeTick()
     {
         if (_views.Count < 2 || _world is null) return;
+        if (_tick < 12) return;   // 开局若干帧动作尚未起飞，跳过（避免假阳性）
         _probeSamples++;
 
         foreach (var f in _world.Fighters)
@@ -645,7 +646,7 @@ public partial class MatchRoot : Node
                 Add($"t{_tick} [贴地] P{f.Id} state={f.State} 脚底Y={lowY:0.000} (应≈0)");
 
             // 3) 姿态跳变：单帧骨转 >55° = 硬切或蒙皮炸
-            float jump = v.MaxBoneDeltaDeg();
+            float jump = v.ConsumeWorstBoneDeg();
             if (jump > 55f)
                 Add($"t{_tick} [姿态跳变] P{f.Id} 单帧 {jump:0}° 骨={v.LastWorstBone} clip={v.AnimState().Clip}");
 
@@ -688,12 +689,13 @@ public partial class MatchRoot : Node
 
     private void Add(string msg) { if (_probeIssues.Count < 200) _probeIssues.Add(msg); }
 
-    private void DumpProbe()
+    private void DumpProbe(bool silent = false)
     {
         Console.WriteLine($"[PROBE] samples={_probeSamples} issues={_probeIssues.Count}");
         foreach (var g in _probeIssues.GroupBy(m => m.Split('[')[1].Split(']')[0]))
             Console.WriteLine($"[PROBE] {g.Key}: {g.Count()} 例  |  首例 {g.First()}");
-        foreach (var m in _probeIssues.Take(24)) Console.WriteLine($"[PROBE]  {m}");
+        if (!silent) foreach (var m in _probeIssues.Take(24)) Console.WriteLine($"[PROBE]  {m}");
+        _probeIssues.Clear(); _probeSamples = 0;
     }
 
     private void ApplyCameraShake()
