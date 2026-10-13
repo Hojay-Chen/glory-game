@@ -99,6 +99,7 @@ public sealed class ArenaBuilder
         BuildSkyAndEnclosure(parent, hw, hd);   // 天空 + 远景围合（消灭死黑 void）
         BuildEnvironmentSettings(parent);
         BuildBraziers(parent);
+        BuildArchitecture(parent, hw, hd);
         ArenaDecor.Build(parent, objects);
     }
 
@@ -220,11 +221,11 @@ public sealed class ArenaBuilder
                 {
                     Position = new Godot.Vector3(mx, MastH + 0.6f, mz),
                     LightColor = new Color(0.92f, 0.95f, 1.00f),
-                    SpotRange = 78f,
-                    SpotAttenuation = 0.9f,
-                    SpotAngle = 38f,
+                    SpotRange = 90f,
+                    SpotAttenuation = 1.25f,
+                    SpotAngle = 47f,
                     SpotAngleAttenuation = 1.1f,
-                    LightEnergy = 11f,
+                    LightEnergy = 9.5f,
                     LightVolumetricFogEnergy = 0.55f,
                     LightSpecular = 0.7f,
                     ShadowEnabled = false,
@@ -343,19 +344,19 @@ public sealed class ArenaBuilder
         {
             Panorama = GD.Load<Texture2D>("res://assets/tex/night_sky_2k.hdr"),
             Filter = true,
-            EnergyMultiplier = 1.15f,
+            EnergyMultiplier = 0.85f,
         };
         var env = new Godot.Environment
         {
             BackgroundMode = Godot.Environment.BGMode.Sky,
             Sky = new Sky { SkyMaterial = skyMat, RadianceSize = Sky.RadianceSizeEnum.Size256 },
             AmbientLightSource = Godot.Environment.AmbientSource.Sky,
-            AmbientLightEnergy = 0.42f,
-            AmbientLightSkyContribution = 0.90f,
+            AmbientLightEnergy = 0.20f,
+            AmbientLightSkyContribution = 0.75f,
 
             // ---- Forward+ 专属画质 ----
             TonemapMode = Godot.Environment.ToneMapper.Aces,
-            TonemapExposure = 1.15f,
+            TonemapExposure = 0.92f,
             TonemapWhite = 6.0f,
             GlowEnabled = true,
             GlowIntensity = 0.45f,
@@ -368,15 +369,15 @@ public sealed class ArenaBuilder
             SsaoPower = 1.6f,
             SsaoDetail = 0.6f,
             AdjustmentEnabled = true,
-            AdjustmentContrast = 1.06f,
-            AdjustmentSaturation = 1.05f,
+            AdjustmentContrast = 1.18f,
+            AdjustmentSaturation = 1.12f,
 
             // ---- 体积雾：夜场空气感（灯光锥/月光辉光都靠它承载）----
             VolumetricFogEnabled = true,
-            VolumetricFogDensity = 0.05f,
+            VolumetricFogDensity = 0.020f,
             VolumetricFogAlbedo = new Color(0.42f, 0.48f, 0.62f),
-            VolumetricFogEmission = new Color(0.04f, 0.05f, 0.08f),
-            VolumetricFogLength = 96f,
+            VolumetricFogEmission = new Color(0.015f, 0.02f, 0.035f),
+            VolumetricFogLength = 44f,
             VolumetricFogAmbientInject = 0.35f,
             VolumetricFogTemporalReprojectionEnabled = true,
         };
@@ -491,6 +492,143 @@ public sealed class ArenaBuilder
             MaterialOverride = m,
             Position = new Godot.Vector3(0, -thick / 2f, 0),   // 顶面 = 0
         });
+    }
+
+
+    /// 竞技场建筑层：背墙拱廊 + 壁柱 + 檐口 + 旗帜 + 角雕像。
+    /// 单纯的四堵墙永远读作"盒子"——建筑构件（重复的拱、有节奏的柱、收头的檐口）
+    /// 是让远景**有尺度参照**、不再像白盒的关键。
+    private static void BuildArchitecture(Node parent, float hw, float hd)
+    {
+        var stone = Mat(new Color(0.40f, 0.41f, 0.46f), 0.78f, 0.05f);
+        var trim = Mat(new Color(0.50f, 0.50f, 0.55f), 0.62f, 0.12f);
+        var dark = Mat(new Color(0.16f, 0.16f, 0.19f), 0.85f, 0.02f);
+
+        float bz = hd + 3.6f + 3.6f * 2 + 2.4f, bx = hw + 3.6f + 3.6f * 2 + 2.4f;
+        const float WallY = 8.6f;      // 背墙底
+        const float WallH = 9.5f;      // 拱廊层高度
+
+        // ---- 四面拱廊：每 9m 一根壁柱，柱间一个半圆拱 ----
+        void Arcade(bool alongX, float fixedCoord, float span, float sign)
+        {
+            int n = Mathf.Max(3, (int)(span / 9f));
+            float step = span / n;
+            for (int i = 0; i <= n; i++)
+            {
+                float t = -span / 2f + i * step;
+                var p0 = alongX ? new Godot.Vector3(t, 0, fixedCoord) : new Godot.Vector3(fixedCoord, 0, t);
+                // 壁柱
+                parent.AddChild(new MeshInstance3D
+                {
+                    Mesh = new BoxMesh { Size = alongX ? new Godot.Vector3(1.1f, WallH, 1.5f) : new Godot.Vector3(1.5f, WallH, 1.1f) },
+                    MaterialOverride = stone,
+                    Position = p0 + new Godot.Vector3(0, WallY + WallH / 2f, 0),
+                });
+                // 柱头
+                parent.AddChild(new MeshInstance3D
+                {
+                    Mesh = new BoxMesh { Size = alongX ? new Godot.Vector3(1.5f, 0.5f, 1.9f) : new Godot.Vector3(1.9f, 0.5f, 1.5f) },
+                    MaterialOverride = trim,
+                    Position = p0 + new Godot.Vector3(0, WallY + WallH - 0.25f, 0),
+                });
+                if (i == n) break;
+                // 拱（半圆用 8 段折线近似）——柱间的开口上沿
+                var archMat = trim;
+                for (int k = 0; k < 8; k++)
+                {
+                    float a0 = Mathf.Pi * k / 8f;
+                    float rr = step * 0.44f;
+                    float ax = Mathf.Cos(a0) * rr, ay = Mathf.Sin(a0) * rr;
+                    float a1 = Mathf.Pi * (k + 1) / 8f;
+                    float bx2 = Mathf.Cos(a1) * rr, by2 = Mathf.Sin(a1) * rr;
+                    var mid = new Godot.Vector2((ax + bx2) / 2f, (ay + by2) / 2f);
+                    float seg = new Godot.Vector2(bx2 - ax, by2 - ay).Length();
+                    float ang = Mathf.Atan2(by2 - ay, bx2 - ax);
+                    var ap = alongX
+                        ? new Godot.Vector3(t + step / 2f, WallY + WallH - 0.9f + mid.Y, fixedCoord)
+                        : new Godot.Vector3(fixedCoord, WallY + WallH - 0.9f + mid.Y, t + step / 2f);
+                    var rot = alongX
+                        ? new Godot.Vector3(0, 0, ang)
+                        : new Godot.Vector3(0, Mathf.Pi / 2f, ang);
+                    parent.AddChild(new MeshInstance3D
+                    {
+                        Mesh = new BoxMesh { Size = new Godot.Vector3(seg, 0.34f, 0.9f) },
+                        MaterialOverride = archMat,
+                        Position = ap,
+                        Rotation = rot,
+                    });
+                }
+                // 拱后的暗腔（让拱"有深度"，不是画在墙上的线）
+                parent.AddChild(new MeshInstance3D
+                {
+                    Mesh = new BoxMesh { Size = alongX ? new Godot.Vector3(step * 0.78f, WallH - 1.2f, 0.6f)
+                                                      : new Godot.Vector3(0.6f, WallH - 1.2f, step * 0.78f) },
+                    MaterialOverride = dark,
+                    Position = (alongX ? new Godot.Vector3(t + step / 2f, WallY + (WallH - 1.2f) / 2f, fixedCoord)
+                                       : new Godot.Vector3(fixedCoord, WallY + (WallH - 1.2f) / 2f, t + step / 2f)),
+                });
+            }
+            // 檐口（收头线——建筑"完成度"的一半）
+            parent.AddChild(new MeshInstance3D
+            {
+                Mesh = new BoxMesh { Size = alongX ? new Godot.Vector3(span + 2f, 0.7f, 2.6f) : new Godot.Vector3(2.6f, 0.7f, span + 2f) },
+                MaterialOverride = trim,
+                Position = alongX ? new Godot.Vector3(0, WallY + WallH + 0.35f, fixedCoord)
+                                  : new Godot.Vector3(fixedCoord, WallY + WallH + 0.35f, 0),
+            });
+        }
+
+        Arcade(true, bz, hw * 2f + 30f, 1f);
+        Arcade(true, -bz, hw * 2f + 30f, -1f);
+        Arcade(false, bx, hd * 2f + 30f, 1f);
+        Arcade(false, -bx, hd * 2f + 30f, -1f);
+
+        // ---- 悬挂旗帜（拱间垂布：绸面 + 队色纹章，给远景一抹色）----
+        var bannerMat0 = Mat(new Color(0.22f, 0.34f, 0.62f), 0.85f, 0f);
+        var bannerMat1 = Mat(new Color(0.62f, 0.42f, 0.20f), 0.85f, 0f);
+        for (int i = 0; i < 6; i++)
+            foreach (var (m, zz) in new[] { (bannerMat0, bz - 0.9f), (bannerMat1, -bz + 0.9f) })
+            {
+                parent.AddChild(new MeshInstance3D
+                {
+                    Mesh = new BoxMesh { Size = new Godot.Vector3(1.9f, 3.4f, 0.08f) },
+                    MaterialOverride = m,
+                    Position = new Godot.Vector3(-30f + i * 12f, WallY + WallH - 2.1f, zz),
+                });
+            }
+
+        // ---- 四角雕像（基座 + 简化人形：给角落一个"尺度参照物"）----
+        var bronze = Mat(new Color(0.26f, 0.22f, 0.16f), 0.42f, 0.80f);
+        foreach (float sx in new[] { 1f, -1f })
+            foreach (float sz in new[] { 1f, -1f })
+            {
+                float px = sx * (hw - 3.5f), pz = sz * (hd - 5f);
+                parent.AddChild(new MeshInstance3D
+                {
+                    Mesh = new BoxMesh { Size = new Godot.Vector3(2.6f, 2.0f, 2.6f) },
+                    MaterialOverride = stone,
+                    Position = new Godot.Vector3(px, 1.0f, pz),
+                });
+                parent.AddChild(new MeshInstance3D
+                {
+                    Mesh = new CylinderMesh { TopRadius = 0.42f, BottomRadius = 0.62f, Height = 2.4f, RadialSegments = 10 },
+                    MaterialOverride = bronze,
+                    Position = new Godot.Vector3(px, 3.2f, pz),
+                });
+                parent.AddChild(new MeshInstance3D
+                {
+                    Mesh = new SphereMesh { Radius = 0.34f, Height = 0.68f, RadialSegments = 12, Rings = 8 },
+                    MaterialOverride = bronze,
+                    Position = new Godot.Vector3(px, 4.7f, pz),
+                });
+                parent.AddChild(new MeshInstance3D
+                {
+                    Mesh = new BoxMesh { Size = new Godot.Vector3(1.5f, 0.35f, 0.5f) },
+                    MaterialOverride = bronze,
+                    Position = new Godot.Vector3(px, 3.9f, pz),
+                    RotationDegrees = new Godot.Vector3(0, sx * sz > 0 ? 35f : -35f, 22f),
+                });
+            }
     }
 
     /// 与地面齐平的圆形涂装台面（顶面 y=0.04，绝不遮挡站在其上的角色）。
