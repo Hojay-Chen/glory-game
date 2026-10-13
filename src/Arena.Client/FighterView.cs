@@ -126,6 +126,78 @@ public sealed partial class FighterView : Node3D
 
     public int Id => _id;
 
+    // ================= 可视化验证探测接口（ARENA_PROBE） =================
+    /// **按骨骼实际位置**求包围盒（蒙皮网格的 `GetAabb()` 是绑定姿态的，对动画后的
+    /// 姿态完全不准——用骨骼位置才是"当前真正长什么样"）。
+    /// 每根骨骼向外 pad 0.12m 近似肢体体积。
+    public (Godot.Vector3 Min, Godot.Vector3 Max)? WorldAabb()
+    {
+        var sk = _rig?.Skel;
+        if (sk is null || !sk.IsInsideTree()) return null;
+        const float Pad = 0.12f;
+        var mn = new Godot.Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
+        var mx = new Godot.Vector3(float.MinValue, float.MinValue, float.MinValue);
+        int n = 0;
+        for (int i = 0; i < sk.GetBoneCount(); i++)
+        {
+            var w = sk.GlobalTransform * sk.GetBoneGlobalPose(i).Origin;
+            mn = mn.Min(w); mx = mx.Max(w); n++;
+        }
+        if (n == 0) return null;
+        return (mn - new Godot.Vector3(Pad, Pad, Pad), mx + new Godot.Vector3(Pad, Pad, Pad));
+    }
+
+    /// **脚骨**的最低世界 Y——贴地检测的准确依据（网格 AABB 会跟随绑定姿态失真）。
+    public float LowestYAbs()
+    {
+        var sk = _rig?.Skel;
+        if (sk is null || !sk.IsInsideTree()) return 0f;
+        float lo = float.MaxValue;
+        foreach (var bn in new[] { "foot.L", "foot.R", "toe.L", "toe.R" })
+        {
+            int i = _rig!.Bone(bn);
+            if (i < 0) continue;
+            float y = (sk.GlobalTransform * sk.GetBoneGlobalPose(i).Origin).Y;
+            if (y < lo) lo = y;
+        }
+        return lo == float.MaxValue ? 0f : lo;
+    }
+
+    /// 当前播放的动作名 + 进度（**动作正确性检测**）
+    public (string Clip, float T, float Len) AnimState()
+    {
+        var a = _rig?.Anim;
+        if (a is null) return ("", 0f, 0f);
+        string c = a.CurrentAnimation;
+        var anim = a.GetAnimation(c);
+        return (c, (float)a.CurrentAnimationPosition, (float)(anim?.Length ?? 0f));
+    }
+
+    /// 本帧相对上帧所有骨骼的**最大旋转增量（度）**——跳变/穿模的量化前兆。
+    /// 真人对打时不该出现单帧 >60° 的骨转（那是动作切换硬切或蒙皮炸了）。
+    private readonly System.Collections.Generic.Dictionary<int, Godot.Quaternion> _prevBone = new();
+    private string _lastWorstBone = "";
+    public string LastWorstBone => _lastWorstBone;
+    public float MaxBoneDeltaDeg()
+    {
+        var sk = _rig?.Skel;
+        if (sk is null) return 0f;
+        float worst = 0f; int worstBone = -1;
+        for (int i = 0; i < sk.GetBoneCount(); i++)
+        {
+            var q = sk.GetBonePoseRotation(i);
+            if (_prevBone.TryGetValue(i, out var p))
+            {
+                float dot = Mathf.Abs(Mathf.Clamp(p.Dot(q), -1f, 1f));
+                float ang = Mathf.RadToDeg(2f * Mathf.Acos(dot));
+                if (ang > worst) { worst = ang; worstBone = i; }
+            }
+            _prevBone[i] = q;
+        }
+        _lastWorstBone = worstBone >= 0 ? sk.GetBoneName(worstBone) : "";
+        return worst;
+    }
+
     /// 权威状态投影（每物理帧——P3: 表现跟随 Sim）
     public void Sync(FighterStateData f)
     {

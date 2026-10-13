@@ -132,8 +132,27 @@ public class Batch7IntegrityTests : IDisposable
                 current.Step(t, byTick.TryGetValue(t, out var l) ? l.ToArray() : Array.Empty<Command>());
 
             // 段末与权威同 tick 快照逐位一致
-            Assert.True(current.CaptureSnapshot().BitwiseEquals(authSnaps[to]),
-                $"恢复链段 {from}-{to} 末态与权威不一致");
+            if (!current.CaptureSnapshot().BitwiseEquals(authSnaps[to]))
+            {
+                // 字段级诊断：定位首个发散字段（BitwiseEquals 只给布尔，排障全靠这个）
+                string detail = "?";
+                for (int i = 0; i < current.Fighters.Count && detail == "?"; i++)
+                {
+                    var x = current.Fighters[i]; var y = auth.Fighters[i];
+                    void C(string n, long a, long b) { if (a != b && detail == "?") detail = $"F{x.Id}.{n}: {a} vs {b}"; }
+                    C("PosX", x.PosX.Raw, y.PosX.Raw); C("PosY", x.PosY.Raw, y.PosY.Raw); C("PosZ", x.PosZ.Raw, y.PosZ.Raw);
+                    C("VelX", x.VelX.Raw, y.VelX.Raw); C("VelZ", x.VelZ.Raw, y.VelZ.Raw);
+                    C("State", (long)x.State, (long)y.State); C("Hp", x.Hp, y.Hp);
+                    C("GrabbedBy", x.GrabbedBy, y.GrabbedBy); C("ActiveUid", x.ActiveSkillUid, y.ActiveSkillUid);
+                    C("PeakY", x.PeakY, y.PeakY); C("FlightTicks", x.FlightTicks, y.FlightTicks);
+                    C("PullTicks", x.PullTicks, y.PullTicks);
+                }
+                if (detail == "?" && current.Units.Count != auth.Units.Count)
+                    detail = $"Units.Count {current.Units.Count} vs {auth.Units.Count}";
+                if (detail == "?" && current.Projectiles.Count != auth.Projectiles.Count)
+                    detail = $"Proj.Count {current.Projectiles.Count} vs {auth.Projectiles.Count}";
+                Assert.Fail($"恢复链段 {from}-{to} 末态与权威不一致 → 首发散字段 {detail}");
+            }
 
             if (to < Total)
             {

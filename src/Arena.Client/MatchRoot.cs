@@ -62,6 +62,12 @@ public partial class MatchRoot : Node
     private MoveCtx? _moveCtx;           // 相机相对换算（随 _camYaw 逐 tick 刷新）
     private float _mouseIdle;            // 距上次鼠标移动的秒数（软锁定回正用）
 
+    // ---- 可视化/行为验证探测（ARENA_PROBE=1）----
+    private bool _probe;
+    private readonly List<string> _probeIssues = new();
+    private int _probeSamples;
+    private readonly Dictionary<int, (float x, float z, int still)> _probeStuck = new();
+
     private MoveCtx MoveCtxFor()
     {
         if (_moveCtx is null)
@@ -155,6 +161,7 @@ public partial class MatchRoot : Node
     public override void _Ready()
     {
         _autopilot = Godot.OS.GetEnvironment("ARENA_AUTOPILOT") == "1";
+        _probe = Godot.OS.GetEnvironment("ARENA_PROBE") == "1";
         AddChild(_envRoot);
         AddChild(_matchRoot);
 
@@ -538,6 +545,7 @@ public partial class MatchRoot : Node
                 if (_views.TryGetValue(f.Id, out var view)) view.Sync(f);
         }
         _hud?.Sync(_world, _tick);
+        if (_probe) ProbeTick();
         if (_tick % 60 == 0 && Godot.OS.GetEnvironment("ARENA_DEBUG") == "1" && _camera is not null)
         {
             var fa = _world.Fighters[0]; var fb = _world.Fighters[1];
@@ -583,6 +591,7 @@ public partial class MatchRoot : Node
                 if (!_autopilot) ShowResultScreen();   // 真人局弹结算界面；autopilot 只打印
                 if (_autopilot)
                 {
+                    if (_probe) DumpProbe();
                     var hits = _world.Events.All.Count(e => e.Kind == EventKind.Hit);
                     Console.WriteLine($"[VS] match over t={_tick} result={result} hits={hits} " +
                         $"hp0={_world.Fighters[0].Hp} hp1={_world.Fighters[1].Hp}");
@@ -613,6 +622,78 @@ public partial class MatchRoot : Node
         if (def is null) return 0.6f;
         int ticks = def.StartupTicks + def.ActiveTicks + def.RecoveryTicks;
         return ticks <= 0 ? 0.6f : ticks / 60f;
+    }
+
+
+    // ================= 可视化/行为验证（ARENA_PROBE=1） =================
+    // 单元测试证明"逻辑对"，证明不了"看起来对"。本探测器逐帧量**穿模 / 贴地 /
+    // 姿态跳变 / 动作与速度是否匹配 / 卡住**，并把可疑帧号记下来供人工看图复核。
+    private void ProbeTick()
+    {
+        if (_views.Count < 2 || _world is null) return;
+        _probeSamples++;
+
+        foreach (var f in _world.Fighters)
+        {
+            if (!_views.TryGetValue(f.Id, out var v)) continue;
+
+            // 1) 穿模：两人包围盒深交叠（都不是抓取态时才算异常）
+            // 2) 贴地：地面态却陷地/悬空
+            float lowY = v.LowestYAbs() - f.PosY.Raw / 65536f;
+            bool grounded = f.State is FighterState.Normal or FighterState.Act && f.PosY.Raw <= 2048;
+            if (grounded && (lowY < -0.06f || lowY > 0.15f))
+                Add($"t{_tick} [贴地] P{f.Id} state={f.State} 脚底Y={lowY:0.000} (应≈0)");
+
+            // 3) 姿态跳变：单帧骨转 >55° = 硬切或蒙皮炸
+            float jump = v.MaxBoneDeltaDeg();
+            if (jump > 55f)
+                Add($"t{_tick} [姿态跳变] P{f.Id} 单帧 {jump:0}° 骨={v.LastWorstBone} clip={v.AnimState().Clip}");
+
+            // 4) 动作-速度匹配：在移动却播待机（或反之）= 滑步
+            var (clip, _, _) = v.AnimState();
+            float spd = (Math.Abs(f.VelX.Raw) + Math.Abs(f.VelZ.Raw)) / 65536f;
+            bool moving = spd > 1.2f;
+            bool idleClip = clip is "Idle" or "Sword_Idle" or "Pistol_Idle" or "Spell_Simple_Idle";
+            if (moving && idleClip && f.State == FighterState.Normal)
+                Add($"t{_tick} [滑步] P{f.Id} 速度{spd:0.0}m/s 却播 {clip}");
+
+            // 5) 卡住：想动但位移 <1cm 持续 40 帧
+            long dxr = f.PosX.Raw, dzr = f.PosZ.Raw;
+            float x = dxr / 65536f, z = dzr / 65536f;
+            var st = _probeStuck.TryGetValue(f.Id, out var prev) ? prev : (x: x, z: z, still: 0);
+            bool blocked = f.State == FighterState.Normal && spd > 0.5f &&
+                           Math.Abs(x - st.x) < 0.01f && Math.Abs(z - st.z) < 0.01f;
+            _probeStuck[f.Id] = (x, z, blocked ? st.still + 1 : 0);
+            if (blocked && st.still == 40)
+                Add($"t{_tick} [卡住] P{f.Id} 移动指令下位移停滞 40 帧 @({x:0.0},{z:0.0})");
+        }
+
+        // 穿模（两人之间）
+        if (_views.TryGetValue(0, out var v0) && _views.TryGetValue(1, out var v1))
+        {
+            var a0 = v0.WorldAabb(); var a1 = v1.WorldAabb();
+            var f0 = _world.Fighters[0]; var f1 = _world.Fighters[1];
+            bool grabbing = f0.State == FighterState.Grabbed || f1.State == FighterState.Grabbed;
+            if (a0 is { } b0 && a1 is { } b1 && !grabbing)
+            {
+                float ox = Math.Min(b0.Max.X, b1.Max.X) - Math.Max(b0.Min.X, b1.Min.X);
+                float oy = Math.Min(b0.Max.Y, b1.Max.Y) - Math.Max(b0.Min.Y, b1.Min.Y);
+                float oz = Math.Min(b0.Max.Z, b1.Max.Z) - Math.Max(b0.Min.Z, b1.Min.Z);
+                // 三轴都深交叠且**躯干**也重叠 = 真穿模（不是武器/手臂擦过）
+                if (ox > 0.25f && oy > 0.9f && oz > 0.25f)
+                    Add($"t{_tick} [穿模] 两人包围盒重叠 {ox:0.2}×{oy:0.2}×{oz:0.2}m");
+            }
+        }
+    }
+
+    private void Add(string msg) { if (_probeIssues.Count < 200) _probeIssues.Add(msg); }
+
+    private void DumpProbe()
+    {
+        Console.WriteLine($"[PROBE] samples={_probeSamples} issues={_probeIssues.Count}");
+        foreach (var g in _probeIssues.GroupBy(m => m.Split('[')[1].Split(']')[0]))
+            Console.WriteLine($"[PROBE] {g.Key}: {g.Count()} 例  |  首例 {g.First()}");
+        foreach (var m in _probeIssues.Take(24)) Console.WriteLine($"[PROBE]  {m}");
     }
 
     private void ApplyCameraShake()
